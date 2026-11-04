@@ -1,0 +1,16 @@
+.DS_Store
+**/build/
+**/node_modules/
+**/dist/
+console/web_assets.h
+*.bin
+*.elf
+*.map
+*.log
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.FCStd1

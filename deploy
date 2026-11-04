@@ -1,0 +1,55 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")"
+CLI='/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli'
+ESPROOT="$HOME/Library/Arduino15/packages/esp32"
+FQBN='esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,FlashMode=dio,PSRAM=opi,PartitionScheme=custom'
+usage(){ echo 'Usage: ./deploy {master|slave} [USB_PORT] | ./deploy build {master|slave} | ./deploy ota {master|slave} IP'; }
+ACTION=usb
+case "${1:-}" in
+  build|ota) ACTION="$1"; shift ;;
+esac
+ROLE="${1:-}"
+case "$ROLE" in master) MASTER=1 ;; slave) MASTER=0 ;; *) usage;exit 1;; esac
+shift
+PROFILE="${PROFILE:-console}"
+case "$PROFILE" in console|control|wifi04|espnow|radio) ;; *) echo 'PROFILE must be console, control, wifi04, espnow or radio';exit 1;;esac
+FLAGS="-DRADIO_MASTER=$MASTER"
+if [[ "$PROFILE" == console || "$PROFILE" == control || "$PROFILE" == wifi04 ]]; then
+  OUT="$PWD/build/$PROFILE-$ROLE-wifi"
+  LINK='Wi-Fi LAN'
+else
+  CHANNEL="${RADIO_CHANNEL:-6}"
+  if ! [[ "$CHANNEL" =~ ^([1-9]|10|11)$ ]]; then echo 'RADIO_CHANNEL must be 1..11';exit 1;fi
+  FLAGS="$FLAGS -DRADIO_CHANNEL=$CHANNEL"
+  OUT="$PWD/build/$PROFILE-$ROLE-ch$CHANNEL"
+  LINK="ESP-NOW channel $CHANNEL"
+fi
+BIN="$PROFILE.ino"
+if [[ "$PROFILE" == console ]]; then
+  (cd score-ui && VITE_CONSOLE_BACKEND=1 npm run build)
+  python3 tools/embed_console.py
+fi
+"$CLI" compile --clean --fqbn "$FQBN" --build-property "compiler.cpp.extra_flags=$FLAGS" --output-dir "$OUT" "$PROFILE"
+printf '\nApplication binary: %s/%s.bin\n' "$OUT" "$BIN"
+case "$ACTION" in
+ build) exit 0 ;;
+ ota)
+   IP="${1:?Specify the device IP}"
+   TOKEN="$(curl --fail --silent --show-error --max-time 5 "http://$IP/api/status" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')"
+   curl --fail --show-error -F "firmware=@$OUT/$BIN.bin" "http://$IP/update?token=$TOKEN"
+   exit 0 ;;
+esac
+PORT="${1:-}"
+if [[ -z "$PORT" ]]; then
+  shopt -s nullglob
+  PORTS=(/dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.wchusbserial*)
+  if [[ ${#PORTS[@]} -ne 1 ]]; then echo 'Connect exactly one board or specify USB_PORT explicitly.';printf '%s\n' "${PORTS[@]}";exit 1;fi
+  PORT="${PORTS[0]}"
+fi
+printf '\nDeploying %s %s to %s (%s). This replaces the current application.\n' "$PROFILE" "$ROLE" "$PORT" "$LINK"
+"$ESPROOT/tools/esptool_py/5.3.1/esptool" --chip esp32s3 --port "$PORT" --baud 115200 \
+  --before usb-reset --after watchdog-reset write-flash --flash-mode dio --flash-freq 80m --flash-size 16MB \
+  0x0 "$OUT/$BIN.bootloader.bin" 0x8000 "$OUT/$BIN.partitions.bin" \
+  0xe000 "$ESPROOT/hardware/esp32/3.3.11/tools/partitions/boot_app0.bin" 0x10000 "$OUT/$BIN.bin"
+echo 'Deployment complete. USB command i prints role and network details.'
