@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { CellSelection, Column, DeviceCue, Project, StripEffect } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
-import { clamp, columnsFor, parameterCode } from '../domain/project.ts';
+import { columnsFor, parameterCode } from '../domain/project.ts';
 import type { NetworkTransport } from '../transport/network.ts';
 const DeviceIP = ({
   mac,
@@ -57,7 +57,6 @@ const ScoreCell = memo(function ScoreCell({
   selected,
   selectedColumn,
   active,
-  compact,
   onSelectCell,
   onChangeCell,
 }: {
@@ -80,35 +79,20 @@ const ScoreCell = memo(function ScoreCell({
   let content;
   if (kind === 'dimmer') {
     const value = cue.dimmers[parameter.id].value;
-    content =
-      selected && !compact ? (
-        <input
-          autoFocus
-          className="matrix-input"
-          aria-label={label}
-          type="number"
-          min="0"
-          max="100"
-          inputMode="numeric"
-          value={value}
-          onChange={(e) => onChangeCell(cell, { value: clamp(Number(e.target.value), 0, 100) })}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-        />
-      ) : (
-        <button
-          className={`value-button ${value > 0 ? 'lit' : 'zero'}`}
-          aria-label={label}
-          onClick={() => {
-            if (value === 0) onChangeCell(cell, { value: 100 });
-            onSelectCell(cell);
-          }}
-        >
-          <span>{value}</span>
-          <small>%</small>
-        </button>
-      );
+    content = (
+      <button
+        className={`value-button ${value > 0 ? 'lit' : 'zero'}`}
+        aria-label={label}
+        aria-pressed={value > 0}
+        onClick={() => {
+          onChangeCell(cell, { value: value > 0 ? 0 : 100 });
+          onSelectCell(cell);
+        }}
+      >
+        <span>{value}</span>
+        <small>%</small>
+      </button>
+    );
   } else if (kind === 'relay') {
     const on = cue.relays[parameter.id].on;
     content = (
@@ -127,39 +111,24 @@ const ScoreCell = memo(function ScoreCell({
     );
   } else if (kind === 'audio') {
     const track = cue.audio.track;
-    content =
-      selected && !compact ? (
-        <input
-          autoFocus
-          className="matrix-input"
-          aria-label={label}
-          type="number"
-          min="1"
-          max="65535"
-          placeholder="—"
-          inputMode="numeric"
-          value={track ?? ''}
-          onChange={(e) =>
-            onChangeCell(cell, {
-              track:
-                e.target.value === '' ? null : Math.round(clamp(Number(e.target.value), 1, 65535)),
-            })
-          }
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur();
-          }}
-        />
-      ) : (
-        <button
-          className={`value-button ${track ? 'lit' : 'zero'}`}
-          aria-label={label}
-          onClick={() => onSelectCell(cell)}
-        >
-          {track && <Music2 size={12} />}
-          <span>{track ?? '—'}</span>
-          {track !== null && track === previousTrack && <Link2 size={11} />}
-        </button>
-      );
+    content = (
+      <button
+        className={`value-button ${track ? 'lit' : 'zero'}`}
+        aria-label={label}
+        aria-pressed={track !== null}
+        onClick={() => {
+          onChangeCell(cell, {
+            track: track === null ? (cue.audio.lastTrack ?? 1) : null,
+            ...(track === null && cue.audio.volume === 0 ? { volume: 100 } : {}),
+          });
+          onSelectCell(cell);
+        }}
+      >
+        {track && <Music2 size={12} />}
+        <span>{track ?? '—'}</span>
+        {track !== null && track === previousTrack && <Link2 size={11} />}
+      </button>
+    );
   } else {
     const strip = cue.strip;
     content = (

@@ -40,8 +40,10 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
   private async status() {
     const r = await this.request('/api/console/status'),
       data = await r.json();
-    if (data.role !== 'master' || !data.console)
-      throw new Error('Нужна прошивка мастера Консоль 0.7');
+    if (data.role !== 'master' || !data.console || data.version !== INTERFACE_VERSION)
+      throw new Error(
+        `Обновите страницу и мастер: нужна одинаковая версия Theatre console ${INTERFACE_VERSION}`,
+      );
     this.token = data.token;
     this.manifest = data.console;
     this.clock = { server: data.serverMs, at: performance.now() };
@@ -151,7 +153,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     for (const device of devices) {
       const state = this.snapshot.devices[device.mac];
       if (state?.online && !state.scoreSupported)
-        throw new Error(`Обновите прошивку ${state.name ?? device.mac} до 0.7`);
+        throw new Error(`Обновите прошивку ${state.name ?? device.mac} до 0.7.1`);
     }
     return devices;
   }

@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createProject } from './project.ts';
 import { compileDevices } from './compile.ts';
+import { INTERFACE_VERSION } from '../version.ts';
 import { EspConsoleTransport } from '../transport/esp.ts';
 const mac = 'C0:4E:30:27:69:98';
-test('compiler binds MAC, sends absolute levels and millisecond fades, rejects unsafe relay/unknown strip', () => {
+test('compiler binds MAC, sends absolute levels and millisecond fades, rejects unsafe relay and compiles WS2811', () => {
   const p = createProject(),
     d = p.devices[0];
   d.mac = mac;
@@ -18,13 +19,19 @@ test('compiler binds MAC, sends absolute levels and millisecond fades, rejects u
   d.relays[0].relayMode = 2;
   assert.equal(compileDevices(p, p.steps)[0].cues[0].r[0][1], 2);
   p.steps[0].devices[d.id].strip = { action: 'play', effectId: p.effects[0].id };
-  assert.throws(() => compileDevices(p, p.steps), /ленты/);
+  const strip = compileDevices(p, p.steps)[0].cues[0];
+  assert.equal(strip.d.length, 12);
+  assert.equal(strip.s[1], 2);
+  assert.equal(strip.s[3], 60);
+  d.ledCount = 1025;
+  assert.throws(() => compileDevices(p, p.steps), /1024/);
 });
 test('real transport sends publication/workspace and confirmed API calls without fake acknowledgements', async () => {
   const original = globalThis.fetch,
     calls: { url: string; body: string }[] = [];
   const status = {
     role: 'master',
+    version: INTERFACE_VERSION,
     token: 'abc',
     serverMs: 1000,
     mac: 'A0:85:E3:E2:BC:D4',

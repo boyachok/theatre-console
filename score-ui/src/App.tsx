@@ -49,7 +49,7 @@ import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { NetworkDialog } from './components/NetworkDialog.tsx';
 import { Modal } from './components/Modal.tsx';
 import { StepPlayer } from './components/StepPlayer.tsx';
-import { INTERFACE_VERSION } from './version.ts';
+import { INTERFACE_VERSION, PRODUCT_NAME } from './version.ts';
 const previewSignature = (project: Project, step: Step) =>
   JSON.stringify([step.devices, step.timings, project.devices, project.effects]);
 function startup() {
@@ -373,7 +373,7 @@ export default function App() {
           </span>
           <div>
             <h1>
-              Консоль <small>{INTERFACE_VERSION}</small>
+              {PRODUCT_NAME} <small>{INTERFACE_VERSION}</small>
             </h1>
             <input
               className="project-name"

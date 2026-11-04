@@ -1,5 +1,5 @@
 import type { Project, Workspace } from './schema.ts';
-import { fingerprint } from './project.ts';
+import { fingerprint, upgradeDraft } from './project.ts';
 const object = (v: unknown): v is Record<string, any> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 function ensure(ok: unknown, message: string): asserts ok {
@@ -38,10 +38,10 @@ export function validateProject(value: unknown): asserts value is Project {
     ensure(object(device) && text(device.id) && text(device.name), 'Неверный прибор');
     ensure(
       Array.isArray(device.dimmers) &&
-        device.dimmers.length === 8 &&
+        [8, 12].includes(device.dimmers.length) &&
         Array.isArray(device.relays) &&
         device.relays.length === 2,
-      'Ожидаются 8 диммеров и 2 реле',
+      'Ожидаются 12 диммеров и 2 реле (либо старый файл с 8)',
     );
     ensure(
       device.ip === undefined ||
@@ -55,6 +55,14 @@ export function validateProject(value: unknown): asserts value is Project {
       device.mac == null ||
         (typeof device.mac === 'string' && /^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$/i.test(device.mac)),
       'Неверная MAC',
+    );
+    ensure(
+      device.stripOrder === undefined || ['RGB', 'GRB'].includes(device.stripOrder),
+      'Неверный порядок цветов',
+    );
+    ensure(
+      device.stripRate === undefined || [800, 400].includes(device.stripRate),
+      'Неверная частота ленты',
     );
     const parameters = [...device.dimmers, ...device.relays, device.audio, device.strip];
     for (const p of parameters)
@@ -130,6 +138,8 @@ export function validateProject(value: unknown): asserts value is Project {
       const a = cue.audio;
       ensure(
         (a.track === null || (Number.isInteger(a.track) && a.track > 0 && a.track <= 65535)) &&
+          (a.lastTrack === undefined ||
+            (Number.isInteger(a.lastTrack) && a.lastTrack > 0 && a.lastTrack <= 65535)) &&
           number(a.volume, 100) &&
           optional(a.fadeIn) &&
           optional(a.fadeOut),
@@ -171,5 +181,5 @@ export function parseBackup(content: string): Workspace {
       'Опубликованная версия повреждена',
     );
   }
-  return value as unknown as Workspace;
+  return { ...value, draft: upgradeDraft(value.draft) } as unknown as Workspace;
 }

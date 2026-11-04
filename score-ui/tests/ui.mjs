@@ -3,6 +3,9 @@ import fs from 'node:fs/promises';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url),
   { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
+const release = JSON.parse(
+  await fs.readFile(new URL('../../version.json', import.meta.url), 'utf8'),
+);
 const base = process.env.SCORE_URL || 'http://127.0.0.1:5173';
 const browser = await chromium.launch({
   executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -31,7 +34,9 @@ const cell = (p, index, parameter, device) =>
 async function edit(p, index, parameter, value) {
   const c = cell(p, index, parameter);
   await c.locator('button').click();
-  await c.locator('input').fill(String(value));
+  await p
+    .getByLabel(parameter === 'audio' ? 'Номер трека' : 'Яркость', { exact: true })
+    .fill(String(value));
 }
 try {
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } }),
@@ -41,21 +46,30 @@ try {
   await p.waitForSelector('.parameter-row');
   assert.equal(await p.locator('.step-heading').count(), 1);
   assert.equal(await p.locator('.device-group').count(), 10);
-  assert.equal(await p.locator('.parameter-row').count(), 120);
-  assert((await p.locator('h1').innerText()).includes('Консоль'));
+  assert.equal(await p.locator('.parameter-row').count(), 160);
+  assert((await p.locator('h1').innerText()).includes('Theatre console'));
   assert((await p.getByLabel('Название спектакля').boundingBox()).width >= 280);
   await p.getByRole('button', { name: 'Свернуть Прибор 1', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 108);
+  assert.equal(await p.locator('.parameter-row').count(), 144);
   await p.getByRole('button', { name: 'Развернуть Прибор 1', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 120);
+  assert.equal(await p.locator('.parameter-row').count(), 160);
   await cell(p, 0, 'pwm-1').locator('button').click();
-  assert.equal(await cell(p, 0, 'pwm-1').locator('input').inputValue(), '100');
+  assert.equal(await p.getByLabel('Яркость', { exact: true }).inputValue(), '100');
   assert.equal(await p.getByLabel('Вход', { exact: true }).getAttribute('step'), '0.2');
   assert.equal(
     await p.locator('[data-live-parameter="pwm-1"]').getAttribute('data-live-value'),
     '0',
   );
-  await cell(p, 0, 'pwm-1').locator('input').fill('0');
+  await cell(p, 0, 'pwm-1').locator('button').click();
+  assert.equal(await p.getByLabel('Яркость', { exact: true }).inputValue(), '0');
+  await cell(p, 0, 'audio').locator('button').click();
+  assert.equal(await p.getByLabel('Номер трека', { exact: true }).inputValue(), '1');
+  await p.getByLabel('Номер трека', { exact: true }).fill('5');
+  await cell(p, 0, 'audio').locator('button').click();
+  assert.equal(await p.getByLabel('Номер трека', { exact: true }).inputValue(), '');
+  await cell(p, 0, 'audio').locator('button').click();
+  assert.equal(await p.getByLabel('Номер трека', { exact: true }).inputValue(), '5');
+  await cell(p, 0, 'audio').locator('button').click();
   assert.equal(await p.locator('footer.step-player').count(), 0);
   assert(await p.locator('.app-header .step-player').isVisible());
   assert.equal(
@@ -137,7 +151,7 @@ try {
   await p.getByRole('button', { name: 'Приборы', exact: true }).click();
   const devices = p.getByRole('dialog', { name: 'Приборы', exact: true });
   assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
-  assert.equal(await devices.locator('input[type=checkbox]').count(), 120);
+  assert.equal(await devices.locator('input[type=checkbox]').count(), 160);
   assert(await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).isDisabled());
   p.once('dialog', (d) => d.accept());
   await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
@@ -152,7 +166,7 @@ try {
   await devices.getByLabel('Цвет DIM1', { exact: true }).selectOption('red');
   await devices.getByLabel('Галерея · REL2', { exact: true }).uncheck();
   await devices.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 119);
+  assert.equal(await p.locator('.parameter-row').count(), 159);
   assert((await paramRow(p, 'pwm-1').innerText()).includes('Красный фронт'));
   await p.getByRole('button', { name: 'Эффекты ленты', exact: true }).click();
   const effects = p.getByRole('dialog', { name: 'Эффекты ленты' });
@@ -181,10 +195,10 @@ try {
   );
   const downloaded = p.waitForEvent('download');
   await p.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
-  const file = '/tmp/theatre-score-ui-backup-v030.json';
+  const file = '/tmp/theatre-score-ui-backup-v071.json';
   await (await downloaded).saveAs(file);
   const saved = JSON.parse(await fs.readFile(file, 'utf8'));
-  assert.equal(saved.interfaceVersion, '0.3.0');
+  assert.equal(saved.interfaceVersion, release.version);
   assert.equal(saved.draft.steps.length, 3);
   assert.equal(saved.draft.devices.length, 10);
   assert.equal(saved.published.version, 1);
@@ -215,7 +229,7 @@ try {
     document.querySelector('[role=status]')?.textContent.includes('Неподдерживаемый'),
   );
   assert.equal(await p.locator('.step-heading').count(), 3);
-  await p.screenshot({ path: '/tmp/theatre-score-desktop-v030.png', fullPage: true });
+  await p.screenshot({ path: '/tmp/theatre-score-desktop-v071.png', fullPage: true });
   await ctx.close();
   const hundred = structuredClone(saved);
   hundred.published = null;
@@ -245,9 +259,9 @@ try {
   await big.goto(base);
   await big.waitForSelector('.step-heading:nth-of-type(101)');
   assert.equal(await big.locator('.step-heading').count(), 100);
-  assert.equal(await big.locator('.parameter-row td').count(), 12000);
+  assert.equal(await big.locator('.parameter-row td').count(), 16000);
   assert((await big.locator('.device-group').first().innerText()).includes('192.168.50.33'));
-  await big.screenshot({ path: '/tmp/theatre-score-100-v030.png', fullPage: true });
+  await big.screenshot({ path: '/tmp/theatre-score-100-v071.png', fullPage: true });
   await stress.close();
   for (const [width, height] of [
     [390, 844],
@@ -280,18 +294,18 @@ try {
       h: document.documentElement.scrollHeight,
     }));
     assert(bounds.w <= width && bounds.h <= height);
-    await mobile.screenshot({ path: `/tmp/theatre-score-phone-${width}-v030.png`, fullPage: true });
+    await mobile.screenshot({ path: `/tmp/theatre-score-phone-${width}-v071.png`, fullPage: true });
     await mobile.getByRole('button', { name: 'Приборы', exact: true }).click();
     const modal = mobile.getByRole('dialog', { name: 'Приборы', exact: true });
     assert.equal(await modal.locator('tr[data-config-device]').count(), 10);
-    assert.equal(await modal.locator('input[type=checkbox]').count(), 120);
+    assert.equal(await modal.locator('input[type=checkbox]').count(), 160);
     await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await context.close();
   }
   assert.equal(failures.length, 0, failures.join('\n'));
   assert.equal(externals.length, 0, externals.join('\n'));
   console.log(
-    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x120 cells, 390/375/320px.',
+    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x160 cells, toggle light/audio, 390/375/320px.',
   );
 } finally {
   await browser.close();

@@ -8,7 +8,8 @@
 #ifndef RADIO_MASTER
 #define RADIO_MASTER 0
 #endif
-constexpr char RADIO_VERSION[]="0.7.0";
+#include "release.h"
+constexpr char RADIO_VERSION[]=THEATRE_VERSION;
 constexpr uint32_t MAGIC=0x32544753;
 constexpr uint8_t PROTOCOL=4,LEGACY_PROTOCOL=3;
 constexpr int MAX_NODES=10,WINDOW=120;
@@ -38,10 +39,10 @@ static_assert(sizeof(Packet)==72&&sizeof(LegacyPacket)==64&&sizeof(DebugPacket)=
 // Optional HELLO/ECHO telemetry. Older 0.5.0 producers leave this tag zero.
 inline void setPWMFrequency(Packet &p,uint32_t hz){
   if(p.type!=HELLO&&p.type!=ECHO)return;
-  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=3;p.value=hz&0xffff;
+  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=4;p.value=hz&0xffff;
 }
 inline uint32_t reportedPWMFrequency(const Packet &p){
-  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>3))return 0;
+  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>4))return 0;
   return p.value|((uint32_t)p.padding[1]<<16);
 }
 inline LegacyPacket legacyPacket(const Packet &p){

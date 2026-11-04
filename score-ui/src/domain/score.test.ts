@@ -28,7 +28,7 @@ test('one initial step, ten universal devices, correct percent conversion', () =
   const p = createProject();
   assert.equal(p.steps.length, 1);
   assert.equal(p.devices.length, 10);
-  assert(p.devices.every((d) => d.dimmers.length === 8 && d.relays.length === 2));
+  assert(p.devices.every((d) => d.dimmers.length === 12 && d.relays.length === 2));
   assert.equal(p.steps[0].devices[p.devices[0].id].audio.track, null);
   assert.deepEqual([0, 50, 100].map(percentToDuty), [0, 128, 255]);
   validateProject(p);

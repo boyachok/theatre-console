@@ -35,7 +35,7 @@ export function createDevice(index: number): Device {
     id: uid(),
     name: `Прибор ${index + 1}`,
     ip: null,
-    dimmers: Array.from({ length: 8 }, (_, i) => parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`)),
+    dimmers: Array.from({ length: 12 }, (_, i) => parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`)),
     relays: Array.from({ length: 2 }, (_, i) =>
       parameter(`relay-${i + 1}`, `Реле ${i + 1}`, 'warm'),
     ),
@@ -43,6 +43,29 @@ export function createDevice(index: number): Device {
     strip: parameter('strip', 'Лента', 'green'),
     ledCount: 60,
   };
+}
+export function upgradeDraft(project: Project): Project {
+  if (project.devices.every((d) => d.dimmers.length === 12)) return project;
+  const next = clone(project);
+  for (const device of next.devices) {
+    while (device.dimmers.length < 12) {
+      const i = device.dimmers.length;
+      const p = { ...parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`), enabled: false };
+      device.dimmers.push(p);
+      for (const step of next.steps)
+        step.devices[device.id].dimmers[p.id] = { value: 0, fadeIn: null, fadeOut: null };
+    }
+  }
+  return touch(next, {});
+}
+export function effectiveStrip(project: Project, step: Step, deviceId: string) {
+  let value: DeviceCue['strip'] = { action: 'stop', effectId: null };
+  for (const cue of project.steps) {
+    const next = cue.devices[deviceId]?.strip;
+    if (next && next.action !== 'hold') value = next;
+    if (cue.id === step.id) break;
+  }
+  return value;
 }
 export function createDeviceCue(device: Device): DeviceCue {
   return {
@@ -174,7 +197,7 @@ export function parameterCode(device: Device, parameter: Parameter): string {
   if (dim >= 0) return `DIM${dim + 1}`;
   const relay = device.relays.findIndex((p) => p.id === parameter.id);
   if (relay >= 0) return `REL${relay + 1}`;
-  return parameter.id === device.strip.id ? 'SPI' : 'SOU1';
+  return parameter.id === device.strip.id ? 'LED' : 'SOU1';
 }
 export function touch(project: Project, patch: Partial<Project>): Project {
   return {
@@ -211,6 +234,18 @@ export function updateCell(
         relays: {
           ...source.relays,
           [cell.parameterId]: { ...source.relays[cell.parameterId], ...changes },
+        },
+      };
+    else if (cell.kind === 'audio')
+      cue = {
+        ...source,
+        audio: {
+          ...source.audio,
+          ...changes,
+          lastTrack:
+            typeof changes.track === 'number'
+              ? changes.track
+              : (source.audio.track ?? source.audio.lastTrack),
         },
       };
     else cue = { ...source, [cell.kind]: { ...source[cell.kind], ...changes } };

@@ -96,9 +96,13 @@ export function DevicesDialog({
                 'DIM6',
                 'DIM7',
                 'DIM8',
+                'DIM9',
+                'DIM10',
+                'DIM11',
+                'DIM12',
                 'REL1',
                 'REL2',
-                'SPI',
+                'LED',
                 'SOU1',
               ].map((code) => (
                 <th key={code}>{code}</th>
@@ -178,16 +182,16 @@ export function DevicesDialog({
                             />
                           </label>
                           <label className="field">
-                            <span>Светодиодов</span>
+                            <span>Точек WS2811</span>
                             <input
-                              aria-label="Светодиодов в ленте"
+                              aria-label="Точек WS2811"
                               type="number"
                               min="1"
-                              max="10000"
+                              max="1024"
                               value={device.ledCount}
                               onChange={(e) =>
                                 update(device.id, {
-                                  ledCount: Math.round(clamp(Number(e.target.value), 1, 10000)),
+                                  ledCount: Math.round(clamp(Number(e.target.value), 1, 1024)),
                                 })
                               }
                             />
@@ -216,6 +220,36 @@ export function DevicesDialog({
                             ))}
                           </select>
                         </label>
+                        <div className="device-general-fields">
+                          <label className="field">
+                            <span>WS2811</span>
+                            <select
+                              aria-label="Порядок цветов ленты"
+                              value={device.stripOrder ?? 'RGB'}
+                              onChange={(e) =>
+                                update(device.id, { stripOrder: e.target.value as 'RGB' | 'GRB' })
+                              }
+                            >
+                              <option>RGB</option>
+                              <option>GRB</option>
+                            </select>
+                          </label>
+                          <label className="field">
+                            <span>Сигнал DATA</span>
+                            <select
+                              aria-label="Частота ленты"
+                              value={device.stripRate ?? 800}
+                              onChange={(e) =>
+                                update(device.id, {
+                                  stripRate: Number(e.target.value) as 800 | 400,
+                                })
+                              }
+                            >
+                              <option value="800">800 кГц</option>
+                              <option value="400">400 кГц</option>
+                            </select>
+                          </label>
+                        </div>
                         <div className="parameter-fine-grid">
                           {parameters(device).map((p) => {
                             const code = parameterCode(device, p);

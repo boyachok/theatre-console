@@ -50,7 +50,7 @@ void showMasterTick(){
 void invalidateShowDelivery(){for(auto &n:nodes){n.nextScore=n.nextStore=0;n.scoreLoaded=n.scoreNext=0;}}
 void consoleButtons(){
  if(!RADIO_MASTER)return;
- struct Key{uint8_t pin;bool raw=false,pressed=false,longFired=false;uint32_t changed=0,at=0;};static Key keys[2]{{1},{2}};
+ struct Key{uint8_t pin;bool raw=false,pressed=false,longFired=false;uint32_t changed=0,at=0;};static Key keys[2]{{BUTTON_FORWARD_PIN},{BUTTON_BACK_PIN}};
  uint32_t now=millis();for(int i=0;i<2;i++){auto &key=keys[i];bool down=digitalRead(key.pin)==LOW;
   if(down!=key.raw){key.raw=down;key.changed=now;}
   if(now-key.changed>=30&&down!=key.pressed){key.pressed=down;if(down){key.at=now;key.longFired=false;}else if(!key.longFired&&showMaster.stepIds.size()){
@@ -68,15 +68,15 @@ bool guardShowRequest(){
 }
 void consoleRoutes(){
  web.on("/api/console/status",HTTP_GET,[]{web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",statusJSON(false));});
- web.on("/api/console/workspace",HTTP_GET,[]{if(!RADIO_MASTER){web.send(403);return;}if(!showFSReady){web.send(503,"text/plain","Не удалось открыть память партитуры");return;}web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",showMaster.workspace.length()?showMaster.workspace:String("null"));});
+ web.on("/api/console/workspace",HTTP_GET,[]{if(!RADIO_MASTER){web.send(403);return;}if(!showFSReady||showMaster.workspaceFault){web.send(503,"text/plain","Не удалось прочитать память партитуры: восстановите JSON-бэкап");return;}web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",showMaster.workspace.length()?showMaster.workspace:String("null"));});
  web.on("/api/console/workspace",HTTP_POST,[]{
-  if(!consoleForm())return;if(!showFSReady){web.send(503);return;}String body=web.takePlain();if(body.length()>1500000){web.send(413);return;}JsonDocument filter,doc(&Show::jsonRam);filter["format"]=true;filter["schemaVersion"]=true;filter["published"]["version"]=true;
+  if(!consoleForm())return;if(!showFSReady){web.send(503);return;}String body=web.takePlain();if(body.length()>2200000){web.send(413);return;}JsonDocument filter,doc(&Show::jsonRam);filter["format"]=true;filter["schemaVersion"]=true;filter["published"]["version"]=true;
   if(deserializeJson(doc,body,DeserializationOption::Filter(filter))||doc["format"]!="theatre-score"||doc["schemaVersion"]!=1){web.send(400);return;}
   if((doc["published"]["version"]|0U)<showMaster.version){web.send(409,"text/plain","Версия уже изменилась");return;}
-  if(!Show::atomicText("/workspace.json",body)){web.send(507);return;}showMaster.workspace=body;web.send(200,"text/plain","OK");
+  if(!Show::atomicText("/workspace.json",body)){web.send(507);return;}showMaster.workspace=std::move(body);showMaster.workspaceFault=false;web.send(200,"text/plain","OK");
  });
  web.on("/api/console/publish",HTTP_POST,[]{
-  if(!consoleForm())return;if(!showFSReady){web.send(503);return;}String body=web.takePlain(),error;if(body.length()>2500000){web.send(413);return;}
+  if(!consoleForm())return;if(!showFSReady){web.send(503);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
   if(!showMaster.loadPayload(body,true,error)){web.send(400,"text/plain",error);return;}invalidateShowDelivery();web.send(200,"application/json","{\"version\":"+String(showMaster.version)+"}");
  });
  web.on("/api/console/preview",HTTP_POST,[]{

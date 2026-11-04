@@ -1,5 +1,5 @@
 import type { Project, Step, StripEffect } from './schema.ts';
-import { clone } from './project.ts';
+import { clone, effectiveStrip } from './project.ts';
 export interface Envelope {
   from: number;
   to: number;
@@ -166,9 +166,10 @@ export class PreviewEngine {
         }
       }
       if (device.strip.enabled) {
-        if (cue.strip.action === 'stop') runtime.strip = null;
-        if (cue.strip.action === 'play') {
-          const effect = project.effects.find((e) => e.id === cue.strip.effectId);
+        const strip = effectiveStrip(project, step, device.id);
+        if (strip.action === 'stop') runtime.strip = null;
+        if (strip.action === 'play') {
+          const effect = project.effects.find((e) => e.id === strip.effectId);
           if (effect) {
             const previous = runtime.strip;
             const changed =
@@ -191,7 +192,7 @@ export class PreviewEngine {
             };
           }
         }
-      }
+      } else runtime.strip = null;
     }
     state.stepId = step.id;
     state.transitionId = transitionId;

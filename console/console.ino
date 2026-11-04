@@ -307,7 +307,7 @@ void handleMasterRx(const Rx &r) {
   n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;n.pwmChannels=r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT;
   if(newBoot){n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreNext=n.scoreAt=0;n.scoreSupported=false;}
   if(newBoot||!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0) {
-    if(r.p.type==HELLO||r.p.type==ECHO){n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=3;}
+    if(r.p.type==HELLO||r.p.type==ECHO){n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;}
     n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;
   }
   if(n.pending&&r.p.commandId==n.pendingPacket.commandId) {
@@ -507,7 +507,7 @@ void routes() {
   web.on("/",HTTP_GET,[] {
     web.sendHeader("Cache-Control","no-store");
     if(RADIO_MASTER)serveConsoleAsset(web,"/index.html");
-    else web.send(200,"text/html; charset=utf-8","<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='stylesheet' href='/ui.css'><header>Console Slave 0.7.0</header><main><div class='panel'><a class='btn' href='/update'>OTA</a> <a class='btn' href='/api/status'>Статус</a></div></main>");
+    else web.send(200,"text/html; charset=utf-8","<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='stylesheet' href='/ui.css'><header>Theatre console slave " THEATRE_VERSION "</header><main><div class='panel'><a class='btn' href='/update'>OTA</a> <a class='btn' href='/api/status'>Статус</a></div></main>");
   });
   web.on("/ui.css",HTTP_GET,[] {web.sendHeader("Cache-Control","no-store");web.send_P(200,"text/css",UI_CSS);});
   web.on("/ui.js",HTTP_GET,[] {web.sendHeader("Cache-Control","no-store");web.send_P(200,"text/javascript; charset=utf-8",UI_JS);});
@@ -571,7 +571,7 @@ void routes() {
   });
   web.on("/update",HTTP_GET,[] {
     if(web.hasArg("target")&&!web.arg("target").equalsIgnoreCase(macString(network.mac))){web.send(409,"text/plain","Device mismatch");return;}
-    String h="<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='stylesheet' href='/ui.css'><header>OTA "+String(RADIO_MASTER?"master":"slave")+" 0.7.0 · "+network.hostname+"</header><main><form class='panel' method='post' action='/update?token="+csrfToken+"&target="+macString(network.mac)+"' enctype='multipart/form-data'><input type='file' name='firmware' accept='.bin' required><button>Обновить</button></form><a class='btn' href='/'>Назад</a></main>";
+    String h="<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><link rel='stylesheet' href='/ui.css'><header>OTA "+String(RADIO_MASTER?"master":"slave")+" " THEATRE_VERSION " · "+network.hostname+"</header><main><form class='panel' method='post' action='/update?token="+csrfToken+"&target="+macString(network.mac)+"' enctype='multipart/form-data'><input type='file' name='firmware' accept='.bin' required><button>Обновить</button></form><a class='btn' href='/'>Назад</a></main>";
     web.send(200,"text/html; charset=utf-8",h);
   });
   web.on("/update",HTTP_POST,[] {
@@ -597,7 +597,7 @@ void routes() {
 void setup() {
   if(!RADIO_MASTER){actors.begin();showRunner.begin();actors.tick(false);}
   showFSReady=mountShowFS();
-  if(!RADIO_MASTER){if(showFSReady)showStore.begin();}else{if(showFSReady)showMaster.begin();pinMode(1,INPUT_PULLUP);pinMode(2,INPUT_PULLUP);showMaster.run=freshSession();}
+  if(!RADIO_MASTER){if(showFSReady)showStore.begin();}else{if(showFSReady)showMaster.begin();pinMode(BUTTON_FORWARD_PIN,INPUT_PULLUP);pinMode(BUTTON_BACK_PIN,INPUT_PULLUP);showMaster.run=freshSession();}
   Serial.begin(115200);delay(500);
   bootSession=freshSession();
   char token[17];snprintf(token,sizeof(token),"%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random());csrfToken=token;

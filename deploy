@@ -27,18 +27,34 @@ else
 fi
 BIN="$PROFILE.ino"
 if [[ "$PROFILE" == console ]]; then
+  python3 tools/release.py --check
   (cd score-ui && VITE_CONSOLE_BACKEND=1 npm run build)
   python3 tools/embed_console.py
 fi
 "$CLI" compile --clean --fqbn "$FQBN" --build-property "compiler.cpp.extra_flags=$FLAGS" --output-dir "$OUT" "$PROFILE"
 printf '\nApplication binary: %s/%s.bin\n' "$OUT" "$BIN"
+check_mac(){
+  local mac expected
+  mac="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
+  expected="$(printf '%s' "${EXPECTED_MAC:-}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "$ROLE" == master && -z "$expected" ]]; then expected='A0:85:E3:E2:BC:D4';fi
+  if [[ -n "$expected" && "$mac" != "$expected" ]]; then echo "Refusing to flash: MAC $mac != expected $expected" >&2;exit 1;fi
+  if [[ "$ROLE" == slave && "$mac" == 'A0:85:E3:E2:BC:D4' ]]; then echo 'Refusing to replace the known master with slave firmware.' >&2;exit 1;fi
+}
 case "$ACTION" in
  build) exit 0 ;;
  ota)
    IP="${1:?Specify the device IP}"
-   TOKEN="$(curl --fail --silent --show-error --max-time 5 "http://$IP/api/status" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')"
-   curl --fail --show-error -F "firmware=@$OUT/$BIN.bin" "http://$IP/update?token=$TOKEN"
-   exit 0 ;;
+   STATUS="$(curl --noproxy '*' --fail --silent --show-error --connect-timeout 3 --max-time 8 "http://$IP/api/status")"
+   IDENTITY="$(printf '%s' "$STATUS" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["role"]==sys.argv[1], "Wrong target role";print(d["mac"].upper(),d["token"])' "$ROLE")"
+   read -r MAC TOKEN <<< "$IDENTITY";check_mac "$MAC"
+   curl --noproxy '*' --fail --show-error --connect-timeout 3 --max-time 120 -F "firmware=@$OUT/$BIN.bin" "http://$IP/update?token=$TOKEN&target=$MAC"
+   EXPECTED_VERSION='';if [[ "$PROFILE" == console ]]; then EXPECTED_VERSION="$(python3 -c 'import json;print(json.load(open("version.json"))["version"])')";fi
+   for attempt in {1..15}; do
+     sleep 1
+     if curl --noproxy '*' --fail --silent --connect-timeout 2 --max-time 3 "http://$IP/api/status" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["mac"].upper()==sys.argv[1] and d["role"]==sys.argv[2] and (not sys.argv[3] or d["version"]==sys.argv[3])' "$MAC" "$ROLE" "$EXPECTED_VERSION" 2>/dev/null; then echo "Verified $ROLE $MAC $EXPECTED_VERSION after reboot";exit 0;fi
+   done
+   echo 'Upload returned, but reboot/version could not be verified. Check DHCP/Serial; not declaring success.' >&2;exit 1 ;;
 esac
 PORT="${1:-}"
 if [[ -z "$PORT" ]]; then
@@ -47,9 +63,13 @@ if [[ -z "$PORT" ]]; then
   if [[ ${#PORTS[@]} -ne 1 ]]; then echo 'Connect exactly one board or specify USB_PORT explicitly.';printf '%s\n' "${PORTS[@]}";exit 1;fi
   PORT="${PORTS[0]}"
 fi
+INFO="$("$ESPROOT/tools/esptool_py/5.3.1/esptool" --chip esp32s3 --port "$PORT" --baud 115200 --before usb-reset --after no-reset read-mac)"
+printf '%s\n' "$INFO"
+MAC="$(printf '%s' "$INFO" | python3 -c 'import sys,re;v=set(s.upper() for s in re.findall(r"(?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}",sys.stdin.read()));assert len(v)==1,"Cannot identify one target MAC";print(v.pop())')"
+check_mac "$MAC"
 printf '\nDeploying %s %s to %s (%s). This replaces the current application.\n' "$PROFILE" "$ROLE" "$PORT" "$LINK"
 "$ESPROOT/tools/esptool_py/5.3.1/esptool" --chip esp32s3 --port "$PORT" --baud 115200 \
-  --before usb-reset --after watchdog-reset write-flash --flash-mode dio --flash-freq 80m --flash-size 16MB \
+  --before no-reset --after watchdog-reset write-flash --flash-mode dio --flash-freq 80m --flash-size 16MB \
   0x0 "$OUT/$BIN.bootloader.bin" 0x8000 "$OUT/$BIN.partitions.bin" \
   0xe000 "$ESPROOT/hardware/esp32/3.3.11/tools/partitions/boot_app0.bin" 0x10000 "$OUT/$BIN.bin"
 echo 'Deployment complete. USB command i prints role and network details.'

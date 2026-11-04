@@ -17,6 +17,8 @@ export interface Device {
   audio: Parameter;
   strip: Parameter;
   ledCount: number;
+  stripOrder?: 'RGB' | 'GRB';
+  stripRate?: 800 | 400;
 }
 export interface Timings {
   lightIn: number;
@@ -37,6 +39,7 @@ export interface RelayCue {
   delayOff: number | null;
 }
 export interface AudioCue {
+  lastTrack?: number;
   track: number | null;
   volume: number;
   fadeIn: number | null;
@@ -104,9 +107,9 @@ export interface Column {
   kind: ParameterKind;
 }
 export const COLORS: Record<ChannelColor, { name: string; hex: string }> = {
-  red: { name: 'Красный', hex: '#f17b83' },
-  green: { name: 'Зелёный', hex: '#7bd8ae' },
-  blue: { name: 'Синий', hex: '#88aaff' },
-  white: { name: 'Белый', hex: '#e5e8f1' },
-  warm: { name: 'Тёплый', hex: '#edc18d' },
+  red: { name: 'Красный', hex: '#c52135' },
+  green: { name: 'Зелёный', hex: '#08784b' },
+  blue: { name: 'Синий', hex: '#1b55d9' },
+  white: { name: 'Белый', hex: '#4b5d75' },
+  warm: { name: 'Тёплый', hex: '#986006' },
 };

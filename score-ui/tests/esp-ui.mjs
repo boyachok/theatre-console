@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { INTERFACE_VERSION } from '../src/version.ts';
 import { createProject } from '../src/domain/project.ts';
 const require = createRequire(import.meta.url),
   { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
@@ -12,7 +13,7 @@ project.devices[0].mac = mac;
 let workspace = {
   format: 'theatre-score',
   schemaVersion: 1,
-  interfaceVersion: '0.3.0',
+  interfaceVersion: INTERFACE_VERSION,
   draft: project,
   published: null,
 };
@@ -34,6 +35,7 @@ const peer = {
 };
 const status = {
     role: 'master',
+    version: INTERFACE_VERSION,
     token: 'mock-only-token',
     mac: 'A0:85:E3:E2:BC:D4',
     serverMs: 0,
@@ -92,7 +94,10 @@ const server = createServer(async (req, res) => {
       res.end('{}');
       return;
     }
-    if (path === '/favicon.ico') { res.writeHead(204).end(); return; }
+    if (path === '/favicon.ico') {
+      res.writeHead(204).end();
+      return;
+    }
     const file = path === '/' ? '/index.html' : path;
     if (file.includes('..')) {
       res.writeHead(403).end();
@@ -124,7 +129,7 @@ try {
   );
   const cell = page.locator('.parameter-row[data-parameter="pwm-1"]').first().locator('td').first();
   await cell.locator('button').click();
-  assert.equal(await cell.locator('input').inputValue(), '100');
+  assert.equal(await page.getByLabel('Яркость', { exact: true }).inputValue(), '100');
   await page.getByLabel('Вход', { exact: true }).fill('0.2');
   assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, 0);
   await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();

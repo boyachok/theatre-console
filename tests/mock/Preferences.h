@@ -10,6 +10,8 @@ inline std::map<std::string,std::vector<uint8_t>> mockPrefsBytes;
 class Preferences {
 public:
   void begin(const char*,bool){}
+  uint16_t getUShort(const char *key,uint16_t fallback){auto &b=mockPrefsBytes[key];uint16_t n=fallback;if(b.size()==2)memcpy(&n,b.data(),2);return n;}
+  size_t putUShort(const char *key,uint16_t n){return putBytes(key,&n,2);}
   uint8_t getUChar(const char*,uint8_t){return mockRelayConfig;}
   size_t putUChar(const char*,uint8_t value){if(!mockPrefsWriteOK)return 0;mockRelayConfig=value;return 1;}
   size_t getBytesLength(const char *key){return mockPrefsBytes[key].size();}

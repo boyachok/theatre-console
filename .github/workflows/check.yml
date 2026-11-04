@@ -1,0 +1,21 @@
+name: Check console release
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: bblanchon/ArduinoJson
+          ref: v7.4.3
+          path: .ci/ArduinoJson
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: score-ui/package-lock.json
+      - run: python3 tools/release.py --check
+      - run: ARDUINOJSON_PATH="$PWD/.ci/ArduinoJson/src" bash tests/run.sh
+      - run: npm ci && npm test && npm run build
+        working-directory: score-ui

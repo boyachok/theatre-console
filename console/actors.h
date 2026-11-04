@@ -5,9 +5,10 @@
 #include "hardware.h"
 #include "pwm_settings.h"
 #include "player.h"
+#include "extra_pwm.h"
 class Actors {
-  uint16_t duty[PWM_COUNT]{};PwmSettings settings;
-  uint8_t relayMode=0,fault=0,onMask=0;uint32_t configRevision=1;
+  uint16_t duty[DIMMER_COUNT]{};PwmSettings settings;ExtraPwm extra;
+  uint8_t relayMode=0,fault=0;uint16_t onMask=0;uint32_t configRevision=1;
   bool linkReady=false,relayOn=false,pwmReady=true;
   Preferences config;
   void relayWrite(bool on){
@@ -15,7 +16,8 @@ class Actors {
     digitalWrite(RELAY_PIN,(on==(relayMode==1))?HIGH:LOW);pinMode(RELAY_PIN,OUTPUT);relayOn=on;
   }
   bool writePWM(uint8_t index,uint8_t value){
-    if(!ledcWrite(PWM_PINS[index],physicalPWM(value,settings.inverted&(1<<index))))return false;
+    bool ok=index<PWM_COUNT?ledcWrite(PWM_PINS[index],physicalPWM(value,settings.inverted&(1<<index))):extra.write(index-PWM_COUNT,value);
+    if(!ok)return false;
     duty[index]=value;return true;
   }
 public:
@@ -31,15 +33,19 @@ public:
       digitalWrite(pin,inactive?HIGH:LOW);pinMode(pin,OUTPUT);
       if(!ledcAttach(pin,PWM_HZ,PWM_BITS)||!writePWM(i,0))pwmReady=false;
     }
+    for(int i=PWM_COUNT;i<DIMMER_COUNT;i++){digitalWrite(PWM_PINS[i],LOW);pinMode(PWM_PINS[i],OUTPUT);}
+    if(!extra.begin(PWM_PINS+PWM_COUNT))pwmReady=false;
     if(!pwmReady)fault=5;player.begin();
   }
+  uint8_t dimmerValue(uint8_t index)const{return index<DIMMER_COUNT?duty[index]:0;}
+  bool setDimmer(uint8_t index,uint8_t value){if(index>=DIMMER_COUNT||!pwmReady||!writePWM(index,value))return false;if(value)onMask|=1U<<index;else onMask&=~(1U<<index);return true;}
   uint32_t pwmFrequency()const{return pwmReady?ledcReadFreq(PWM_PINS[0]):0;}
   PwmStatus pwmStatus()const{
     PwmStatus s{};for(int i=0;i<PWM_COUNT;i++)s.level[i]=settings.level[i];
     s.inverted=settings.inverted;s.onMask=onMask;s.revision=configRevision;return s;
   }
   void off(uint8_t reason=0){
-    relayWrite(false);for(int i=0;i<PWM_COUNT;i++){writePWM(i,0);duty[i]=0;}onMask=0;
+    relayWrite(false);for(int i=0;i<DIMMER_COUNT;i++){writePWM(i,0);duty[i]=0;}onMask=0;
     player.stop();fault=pwmReady?reason:5;
   }
   void tick(bool heartbeatFresh){if(linkReady&&!heartbeatFresh)off(1);linkReady=heartbeatFresh;player.tick();}

@@ -1,5 +1,5 @@
 import type { Project, Step } from './schema.ts';
-import { percentToDuty } from './project.ts';
+import { percentToDuty, effectiveStrip } from './project.ts';
 import { validateProject } from './validation.ts';
 export interface WireCue {
   dimMask: number;
@@ -8,6 +8,7 @@ export interface WireCue {
   r: number[][];
   a: number[];
   stripAction: number;
+  s: number[];
 }
 export interface CompiledDevice {
   id: string;
@@ -15,6 +16,15 @@ export interface CompiledDevice {
   cues: WireCue[];
 }
 const ms = (seconds: number) => Math.round(seconds * 1000);
+const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+function programKey(value: unknown) {
+  let h = 2166136261;
+  for (const c of JSON.stringify(value)) {
+    h ^= c.charCodeAt(0);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
 export function compileDevices(project: Project, steps: Step[]): CompiledDevice[] {
   validateProject(project);
   const result: CompiledDevice[] = [],
@@ -26,7 +36,7 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
         device.dimmers.some((p) => p.enabled && c.dimmers[p.id].value > 0) ||
         device.relays.some((p) => p.enabled && c.relays[p.id].on) ||
         (device.audio.enabled && c.audio.track !== null) ||
-        (device.strip.enabled && c.strip.action === 'play')
+        (device.strip.enabled && effectiveStrip(project, step, device.id).action === 'play')
       );
     });
     if (!device.mac) {
@@ -41,16 +51,25 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
       for (const p of device.relays)
         if (p.enabled && c.relays[p.id].on && !p.relayMode)
           throw new Error(`Выберите HIGH/LOW для ${device.name} · ${p.name}`);
-      if (device.strip.enabled && c.strip.action === 'play')
-        throw new Error('Сначала нужно подтвердить тип и подключение ленты');
+      const strip = effectiveStrip(project, step, device.id),
+        fx = strip.action === 'play' ? project.effects.find((f) => f.id === strip.effectId) : null;
+      if (device.strip.enabled && device.ledCount > 1024)
+        throw new Error('WS2811: максимум 1024 управляемые точки');
+      const action = device.strip.enabled && fx ? 2 : 1,
+        enabled = Number(device.strip.enabled);
       return {
         dimMask: device.dimmers.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),
         relayMask: device.relays.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),
-        d: device.dimmers.map((p) => [
-          percentToDuty(c.dimmers[p.id].value),
-          ms(c.dimmers[p.id].fadeIn ?? step.timings.lightIn),
-          ms(c.dimmers[p.id].fadeOut ?? step.timings.lightOut),
-        ]),
+        d: Array.from({ length: 12 }, (_, i) => {
+          const p = device.dimmers[i];
+          return p
+            ? [
+                percentToDuty(c.dimmers[p.id].value),
+                ms(c.dimmers[p.id].fadeIn ?? step.timings.lightIn),
+                ms(c.dimmers[p.id].fadeOut ?? step.timings.lightOut),
+              ]
+            : [0, 0, 0];
+        }),
         r: device.relays.map((p) => [
           Number(c.relays[p.id].on),
           p.relayMode ?? 0,
@@ -64,13 +83,33 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
           ms(c.audio.fadeIn ?? step.timings.audioIn),
           ms(c.audio.fadeOut ?? step.timings.audioOut),
         ],
-        stripAction: device.strip.enabled
-          ? c.strip.action === 'play'
-            ? 2
-            : c.strip.action === 'stop'
-              ? 1
-              : 0
-          : 0,
+        stripAction: action,
+        s: [
+          enabled,
+          action,
+          fx ? ['wave', 'fill', 'static'].indexOf(fx.mode) : 0,
+          enabled ? device.ledCount : 0,
+          ...rgb(fx?.color ?? '#000000'),
+          ...rgb(fx?.background ?? '#000000'),
+          Math.round(fx?.brightness ?? 0),
+          Math.max(1, Math.round(fx?.width ?? 100)),
+          Number(fx?.direction === 'reverse'),
+          Math.max(1, ms(fx?.duration ?? 1)),
+          fx
+            ? programKey([
+                fx.id,
+                fx.mode,
+                fx.color,
+                fx.background,
+                fx.brightness,
+                fx.width,
+                fx.duration,
+                fx.direction,
+              ])
+            : 0,
+          Number(device.stripOrder === 'GRB'),
+          Number(device.stripRate === 400),
+        ],
       };
     });
     result.push({ id: device.id, mac, cues });

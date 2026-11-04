@@ -1,10 +1,12 @@
 {
   "name": "theatre-score-ui",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.7.1",
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 5173 --strictPort",
+    "prebuild": "python3 ../tools/release.py --check",
+    "pretest": "python3 ../tools/release.py --check",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test": "node --test src/domain/*.test.ts",

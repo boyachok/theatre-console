@@ -14,3 +14,4 @@ console/web_assets.h
 *.key
 *.p12
 *.FCStd1
+.ci/

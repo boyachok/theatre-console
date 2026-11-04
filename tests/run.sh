@@ -14,7 +14,7 @@ for TEST in actors player compat console; do
 done
 ARDUINOJSON_PATH="${ARDUINOJSON_PATH:-$HOME/Documents/Arduino/libraries/ArduinoJson/src}"
 if [[ -f "$ARDUINOJSON_PATH/ArduinoJson.h" ]]; then
-  c++ "${FLAGS[@]}" -Itests/mock -I"$ARDUINOJSON_PATH" tests/console_storage.cpp -o "$OUT/console_storage"
+  c++ "${FLAGS[@]}" -Itests/mock -I"$ARDUINOJSON_PATH" tests/console_storage.cpp -lz -o "$OUT/console_storage"
   "$OUT/console_storage"
 else
   echo 'Master storage test skipped: set ARDUINOJSON_PATH to ArduinoJson/src.'
