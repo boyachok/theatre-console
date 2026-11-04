@@ -48,7 +48,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     this.manifest = data.console;
     this.clock = { server: data.serverMs, at: performance.now() };
     const devices: Record<string, NetworkDeviceStatus> = {};
-    for (const n of data.nodes) {
+    for (const n of [...data.nodes, ...(data.remotes ?? [])]) {
       const key = n.mac.toUpperCase(),
         prior = this.snapshot.devices[key];
       const rtt = n.p50 ?? null;
@@ -57,6 +57,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const history = prior && n.sent >= prior.sent ? prior.history : [];
       devices[key] = {
         mac: key,
+        role: n.role === 'remote' ? 'remote' : 'slave',
         name: n.name,
         ip: n.ip,
         online: n.ageMs !== null && n.ageMs < 3000,
@@ -69,7 +70,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         rssi: n.worstRssi ?? n.rssiSlave,
         confirmedStep: n.confirmedStep ?? null,
         scoreSupported: !!n.scoreSupported,
-        scoreVersion: n.scoreVersion ?? 0,
+        scoreVersion: n.role === 'remote' ? undefined : (n.scoreVersion ?? 0),
         history:
           fresh || missed
             ? [
@@ -152,6 +153,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     const devices = compileDevices(project, steps);
     for (const device of devices) {
       const state = this.snapshot.devices[device.mac];
+      if (state?.role === 'remote') throw new Error('remote — пульт: его нельзя назначить прибору');
       if (state?.online && !state.scoreSupported)
         throw new Error(`Обновите прошивку ${state.name ?? device.mac} до 0.7.1`);
     }

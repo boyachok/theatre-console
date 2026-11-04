@@ -33,6 +33,18 @@ const peer = {
   worstRssi: -50,
   rssiSlave: -50,
 };
+const remote = {
+  ...peer,
+  role: 'remote',
+  mac: 'AA:BB:CC:00:00:22',
+  name: 'remote',
+  ip: '192.168.50.88',
+  p50: 14,
+  p95: 20,
+  rssiSlave: -65,
+  worstRssi: -65,
+  scoreSupported: false,
+};
 const status = {
     role: 'master',
     version: INTERFACE_VERSION,
@@ -42,6 +54,7 @@ const status = {
     measuring: true,
     console: { version: 0, fingerprint: '', step: null, preview: false },
     nodes: [peer],
+    remotes: [remote],
   },
   calls = [],
   errors = [];
@@ -90,7 +103,10 @@ const server = createServer(async (req, res) => {
       const form = new URLSearchParams(raw);
       assert.equal(form.get('token'), status.token);
       if (path === '/api/console/measure') status.measuring = form.get('enabled') === '1';
-      if (path === '/api/console/network/reset') status.nodes = [];
+      if (path === '/api/console/network/reset') {
+        status.nodes = [];
+        status.remotes = [];
+      }
       res.end('{}');
       return;
     }
@@ -141,7 +157,16 @@ try {
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
-  assert.equal(await panel.locator('tbody tr').count(), 1);
+  assert.equal(await panel.locator('tbody tr').count(), 2);
+  const remoteRow = panel.locator('tbody tr').filter({ hasText: 'remote' });
+  assert.equal(await remoteRow.count(), 1);
+  await panel.getByRole('button', { name: 'Мигать remote', exact: true }).click();
+  await page.waitForTimeout(100);
+  assert(
+    calls.some(
+      (c) => c.path.endsWith('/identify') && new URLSearchParams(c.raw).get('mac') === remote.mac,
+    ),
+  );
   assert.equal((await panel.locator('tbody tr td').nth(9).innerText()).trim(), '—');
   peer.confirmedStep = 1;
   await page.waitForFunction(
@@ -159,6 +184,17 @@ try {
   await page.waitForTimeout(150);
   assert.equal(status.measuring, false);
   await panel.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
+  const deviceSettings = page.getByRole('dialog', { name: 'Приборы', exact: true });
+  await deviceSettings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
+  assert.equal(
+    await deviceSettings
+      .getByLabel('Контроллер прибора', { exact: true })
+      .locator(`option[value="${remote.mac}"]`)
+      .count(),
+    0,
+  );
+  await deviceSettings.getByRole('button', { name: 'Отмена', exact: true }).click();
   await page.getByRole('button', { name: 'Опубликовать', exact: true }).click();
   await page.waitForFunction(() =>
     document.querySelector('.version-chip')?.textContent.includes('v1'),
@@ -168,15 +204,18 @@ try {
   assert.equal(publication.devices[0].mac, mac);
   assert.equal(peer.scoreVersion, 0); // HTTP success does not fabricate slave delivery.
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Сбросить сеть', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: 'Подтверждение', exact: true })
+    .getByRole('button', { name: 'Сбросить', exact: true })
+    .click();
   await page.waitForFunction(
     () => document.querySelectorAll('.network-table tbody tr').length === 0,
   );
   assert(calls.some((c) => c.path.endsWith('/network/reset')));
   assert.deepEqual(errors, []);
   console.log(
-    'ESP production UI / MOCK master: workspace load, real-adapter mode, IP/MAC, edit ≠ execution, guarded first-step preview, exact 200ms fade, receipt-only confirmation, publish without fake delivery, identify/test/reset passed.',
+    'ESP production UI / MOCK master: workspace load, real-adapter mode, IP/MAC, edit ≠ execution, guarded first-step preview, exact 200ms fade, receipt-only confirmation, publish without fake delivery, remote ping/RSSI/identify and actuator-binding exclusion, custom confirmation/test/reset passed.',
   );
 } finally {
   await browser.close();

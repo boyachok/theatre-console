@@ -3,6 +3,7 @@ import { Lightbulb, RotateCcw } from 'lucide-react';
 import type { Project } from '../domain/schema.ts';
 import type { NetworkSample, NetworkTransport } from '../transport/network.ts';
 import { Modal } from './Modal.tsx';
+import { useConfirm } from './Confirm.tsx';
 const metric = (v: number | null | undefined, suffix = '') =>
   v == null ? '—' : `${Number(v.toFixed(1))}${suffix}`;
 function HistoryChart({ samples, mode }: { samples: NetworkSample[]; mode: 'rtt' | 'rssi' }) {
@@ -67,6 +68,7 @@ export function NetworkDialog({
   transport: NetworkTransport;
   onClose: () => void;
 }) {
+  const ask = useConfirm();
   const snapshot = useSyncExternalStore(transport.subscribe, transport.getSnapshot),
     [selected, setSelected] = useState(''),
     [mode, setMode] = useState<'rtt' | 'rssi'>('rtt'),
@@ -75,7 +77,12 @@ export function NetworkDialog({
     transport.kind === 'esp'
       ? Object.entries(snapshot.devices).map(([id, report]) => ({
           id,
-          name: project.devices.find((d) => d.mac?.toUpperCase() === id)?.name ?? report.name ?? id,
+          name:
+            report.role === 'remote'
+              ? (report.name ?? 'remote')
+              : (project.devices.find((d) => d.mac?.toUpperCase() === id)?.name ??
+                report.name ??
+                id),
           ip: report.ip,
           report,
         }))
@@ -126,9 +133,13 @@ export function NetworkDialog({
             aria-label="Сбросить сеть"
             title="Забыть контроллеры и запустить поиск"
             disabled={!snapshot.connected || !transport.resetNetwork}
-            onClick={() => {
+            onClick={async () => {
               if (
-                confirm('Забыть список контроллеров и начать поиск заново? Партитура сохраняется.')
+                await ask({
+                  message:
+                    'Забыть список контроллеров и начать поиск заново? Партитура сохраняется.',
+                  accept: 'Сбросить',
+                })
               )
                 void action(() => transport.resetNetwork!());
             }}

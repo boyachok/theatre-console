@@ -4,17 +4,24 @@ cd "$(dirname "$0")"
 CLI='/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli'
 ESPROOT="$HOME/Library/Arduino15/packages/esp32"
 FQBN='esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,FlashMode=dio,PSRAM=opi,PartitionScheme=custom'
-usage(){ echo 'Usage: ./deploy {master|slave} [USB_PORT] | ./deploy build {master|slave} | ./deploy ota {master|slave} IP'; }
+usage(){ echo 'Usage: ./deploy {master|slave|remote} [USB_PORT] | ./deploy build {master|slave|remote} | ./deploy ota {master|slave} IP'; }
 ACTION=usb
 case "${1:-}" in
   build|ota) ACTION="$1"; shift ;;
 esac
 ROLE="${1:-}"
-case "$ROLE" in master) MASTER=1 ;; slave) MASTER=0 ;; *) usage;exit 1;; esac
+case "$ROLE" in master) MASTER=1 ;; slave|remote) MASTER=0 ;; *) usage;exit 1;; esac
 shift
 PROFILE="${PROFILE:-console}"
 case "$PROFILE" in console|control|wifi04|espnow|radio) ;; *) echo 'PROFILE must be console, control, wifi04, espnow or radio';exit 1;;esac
+SKETCH="$PROFILE"
+if [[ "$ROLE" == remote ]]; then
+  [[ "$PROFILE" == console ]] || { echo 'remote is supported only by PROFILE=console';exit 1; }
+  [[ "$ACTION" != ota ]] || { echo 'remote has no HTTP/OTA server: use USB';exit 1; }
+  SKETCH=remote
+fi
 FLAGS="-DRADIO_MASTER=$MASTER"
+if [[ "$ROLE" == remote ]]; then FLAGS="$FLAGS -DRADIO_REMOTE=1 -I$PWD/console";fi
 if [[ "$PROFILE" == console || "$PROFILE" == control || "$PROFILE" == wifi04 ]]; then
   OUT="$PWD/build/$PROFILE-$ROLE-wifi"
   LINK='Wi-Fi LAN'
@@ -25,13 +32,15 @@ else
   OUT="$PWD/build/$PROFILE-$ROLE-ch$CHANNEL"
   LINK="ESP-NOW channel $CHANNEL"
 fi
-BIN="$PROFILE.ino"
+BIN="$SKETCH.ino"
 if [[ "$PROFILE" == console ]]; then
   python3 tools/release.py --check
-  (cd score-ui && VITE_CONSOLE_BACKEND=1 npm run build)
-  python3 tools/embed_console.py
+  if [[ "$ROLE" != remote ]]; then
+    (cd score-ui && VITE_CONSOLE_BACKEND=1 npm run build)
+    python3 tools/embed_console.py
+  fi
 fi
-"$CLI" compile --clean --fqbn "$FQBN" --build-property "compiler.cpp.extra_flags=$FLAGS" --output-dir "$OUT" "$PROFILE"
+"$CLI" compile --clean --fqbn "$FQBN" --build-property "compiler.cpp.extra_flags=$FLAGS" --output-dir "$OUT" "$SKETCH"
 printf '\nApplication binary: %s/%s.bin\n' "$OUT" "$BIN"
 check_mac(){
   local mac expected
@@ -39,7 +48,7 @@ check_mac(){
   expected="$(printf '%s' "${EXPECTED_MAC:-}" | tr '[:lower:]' '[:upper:]')"
   if [[ "$ROLE" == master && -z "$expected" ]]; then expected='A0:85:E3:E2:BC:D4';fi
   if [[ -n "$expected" && "$mac" != "$expected" ]]; then echo "Refusing to flash: MAC $mac != expected $expected" >&2;exit 1;fi
-  if [[ "$ROLE" == slave && "$mac" == 'A0:85:E3:E2:BC:D4' ]]; then echo 'Refusing to replace the known master with slave firmware.' >&2;exit 1;fi
+  if [[ "$ROLE" != master && "$mac" == 'A0:85:E3:E2:BC:D4' ]]; then echo 'Refusing to replace the known master with slave/remote firmware.' >&2;exit 1;fi
 }
 case "$ACTION" in
  build) exit 0 ;;

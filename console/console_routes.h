@@ -50,15 +50,8 @@ void showMasterTick(){
 void invalidateShowDelivery(){for(auto &n:nodes){n.nextScore=n.nextStore=0;n.scoreLoaded=n.scoreNext=0;}}
 void consoleButtons(){
  if(!RADIO_MASTER)return;
- struct Key{uint8_t pin;bool raw=false,pressed=false,longFired=false;uint32_t changed=0,at=0;};static Key keys[2]{{BUTTON_FORWARD_PIN},{BUTTON_BACK_PIN}};
- uint32_t now=millis();for(int i=0;i<2;i++){auto &key=keys[i];bool down=digitalRead(key.pin)==LOW;
-  if(down!=key.raw){key.raw=down;key.changed=now;}
-  if(now-key.changed>=30&&down!=key.pressed){key.pressed=down;if(down){key.at=now;key.longFired=false;}else if(!key.longFired&&showMaster.stepIds.size()){
-   uint16_t next=!showMaster.active?0:i==0?std::min((int)showMaster.stepIds.size()-1,(int)showMaster.step+1):std::max(0,(int)showMaster.step-1);
-   if(!showMaster.active||showMaster.isPreview||next!=showMaster.step){showMaster.go(next,i==1?1:0);for(auto &n:nodes)n.nextScore=0;}
-  }}
-  if(key.pressed&&!key.longFired&&now-key.at>=3000&&showMaster.stepIds.size()){key.longFired=true;uint16_t next=i==0?showMaster.stepIds.size()-1:0;if(!showMaster.active||showMaster.isPreview||next!=showMaster.step){showMaster.go(next,i==1?1:0);for(auto &n:nodes)n.nextScore=0;}}
- }
+ static Remote::Buttons keys;auto action=keys.tick(digitalRead(BUTTON_FORWARD_PIN)==LOW,digitalRead(BUTTON_BACK_PIN)==LOW,!otaSafetyLock&&!networkResetActive&&!showMaster.stepIds.empty(),millis());
+ if(action!=Remote::NONE)navigatePublished(action);
 }
 bool consoleForm(){if(!RADIO_MASTER){web.send(403,"text/plain","Master only");return false;}return validForm();}
 bool guardShowRequest(){
@@ -86,5 +79,5 @@ void consoleRoutes(){
  });
  web.on("/api/console/measure",HTTP_POST,[]{if(!consoleForm())return;uint32_t enabled;if(!unsignedArg("enabled",1,enabled)){web.send(400);return;}setMeasurements(enabled);web.send(200,"text/plain","OK");});
  web.on("/api/console/network/reset",HTTP_POST,[]{if(!consoleForm())return;beginNetworkReset();web.send(202,"text/plain","OK");});
- web.on("/api/console/identify",HTTP_POST,[]{if(!consoleForm())return;String mac=web.arg("mac");if(mac.equalsIgnoreCase(macString(network.mac))){identifyUntil=millis()+5000;web.send(200);return;}uint8_t target[6];if(!Show::parseMAC(mac.c_str(),target)){web.send(400);return;}int i=findNode(target,false);if(i<0){web.send(404);return;}bool ok=sendPacket(target,packet(IDENTIFY,bootSession));web.send(ok?200:503);});
+ web.on("/api/console/identify",HTTP_POST,[]{if(!consoleForm())return;String mac=web.arg("mac");if(mac.equalsIgnoreCase(macString(network.mac))){identifyUntil=millis()+5000;web.send(200);return;}uint8_t target[6];if(!Show::parseMAC(mac.c_str(),target)){web.send(400);return;}if(identifyRemote(target)){web.send(200);return;}int i=findNode(target,false);if(i<0){web.send(404);return;}bool ok=sendPacket(target,packet(IDENTIFY,bootSession));web.send(ok?200:503);});
 }

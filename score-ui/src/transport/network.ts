@@ -4,6 +4,7 @@ export interface NetworkSample {
   rssi: number | null;
 }
 export interface NetworkDeviceStatus {
+  role?: 'slave' | 'remote';
   mac?: string;
   name?: string;
   scoreSupported?: boolean;

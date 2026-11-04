@@ -23,6 +23,8 @@ export function Modal({
     document.body.style.overflow = 'hidden';
     ref.current?.focus();
     const key = (event: KeyboardEvent) => {
+      const dialogs = document.querySelectorAll('[aria-modal="true"]');
+      if (dialogs[dialogs.length - 1] !== ref.current) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         close.current();

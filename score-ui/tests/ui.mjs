@@ -153,8 +153,22 @@ try {
   assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
   assert.equal(await devices.locator('input[type=checkbox]').count(), 160);
   assert(await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).isDisabled());
-  p.once('dialog', (d) => d.accept());
   await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
+  await p.getByRole('dialog', { name: 'Подтверждение', exact: true }).waitFor();
+  await p.keyboard.press('Escape');
+  assert(await devices.isVisible());
+  assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
+  await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
+  await p.keyboard.press('Tab');
+  assert(
+    await p
+      .getByRole('dialog', { name: 'Подтверждение', exact: true })
+      .evaluate((el) => el.contains(document.activeElement)),
+  );
+  await p
+    .getByRole('dialog', { name: 'Подтверждение', exact: true })
+    .getByRole('button', { name: 'Удалить', exact: true })
+    .click();
   assert.equal(await devices.locator('tr[data-config-device]').count(), 9);
   await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).click();
   assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
@@ -213,8 +227,11 @@ try {
   await p.reload();
   await p.waitForSelector('.parameter-row');
   assert.equal((await cell(p, 1, 'pwm-1').innerText()).replace(/\s/g, ''), '33%');
-  p.once('dialog', (d) => d.accept());
   await p.locator('input[type=file]').setInputFiles(file);
+  await p
+    .getByRole('dialog', { name: 'Подтверждение', exact: true })
+    .getByRole('button', { name: 'Заменить', exact: true })
+    .click();
   await p.waitForFunction(() =>
     document
       .querySelector('.parameter-row[data-parameter="pwm-1"] td:nth-of-type(2)')
@@ -302,10 +319,51 @@ try {
     await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await context.close();
   }
+  const confirmContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await confirmContext.addInitScript(() => {
+    window.nativeConfirmCalls = 0;
+    window.confirm = () => {
+      window.nativeConfirmCalls++;
+      return false;
+    };
+  });
+  const deletion = await confirmContext.newPage();
+  watch(deletion);
+  await deletion.goto(base);
+  await deletion.waitForSelector('.step-heading');
+  for (let i = 0; i < 4; i++)
+    await deletion.getByRole('button', { name: 'Сдублировать шаг', exact: true }).click();
+  const remove = () => deletion.getByRole('button', { name: 'Удалить шаг', exact: true }).click();
+  await remove();
+  let prompt = deletion.getByRole('dialog', { name: 'Подтверждение', exact: true });
+  await prompt.getByRole('checkbox').check();
+  await prompt.getByRole('button', { name: 'Отмена', exact: true }).click();
+  assert.equal(await deletion.locator('.step-heading').count(), 5);
+  await remove();
+  prompt = deletion.getByRole('dialog', { name: 'Подтверждение', exact: true });
+  await prompt.getByRole('checkbox').check();
+  await prompt.getByRole('button', { name: 'Удалить', exact: true }).click();
+  assert.equal(await deletion.locator('.step-heading').count(), 4);
+  await remove();
+  await pause(50);
+  assert.equal(await deletion.locator('.step-heading').count(), 3);
+  assert.equal(
+    await deletion.getByRole('dialog', { name: 'Подтверждение', exact: true }).count(),
+    0,
+  );
+  await pause(400);
+  await deletion.reload();
+  await deletion.waitForSelector('.step-heading');
+  await remove();
+  await deletion.getByRole('dialog', { name: 'Подтверждение', exact: true }).waitFor();
+  await deletion.keyboard.press('Escape');
+  assert.equal(await deletion.locator('.step-heading').count(), 3);
+  assert.equal(await deletion.evaluate(() => window.nativeConfirmCalls), 0);
+  await confirmContext.close();
   assert.equal(failures.length, 0, failures.join('\n'));
   assert.equal(externals.length, 0, externals.join('\n'));
   console.log(
-    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x160 cells, toggle light/audio, 390/375/320px.',
+    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x160 cells, toggle light/audio, custom confirmations (native blocked / cancel / skip until reload / Escape / nested focus), 390/375/320px.',
   );
 } finally {
   await browser.close();

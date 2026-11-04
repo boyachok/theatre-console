@@ -8,6 +8,8 @@
 #include <atomic>
 #include <algorithm>
 #include "protocol.h"
+#include "remote_link.h"
+#include "network_led.h"
 #include "dashboard.h"
 #include "ui_common.h"
 #include "diagnostics.h"
@@ -50,6 +52,7 @@ uint32_t lastProbeSeq=0;
 
 struct Rx { uint8_t mac[6]; Packet p; UartStats uart; PwmStatus pwm; uint32_t pwmHz=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
+bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigatePublished(uint8_t action);
 struct Sample {
   uint32_t seq=0, atUs=0, rttUs=0;
   int8_t rssiMaster=0, rssiSlave=0;
@@ -83,7 +86,7 @@ struct Metrics {
 bool heartbeatFresh() {return network.ready()&&lastProbe&&millis()-probeReceivedAt<OFFLINE_MS;}
 uint32_t freshSession(){uint32_t n=esp_random();return n?n:1;}
 void networkSessionChanged() {
-  if(showRunner.active)showRecovery=true;
+  resetRemoteNetwork();  if(showRunner.active)showRecovery=true;
   networkEpochSeen=network.generation;bootSession=freshSession();
   lastProbe=lastProbeSeq=probeReceivedAt=helloAt=debugUntil=0;
   lastControlId=0;lastControlResult=APPLIED;masterKnown=false;assignedId=0;
@@ -159,18 +162,9 @@ void sendPwmReport(){
   p.config=actors.pwmStatus();p.frequency=actors.pwmFrequency();p.reportSeq=++pwmReportSeq;if(!p.reportSeq)p.reportSeq=++pwmReportSeq;network.send(masterMAC,(const uint8_t*)&p,sizeof(p));
 }
 void led(Health h) {
-  uint32_t now=millis(); uint8_t r=0,g=0,b=0;
-  if(identifyUntil && (int32_t)(identifyUntil-now)>0) {if((now/150)%2)r=g=b=20;}
-  else switch(h) {
-    case EXCELLENT:b=20;break;
-    case GOOD:g=20;break;
-    case MARGINAL:r=18;g=10;break;
-    case BAD:r=20;break;
-    case OFFLINE:if((now/300)%2)r=24;break;
-    default:r=g=b=((now/700)%2)?4:0;
-  }
-  static uint32_t previous=0xffffffff; uint32_t color=(r<<16)|(g<<8)|b;
-  if(previous!=color) {rgbLedWrite(RGB_PIN,r,g,b);previous=color;}
+  uint32_t now=millis(),color=networkLedColor(h,now,identifyUntil&&(int32_t)(identifyUntil-now)>0);
+  static uint32_t previous=0xffffffff;
+  if(previous!=color){rgbLedWrite(RGB_PIN,(color>>16)&255,(color>>8)&255,color&255);previous=color;}
 }
 Metrics metrics(Node &n) {
   Metrics m;float times[WINDOW];int nt=0;
@@ -207,7 +201,7 @@ int findNode(const uint8_t *mac,bool create) {
   return -1;
 }
 void resetStats() {
-  loopGapMaxUs=0;testStart=millis();measurementStoppedAt=measurementsRunning?0:testStart;txErrors=0;rxDrops=0;network.rxInvalid=0;
+  resetRemoteStats();  loopGapMaxUs=0;testStart=millis();measurementStoppedAt=measurementsRunning?0:testStart;txErrors=0;rxDrops=0;network.rxInvalid=0;
   for(int i=0;i<MAX_NODES;i++) {
     Node &n=nodes[i]; for(auto &s:n.samples)s=Sample{};
     // Sequence numbers are NOT reused: outstanding old replies must not match new tests.
@@ -220,7 +214,7 @@ void setMeasurements(bool running) {
   measurementsRunning=running;
   if(running)resetStats();
   else {
-    measurementStoppedAt=millis();
+    measurementStoppedAt=millis();pauseRemoteMeasurements();
     // Do not turn requests in flight into artificial losses when pausing the test.
     for(auto &n:nodes)for(auto &s:n.samples)if(s.used&&!s.received&&!s.expired)s.used=false;
   }
@@ -281,10 +275,11 @@ void finishNetworkReset(){
     String mk="mac"+String(i),nk="name"+String(i),dk="dim"+String(i);
     prefs.remove(mk.c_str());prefs.remove(nk.c_str());prefs.remove(dk.c_str());nodes[i]=Node{};
   }
-  bootSession=freshSession();network.clearPeers();discoverAt=0;networkResetActive=false;resetStats();
+  resetRemoteNetwork();bootSession=freshSession();network.clearPeers();discoverAt=0;networkResetActive=false;resetStats();
 }
 void handleMasterRx(const Rx &r) {
   if(r.p.session!=bootSession||!r.p.deviceBoot)return;
+  if(handleRemoteRx(r))return;
   if(r.p.type==SCORE_ACK){handleShowAck(r);return;}
   if(r.p.type==PWM_REPORT){
     int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];
@@ -394,7 +389,7 @@ void linkTick() {
   }
   uint32_t now=millis();
   if(RADIO_MASTER) {
-    commandTick();showMasterTick();consoleButtons();
+    commandTick();showMasterTick();consoleButtons();remoteMasterTick();
     static uint32_t sendAt=0;
     if(network.ready()&&!networkResetActive&&(int32_t)(now-discoverAt)>=0){
       Packet p=packet(DISCOVER,bootSession);sendPacket(BROADCAST,p);sendLegacy(BROADCAST,p);discoverAt=now+2000;
@@ -483,6 +478,7 @@ String statusJSON(bool history) {
   j+="]";
   if(!RADIO_MASTER)j+=",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics());
   if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.active?String(showMaster.step+1):String("null"))+",\"preview\":"+String(showMaster.isPreview?"true":"false")+"}";
+  if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
   j+="}";return j;
 }
 bool validForm() {
@@ -646,5 +642,6 @@ void loop() {
   if(restartAt&&(int32_t)(millis()-restartAt)>=0)ESP.restart();
   delay(1);
 }
+#include "remote_master.h"
 #include "console_routes.h"
 

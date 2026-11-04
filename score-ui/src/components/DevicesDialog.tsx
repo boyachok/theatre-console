@@ -4,6 +4,7 @@ import type { Device, Parameter, Project } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
 import { clamp, clone, createDevice, parameterCode } from '../domain/project.ts';
 import { Modal } from './Modal.tsx';
+import { useConfirm } from './Confirm.tsx';
 import type { NetworkTransport } from '../transport/network.ts';
 export function DevicesDialog({
   project,
@@ -18,6 +19,7 @@ export function DevicesDialog({
   onClose: () => void;
   network: NetworkTransport;
 }) {
+  const ask = useConfirm();
   const status = useSyncExternalStore(network.subscribe, network.getSnapshot);
   const [devices, setDevices] = useState(() => clone(project.devices));
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
@@ -40,8 +42,12 @@ export function DevicesDialog({
     setDevices((list) => [...list, device]);
     setSelected(device.id);
   };
-  const remove = (device: Device) => {
-    if (devices.length <= 1 || !confirm(`Удалить прибор «${device.name}» из партитуры?`)) return;
+  const remove = async (device: Device) => {
+    if (
+      devices.length <= 1 ||
+      !(await ask({ message: `Удалить прибор «${device.name}» из партитуры?`, accept: 'Удалить' }))
+    )
+      return;
     setDevices((list) => list.filter((d) => d.id !== device.id));
     if (selected === device.id) setSelected(null);
   };
@@ -213,11 +219,13 @@ export function DevicesDialog({
                             {device.mac && !status.devices[device.mac] && (
                               <option value={device.mac}>{device.mac}</option>
                             )}
-                            {Object.entries(status.devices).map(([mac, info]) => (
-                              <option key={mac} value={mac}>
-                                {info.name ?? mac} · {info.ip ?? mac}
-                              </option>
-                            ))}
+                            {Object.entries(status.devices)
+                              .filter(([, info]) => info.role !== 'remote')
+                              .map(([mac, info]) => (
+                                <option key={mac} value={mac}>
+                                  {info.name ?? mac} · {info.ip ?? mac}
+                                </option>
+                              ))}
                           </select>
                         </label>
                         <div className="device-general-fields">

@@ -14,7 +14,7 @@ constexpr uint32_t MAGIC=0x32544753;
 constexpr uint8_t PROTOCOL=4,LEGACY_PROTOCOL=3;
 constexpr int MAX_NODES=10,WINDOW=120;
 constexpr uint32_t POLL_MS=500,TIMEOUT_MS=400,OFFLINE_MS=3000;
-enum Type : uint8_t {DISCOVER=1,HELLO,PROBE,ECHO,IDENTIFY,MAINTENANCE,COMMAND,COMMAND_ACK,DEBUG_REQUEST,DEBUG_REPORT,PWM_REPORT,SCORE_STORE,SCORE_RUN,SCORE_ACK};
+enum Type : uint8_t {DISCOVER=1,HELLO,PROBE,ECHO,IDENTIFY,MAINTENANCE,COMMAND,COMMAND_ACK,DEBUG_REQUEST,DEBUG_REPORT,PWM_REPORT,SCORE_STORE,SCORE_RUN,SCORE_ACK,REMOTE_HELLO,REMOTE_PING,REMOTE_PONG,REMOTE_EVENT,REMOTE_ACK};
 struct __attribute__((packed)) DebugPacket {
   uint32_t magic;uint8_t protocol,type;uint16_t size;
   uint32_t session,deviceBoot,uptime;uint8_t nodeId,padding[3];UartStats uart;
@@ -51,6 +51,8 @@ inline LegacyPacket legacyPacket(const Packet &p){
 inline Packet expandPacket(const LegacyPacket &old){
   Packet p{};std::memcpy(&p,&old,40);p.state=expandLegacy(old.state);return p;
 }
+inline bool remoteType(uint8_t type){return type>=REMOTE_HELLO&&type<=REMOTE_ACK;}
+inline bool remoteTag(const Packet &p){return p.padding[0]=='R'&&p.padding[1]==1;}
 inline Packet packet(Type type,uint32_t session,uint32_t seq=0){
   Packet p{};p.magic=MAGIC;p.protocol=PROTOCOL;p.size=sizeof(p);p.type=type;p.session=session;p.seq=seq;p.uptime=millis();return p;
 }

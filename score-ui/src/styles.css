@@ -1919,6 +1919,26 @@ select:focus {
     max-width: 145px;
   }
 }
+.confirm-modal {
+  width: min(440px, 100%);
+  z-index: 110;
+}
+.modal-backdrop:has(.confirm-modal) {
+  z-index: 120;
+}
+.confirm-content {
+  padding: 20px;
+  line-height: 1.5;
+  font-size: 14px;
+}
+.confirm-remember {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  font-size: 12px;
+  cursor: pointer;
+}
 @media (prefers-reduced-motion: reduce) {
   .player-button.holding:after {
     animation: none;

@@ -93,3 +93,54 @@ test('real transport sends publication/workspace and confirmed API calls without
     globalThis.fetch = original;
   }
 });
+test('remote telemetry is real transport data, never an assignable actuator', async () => {
+  const original = globalThis.fetch;
+  let posts = 0;
+  globalThis.fetch = async (input, options) => {
+    if (options?.method === 'POST') posts++;
+    return String(input).endsWith('/status')
+      ? Response.json({
+          role: 'master',
+          version: INTERFACE_VERSION,
+          token: 'test',
+          serverMs: 1000,
+          mac: 'A0:85:E3:E2:BC:D4',
+          measuring: true,
+          console: { version: 0, step: null },
+          nodes: [],
+          remotes: [
+            {
+              role: 'remote',
+              mac,
+              name: 'remote',
+              ip: '192.168.50.88',
+              ageMs: 10,
+              sent: 4,
+              received: 4,
+              timeouts: 0,
+              p50: 12,
+              p95: 15,
+              rssiSlave: -60,
+              worstRssi: -60,
+            },
+          ],
+        })
+      : Response.json(null);
+  };
+  try {
+    const transport = new EspConsoleTransport();
+    await transport.loadWorkspace();
+    const report = transport.getSnapshot().devices[mac];
+    assert.equal(report.role, 'remote');
+    assert.equal(report.rttMs, 12);
+    assert.equal(report.rssi, -60);
+    assert.equal(report.confirmedStep, null);
+    assert.equal(report.scoreVersion, undefined);
+    const project = createProject();
+    project.devices[0].mac = mac;
+    await assert.rejects(() => transport.publish(project, null), /пульт/);
+    assert.equal(posts, 0);
+  } finally {
+    globalThis.fetch = original;
+  }
+});

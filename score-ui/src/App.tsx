@@ -48,6 +48,7 @@ import { DevicesDialog } from './components/DevicesDialog.tsx';
 import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { NetworkDialog } from './components/NetworkDialog.tsx';
 import { Modal } from './components/Modal.tsx';
+import { useConfirm } from './components/Confirm.tsx';
 import { StepPlayer } from './components/StepPlayer.tsx';
 import { INTERFACE_VERSION, PRODUCT_NAME } from './version.ts';
 const previewSignature = (project: Project, step: Step) =>
@@ -63,6 +64,7 @@ function startup() {
   }
 }
 export default function App() {
+  const ask = useConfirm();
   const [initial] = useState(startup),
     [workspace, setWorkspace] = useState<Workspace>(initial.workspace);
   const project = workspace.draft,
@@ -240,10 +242,24 @@ export default function App() {
         ?.scrollIntoView({ block: 'nearest', inline: 'nearest' }),
     );
   }, []);
-  const remove = () => {
-    const index = project.steps.findIndex((s) => s.id === selectedStepId);
-    if (project.steps.length <= 1 || !confirm(`Удалить шаг ${index + 1}?`)) return;
-    const steps = project.steps.filter((s) => s.id !== selectedStepId);
+  const remove = async () => {
+    const id = selectedRef.current,
+      p = latest.current.draft,
+      number = p.steps.findIndex((s) => s.id === id);
+    if (
+      p.steps.length <= 1 ||
+      number < 0 ||
+      !(await ask({
+        message: `Удалить шаг ${number + 1}?`,
+        accept: 'Удалить',
+        remember: 'delete-step',
+      }))
+    )
+      return;
+    const current = latest.current.draft,
+      index = current.steps.findIndex((s) => s.id === id);
+    if (index < 0 || current.steps.length <= 1) return;
+    const steps = current.steps.filter((s) => s.id !== id);
     setWorkspace((w) => ({ ...w, draft: touch(w.draft, { steps }) }));
     setSelectedStepId(steps[Math.min(index, steps.length - 1)].id);
     setSelection(null);
@@ -320,7 +336,8 @@ export default function App() {
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('Файл больше 20 МБ');
       const next = parseBackup(await file.text());
-      if (!confirm('Заменить текущую партитуру из JSON?')) return;
+      if (!(await ask({ message: 'Заменить текущую партитуру из JSON?', accept: 'Заменить' })))
+        return;
       setWorkspace({ ...next, interfaceVersion: INTERFACE_VERSION });
       setSaveBlocked(false);
       setSelectedStepId(next.draft.steps[0].id);

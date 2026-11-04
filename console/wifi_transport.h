@@ -13,7 +13,7 @@ class WifiTransport {
   WiFiUDP udp;
   LanPeers peers;
   IPAddress bound;
-  bool active=false,mdns=false;
+  bool active=false,mdns=false,webService=true;
   uint32_t lastRetry=0,lastBind=0;
   void closeLink() {
     udp.stop();if(mdns)MDNS.end();mdns=false;active=false;bound=IPAddress();peers.clear();generation++;
@@ -23,7 +23,8 @@ public:
   String hostname;
   uint32_t generation=0,txErrors=0,rxInvalid=0;
   std::atomic<uint32_t> rxDrops{0};
-  void begin(bool master) {
+  void begin(bool master,const char *prefix=nullptr,bool advertiseWeb=true) {
+    webService=advertiseWeb;
     WiFi.persistent(false);WiFi.mode(WIFI_STA);
     // Arduino 3.x creates the STA netif asynchronously. Wait before reading its MAC
     // or setting hostname; WiFi.mode() alone can still leave the netif null.
@@ -31,7 +32,7 @@ public:
     WiFi.disconnect(false,false);
     if(!WiFi.macAddress(mac)||!validSourceMAC(mac))esp_read_mac(mac,ESP_MAC_WIFI_STA);
     char suffix[7];snprintf(suffix,sizeof(suffix),"%02x%02x%02x",mac[3],mac[4],mac[5]);
-    hostname=String(master?"stage-master-":"stage-slave-")+suffix;
+    hostname=String(prefix?prefix:(master?"stage-master-":"stage-slave-"))+suffix;
     WiFi.setHostname(hostname.c_str());WiFi.begin(STAGE_WIFI_SSID,STAGE_WIFI_PASSWORD);lastRetry=millis();
   }
   void clearPeers(){peers.clear();udp.clear();}
@@ -54,8 +55,9 @@ public:
     lastBind=now;
     if(!udp.begin(LAN_PORT)){txErrors++;return;}
     bound=WiFi.localIP();active=true;peers.clear();generation++;
-    mdns=MDNS.begin(hostname.c_str());if(mdns)MDNS.addService("http","tcp",80);
-    Serial.printf("LAN http://%s  http://%s.local  SSID=%s  channel=%d  UDP=%u\n",bound.toString().c_str(),hostname.c_str(),STAGE_WIFI_SSID,WiFi.channel(),LAN_PORT);
+    mdns=MDNS.begin(hostname.c_str());if(mdns&&webService)MDNS.addService("http","tcp",80);
+    if(webService)Serial.printf("LAN http://%s  http://%s.local  SSID=%s  channel=%d  UDP=%u\n",bound.toString().c_str(),hostname.c_str(),STAGE_WIFI_SSID,WiFi.channel(),LAN_PORT);
+    else Serial.printf("LAN role=remote IP=%s host=%s.local SSID=%s channel=%d UDP=%u (no HTTP server)\n",bound.toString().c_str(),hostname.c_str(),STAGE_WIFI_SSID,WiFi.channel(),LAN_PORT);
   }
   bool send(const uint8_t *destination,const uint8_t *data,size_t length) {
     if(!ready())return false;

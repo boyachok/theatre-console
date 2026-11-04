@@ -5,7 +5,7 @@ import { createProject, clone, fingerprint, duplicateStep, updateCell } from './
 import { parseBackup } from './validation.ts';
 import { compileDevices } from './compile.ts';
 import { INTERFACE_VERSION, PRODUCT_NAME } from '../version.ts';
-test('one product release is shared by web and both firmware roles', () => {
+test('one product release is shared by web and master/slave/remote firmware roles', () => {
   const release = JSON.parse(
     readFileSync(new URL('../../../version.json', import.meta.url), 'utf8'),
   );
