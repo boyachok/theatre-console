@@ -44,6 +44,18 @@ export function createDevice(index: number): Device {
     ledCount: 60,
   };
 }
+export function deviceProfile(device: Device, profile: 'standard' | 'helmet'): Device {
+  return {
+    ...device,
+    profile,
+    dimmers: device.dimmers.map((p) => ({
+      ...p,
+      enabled: profile === 'helmet' ? false : p.enabled,
+    })),
+    relays: device.relays.map((p) => ({ ...p, enabled: profile === 'helmet' ? false : p.enabled })),
+    audio: { ...device.audio, name: profile === 'helmet' ? 'Голос' : 'Звук' },
+  };
+}
 export function upgradeDraft(project: Project): Project {
   if (project.devices.every((d) => d.dimmers.length === 12)) return project;
   const next = clone(project);
@@ -165,8 +177,12 @@ export function columnsFor(project: Project, deviceId: string): Column[] {
   return project.devices
     .filter((d) => deviceId === 'all' || d.id === deviceId)
     .flatMap((device) => [
-      ...device.dimmers.map((parameter) => ({ device, parameter, kind: 'dimmer' as const })),
-      ...device.relays.map((parameter) => ({ device, parameter, kind: 'relay' as const })),
+      ...(device.profile === 'helmet'
+        ? []
+        : device.dimmers.map((parameter) => ({ device, parameter, kind: 'dimmer' as const }))),
+      ...(device.profile === 'helmet'
+        ? []
+        : device.relays.map((parameter) => ({ device, parameter, kind: 'relay' as const }))),
       { device, parameter: device.strip, kind: 'strip' as const },
       { device, parameter: device.audio, kind: 'audio' as const },
     ])
@@ -197,7 +213,7 @@ export function parameterCode(device: Device, parameter: Parameter): string {
   if (dim >= 0) return `DIM${dim + 1}`;
   const relay = device.relays.findIndex((p) => p.id === parameter.id);
   if (relay >= 0) return `REL${relay + 1}`;
-  return parameter.id === device.strip.id ? 'LED' : 'SOU1';
+  return parameter.id === device.strip.id ? 'LED' : device.profile === 'helmet' ? 'VOICE' : 'SOU1';
 }
 export function touch(project: Project, patch: Partial<Project>): Project {
   return {

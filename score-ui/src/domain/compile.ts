@@ -35,7 +35,8 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
       return (
         device.dimmers.some((p) => p.enabled && c.dimmers[p.id].value > 0) ||
         device.relays.some((p) => p.enabled && c.relays[p.id].on) ||
-        (device.audio.enabled && c.audio.track !== null) ||
+        (device.audio.enabled &&
+          (device.profile === 'helmet' ? !!c.audio.voiceOn : c.audio.track !== null)) ||
         (device.strip.enabled && effectiveStrip(project, step, device.id).action === 'play')
       );
     });
@@ -62,7 +63,7 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
         relayMask: device.relays.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),
         d: Array.from({ length: 12 }, (_, i) => {
           const p = device.dimmers[i];
-          return p
+          return p && device.profile !== 'helmet'
             ? [
                 percentToDuty(c.dimmers[p.id].value),
                 ms(c.dimmers[p.id].fadeIn ?? step.timings.lightIn),
@@ -70,19 +71,26 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
               ]
             : [0, 0, 0];
         }),
-        r: device.relays.map((p) => [
-          Number(c.relays[p.id].on),
-          p.relayMode ?? 0,
-          ms(c.relays[p.id].delayOn ?? step.timings.relayOn),
-          ms(c.relays[p.id].delayOff ?? step.timings.relayOff),
-        ]),
-        a: [
-          c.audio.track ?? 0,
-          Math.round((c.audio.volume * 30) / 100),
-          Number(device.audio.enabled),
-          ms(c.audio.fadeIn ?? step.timings.audioIn),
-          ms(c.audio.fadeOut ?? step.timings.audioOut),
-        ],
+        r: device.relays.map((p) =>
+          device.profile === 'helmet'
+            ? [0, 0, 0, 0]
+            : [
+                Number(c.relays[p.id].on),
+                p.relayMode ?? 0,
+                ms(c.relays[p.id].delayOn ?? step.timings.relayOn),
+                ms(c.relays[p.id].delayOff ?? step.timings.relayOff),
+              ],
+        ),
+        a:
+          device.profile === 'helmet'
+            ? [0, 0, Number(device.audio.enabled && !!c.audio.voiceOn), 0, 0]
+            : [
+                c.audio.track ?? 0,
+                Math.round((c.audio.volume * 30) / 100),
+                Number(device.audio.enabled),
+                ms(c.audio.fadeIn ?? step.timings.audioIn),
+                ms(c.audio.fadeOut ?? step.timings.audioOut),
+              ],
         stripAction: action,
         s: [
           enabled,

@@ -360,6 +360,40 @@ try {
   assert.equal(await deletion.locator('.step-heading').count(), 3);
   assert.equal(await deletion.evaluate(() => window.nativeConfirmCalls), 0);
   await confirmContext.close();
+  const helmetContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const helmet = await helmetContext.newPage();
+  watch(helmet);
+  await helmet.goto(base);
+  await helmet.waitForSelector('.parameter-row');
+  await helmet.getByRole('button', { name: 'Приборы', exact: true }).click();
+  const helmetModal = helmet.getByRole('dialog', { name: 'Приборы', exact: true });
+  await helmetModal.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
+  await helmetModal.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
+  const hardware = helmetModal.locator('tr[data-config-device]').first();
+  assert.equal(await hardware.locator('input:disabled').count(), 14);
+  assert.equal(await helmetModal.locator('.parameter-config').count(), 2);
+  await helmetModal.getByLabel('Точек WS2811', { exact: true }).fill('127');
+  await helmetModal.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  assert.equal(await helmet.locator('.parameter-row').count(), 146);
+  const voiceCell = helmet
+    .locator('.parameter-row[data-parameter="audio"]')
+    .first()
+    .locator('td')
+    .first()
+    .locator('button');
+  await voiceCell.click();
+  assert.equal(await voiceCell.getAttribute('aria-pressed'), 'true');
+  assert.equal(await helmet.getByLabel('Номер трека', { exact: true }).count(), 0);
+  await helmet
+    .getByText('Аудиомодуль пока не подключён', { exact: false })
+    .waitFor({ state: 'visible' });
+  await voiceCell.click();
+  assert.equal(await voiceCell.getAttribute('aria-pressed'), 'false');
+  await pause(400);
+  await helmet.reload();
+  await helmet.waitForSelector('.parameter-row');
+  assert.equal(await helmet.locator('.parameter-row').count(), 146);
+  await helmetContext.close();
   assert.equal(failures.length, 0, failures.join('\n'));
   assert.equal(externals.length, 0, externals.join('\n'));
   console.log(

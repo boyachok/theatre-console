@@ -45,6 +45,14 @@ const remote = {
   worstRssi: -65,
   scoreSupported: false,
 };
+const helmet = {
+  ...peer,
+  role: 'helmet',
+  mac: '30:30:F9:32:02:30',
+  name: 'Helmet bench',
+  ip: '192.168.50.65',
+  voiceAvailable: false,
+};
 const status = {
     role: 'master',
     version: INTERFACE_VERSION,
@@ -53,7 +61,7 @@ const status = {
     serverMs: 0,
     measuring: true,
     console: { version: 0, fingerprint: '', step: null, preview: false },
-    nodes: [peer],
+    nodes: [peer, helmet],
     remotes: [remote],
   },
   calls = [],
@@ -157,7 +165,7 @@ try {
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
-  assert.equal(await panel.locator('tbody tr').count(), 2);
+  assert.equal(await panel.locator('tbody tr').count(), 3);
   const remoteRow = panel.locator('tbody tr').filter({ hasText: 'remote' });
   assert.equal(await remoteRow.count(), 1);
   await panel.getByRole('button', { name: 'Мигать remote', exact: true }).click();
@@ -194,7 +202,20 @@ try {
       .count(),
     0,
   );
+  assert.equal(
+    await deviceSettings
+      .getByLabel('Контроллер прибора', { exact: true })
+      .locator(`option[value="${helmet.mac}"]`)
+      .count(),
+    0,
+  );
+  await deviceSettings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
+  const helmetBinding = deviceSettings.getByLabel('Контроллер прибора', { exact: true });
+  assert.equal(await helmetBinding.locator(`option[value="${mac}"]`).count(), 0);
+  assert.equal(await helmetBinding.locator(`option[value="${remote.mac}"]`).count(), 0);
+  assert.equal(await helmetBinding.locator(`option[value="${helmet.mac}"]`).count(), 1);
   await deviceSettings.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await page.getByRole('button', { name: 'Сдублировать шаг', exact: true }).click();
   await page.getByRole('button', { name: 'Опубликовать', exact: true }).click();
   await page.waitForFunction(() =>
     document.querySelector('.version-chip')?.textContent.includes('v1'),
@@ -203,6 +224,19 @@ try {
   assert.equal(publication.version, 1);
   assert.equal(publication.devices[0].mac, mac);
   assert.equal(peer.scoreVersion, 0); // HTTP success does not fabricate slave delivery.
+  await page.locator('.step-heading').first().click();
+  const previewCount = calls.filter((c) => c.path.endsWith('/preview')).length;
+  // Emulate the real master's status change after a remote action, not GPIO/RF.
+  status.console.step = 2;
+  status.console.preview = false;
+  await page.waitForFunction(
+    () => document.querySelector('#playing-step option:checked')?.textContent === '2',
+  );
+  assert.equal(
+    await page.locator('.step-heading.active-column').getAttribute('data-step-id'),
+    project.steps[1]?.id ?? workspace.published.project.steps[1].id,
+  );
+  assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, previewCount);
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   await page.getByRole('button', { name: 'Сбросить сеть', exact: true }).click();
   await page

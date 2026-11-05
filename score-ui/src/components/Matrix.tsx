@@ -109,6 +109,23 @@ const ScoreCell = memo(function ScoreCell({
         {on ? 'ВКЛ' : 'ВЫКЛ'}
       </button>
     );
+  } else if (kind === 'audio' && device.profile === 'helmet') {
+    const on = !!cue.audio.voiceOn;
+    content = (
+      <button
+        className={`value-button ${on ? 'lit' : 'zero'}`}
+        aria-label={label}
+        aria-pressed={on}
+        title="Запрос голоса; звуковой модуль пока не подключён"
+        onClick={() => {
+          onChangeCell(cell, { voiceOn: !on });
+          onSelectCell(cell);
+        }}
+      >
+        <Power size={12} />
+        {on ? 'ВКЛ' : 'ВЫКЛ'}
+      </button>
+    );
   } else if (kind === 'audio') {
     const track = cue.audio.track;
     content = (

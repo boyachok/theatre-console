@@ -37,6 +37,10 @@ export function validateProject(value: unknown): asserts value is Project {
   for (const device of value.devices) {
     ensure(object(device) && text(device.id) && text(device.name), 'Неверный прибор');
     ensure(
+      device.profile === undefined || ['standard', 'helmet'].includes(device.profile),
+      'Неверный тип прибора',
+    );
+    ensure(
       Array.isArray(device.dimmers) &&
         [8, 12].includes(device.dimmers.length) &&
         Array.isArray(device.relays) &&
@@ -76,6 +80,11 @@ export function validateProject(value: unknown): asserts value is Project {
         'Неверный параметр прибора',
       );
     unique(parameters);
+    if (device.profile === 'helmet')
+      ensure(
+        [...device.dimmers, ...device.relays].every((p: any) => !p.enabled),
+        'Helmet не поддерживает диммеры и реле',
+      );
     ensure(
       Number.isInteger(device.ledCount) && device.ledCount > 0 && device.ledCount <= 10000,
       'Неверная длина ленты',
@@ -137,7 +146,8 @@ export function validateProject(value: unknown): asserts value is Project {
       }
       const a = cue.audio;
       ensure(
-        (a.track === null || (Number.isInteger(a.track) && a.track > 0 && a.track <= 65535)) &&
+        (a.voiceOn === undefined || typeof a.voiceOn === 'boolean') &&
+          (a.track === null || (Number.isInteger(a.track) && a.track > 0 && a.track <= 65535)) &&
           (a.lastTrack === undefined ||
             (Number.isInteger(a.lastTrack) && a.lastTrack > 0 && a.lastTrack <= 65535)) &&
           number(a.volume, 100) &&

@@ -2,7 +2,7 @@ import { Fragment, useState, useSyncExternalStore } from 'react';
 import { Check, Plus, Settings2, Trash2 } from 'lucide-react';
 import type { Device, Parameter, Project } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
-import { clamp, clone, createDevice, parameterCode } from '../domain/project.ts';
+import { clamp, clone, createDevice, deviceProfile, parameterCode } from '../domain/project.ts';
 import { Modal } from './Modal.tsx';
 import { useConfirm } from './Confirm.tsx';
 import type { NetworkTransport } from '../transport/network.ts';
@@ -137,6 +137,10 @@ export function DevicesDialog({
                         type="checkbox"
                         aria-label={`${device.name} · ${parameterCode(device, parameter)}`}
                         checked={parameter.enabled}
+                        disabled={
+                          device.profile === 'helmet' &&
+                          [...device.dimmers, ...device.relays].some((p) => p.id === parameter.id)
+                        }
                         onChange={(e) =>
                           parameterChange(device, parameter, { enabled: e.target.checked })
                         }
@@ -163,7 +167,7 @@ export function DevicesDialog({
                 </tr>
                 {selected === device.id && (
                   <tr className="device-details">
-                    <td colSpan={14}>
+                    <td colSpan={18}>
                       <div className="device-detail-form">
                         <div className="device-detail-top">
                           <label className="field">
@@ -174,6 +178,23 @@ export function DevicesDialog({
                               maxLength={120}
                               onChange={(e) => update(device.id, { name: e.target.value })}
                             />
+                          </label>
+                          <label className="field">
+                            <span>Тип прибора</span>
+                            <select
+                              aria-label="Тип прибора"
+                              value={device.profile ?? 'standard'}
+                              onChange={(e) =>
+                                update(device.id, {
+                                  ...deviceProfile(device, e.target.value as 'standard' | 'helmet'),
+                                  mac: null,
+                                  ip: null,
+                                })
+                              }
+                            >
+                              <option value="standard">Стандартный</option>
+                              <option value="helmet">Helmet · лента + голос</option>
+                            </select>
                           </label>
                           <label className="field">
                             <span>IP</span>
@@ -220,7 +241,13 @@ export function DevicesDialog({
                               <option value={device.mac}>{device.mac}</option>
                             )}
                             {Object.entries(status.devices)
-                              .filter(([, info]) => info.role !== 'remote')
+                              .filter(
+                                ([, info]) =>
+                                  info.role !== 'remote' &&
+                                  (device.profile === 'helmet'
+                                    ? info.role === 'helmet'
+                                    : info.role !== 'helmet'),
+                              )
                               .map(([mac, info]) => (
                                 <option key={mac} value={mac}>
                                   {info.name ?? mac} · {info.ip ?? mac}
@@ -259,53 +286,60 @@ export function DevicesDialog({
                           </label>
                         </div>
                         <div className="parameter-fine-grid">
-                          {parameters(device).map((p) => {
-                            const code = parameterCode(device, p);
-                            return (
-                              <div className="parameter-config" key={p.id}>
-                                <code>{code}</code>
-                                <input
-                                  aria-label={`Название ${code}`}
-                                  value={p.name}
-                                  maxLength={120}
-                                  onChange={(e) =>
-                                    parameterChange(device, p, { name: e.target.value })
-                                  }
-                                />
-                                <select
-                                  aria-label={`Цвет ${code}`}
-                                  value={p.color}
-                                  onChange={(e) =>
-                                    parameterChange(device, p, {
-                                      color: e.target.value as Parameter['color'],
-                                    })
-                                  }
-                                  style={{ color: COLORS[p.color].hex }}
-                                >
-                                  {Object.entries(COLORS).map(([key, color]) => (
-                                    <option key={key} value={key}>
-                                      {color.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                {device.relays.some((item) => item.id === p.id) && (
+                          {parameters(device)
+                            .filter(
+                              (p) =>
+                                device.profile !== 'helmet' ||
+                                p.id === device.strip.id ||
+                                p.id === device.audio.id,
+                            )
+                            .map((p) => {
+                              const code = parameterCode(device, p);
+                              return (
+                                <div className="parameter-config" key={p.id}>
+                                  <code>{code}</code>
+                                  <input
+                                    aria-label={`Название ${code}`}
+                                    value={p.name}
+                                    maxLength={120}
+                                    onChange={(e) =>
+                                      parameterChange(device, p, { name: e.target.value })
+                                    }
+                                  />
                                   <select
-                                    aria-label={`Уровень ${code}`}
-                                    value={p.relayMode ?? 0}
+                                    aria-label={`Цвет ${code}`}
+                                    value={p.color}
                                     onChange={(e) =>
                                       parameterChange(device, p, {
-                                        relayMode: Number(e.target.value) as 0 | 1 | 2,
+                                        color: e.target.value as Parameter['color'],
                                       })
                                     }
+                                    style={{ color: COLORS[p.color].hex }}
                                   >
-                                    <option value="0">Не настроено</option>
-                                    <option value="1">HIGH включает</option>
-                                    <option value="2">LOW включает</option>
+                                    {Object.entries(COLORS).map(([key, color]) => (
+                                      <option key={key} value={key}>
+                                        {color.name}
+                                      </option>
+                                    ))}
                                   </select>
-                                )}
-                              </div>
-                            );
-                          })}
+                                  {device.relays.some((item) => item.id === p.id) && (
+                                    <select
+                                      aria-label={`Уровень ${code}`}
+                                      value={p.relayMode ?? 0}
+                                      onChange={(e) =>
+                                        parameterChange(device, p, {
+                                          relayMode: Number(e.target.value) as 0 | 1 | 2,
+                                        })
+                                      }
+                                    >
+                                      <option value="0">Не настроено</option>
+                                      <option value="1">HIGH включает</option>
+                                      <option value="2">LOW включает</option>
+                                    </select>
+                                  )}
+                                </div>
+                              );
+                            })}
                         </div>
                       </div>
                     </td>

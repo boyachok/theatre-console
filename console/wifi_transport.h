@@ -57,7 +57,7 @@ public:
     bound=WiFi.localIP();active=true;peers.clear();generation++;
     mdns=MDNS.begin(hostname.c_str());if(mdns&&webService)MDNS.addService("http","tcp",80);
     if(webService)Serial.printf("LAN http://%s  http://%s.local  SSID=%s  channel=%d  UDP=%u\n",bound.toString().c_str(),hostname.c_str(),STAGE_WIFI_SSID,WiFi.channel(),LAN_PORT);
-    else Serial.printf("LAN role=remote IP=%s host=%s.local SSID=%s channel=%d UDP=%u (no HTTP server)\n",bound.toString().c_str(),hostname.c_str(),STAGE_WIFI_SSID,WiFi.channel(),LAN_PORT);
+    else Serial.printf("LAN IP=%s host=%s.local SSID=%s channel=%d UDP=%u (no HTTP server)\n",bound.toString().c_str(),hostname.c_str(),STAGE_WIFI_SSID,WiFi.channel(),LAN_PORT);
   }
   bool send(const uint8_t *destination,const uint8_t *data,size_t length) {
     if(!ready())return false;

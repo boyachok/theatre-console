@@ -58,7 +58,10 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
             </span>
           ))}
       </div>
-      {device.audio.enabled && (
+      {device.profile === 'helmet' && device.audio.enabled && (
+        <p className="muted">Голос: модуль не подключён</p>
+      )}
+      {device.audio.enabled && device.profile !== 'helmet' && (
         <div className="preview-audio">
           <span>{device.audio.name}</span>
           <b>{runtime.audio.track === null ? '—' : `№ ${runtime.audio.track}`}</b>

@@ -166,7 +166,28 @@ export function Inspector({
               {fadeFields('light')}
             </>
           )}
-          {selection.kind === 'audio' && (
+          {selection.kind === 'audio' && device.profile === 'helmet' && (
+            <Section title="Обработка голоса">
+              <div className="segmented">
+                <button
+                  className={cue.audio.voiceOn ? 'selected' : ''}
+                  onClick={() => change({ voiceOn: true })}
+                >
+                  ВКЛ
+                </button>
+                <button
+                  className={!cue.audio.voiceOn ? 'selected' : ''}
+                  onClick={() => change({ voiceOn: false })}
+                >
+                  ВЫКЛ
+                </button>
+              </div>
+              <p className="muted">
+                Только запрос состояния. Аудиомодуль пока не подключён; реального звука нет.
+              </p>
+            </Section>
+          )}
+          {selection.kind === 'audio' && device.profile !== 'helmet' && (
             <>
               <NumberField
                 label="Номер трека"

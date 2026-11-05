@@ -5,7 +5,7 @@ import { createProject, clone, fingerprint, duplicateStep, updateCell } from './
 import { parseBackup } from './validation.ts';
 import { compileDevices } from './compile.ts';
 import { INTERFACE_VERSION, PRODUCT_NAME } from '../version.ts';
-test('one product release is shared by web and master/slave/remote firmware roles', () => {
+test('one product release is shared by web and master/slave/remote/helmet firmware roles', () => {
   const release = JSON.parse(
     readFileSync(new URL('../../../version.json', import.meta.url), 'utf8'),
   );
@@ -13,6 +13,10 @@ test('one product release is shared by web and master/slave/remote firmware role
   assert.equal(PRODUCT_NAME, 'Theatre console');
   const header = readFileSync(new URL('../../../console/release.h', import.meta.url), 'utf8');
   assert(header.includes(`THEATRE_VERSION "${release.version}"`));
+  assert.equal(
+    readFileSync(new URL('../../../helmet/partitions.csv', import.meta.url), 'utf8'),
+    readFileSync(new URL('../../../console/partitions.csv', import.meta.url), 'utf8'),
+  );
 });
 test('8-channel backup migrates only the draft; immutable publication keeps its fingerprint', () => {
   const old = createProject();

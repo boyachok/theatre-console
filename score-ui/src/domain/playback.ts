@@ -134,7 +134,7 @@ export class PreviewEngine {
           relay.due = null;
         }
       }
-      if (device.audio.enabled) {
+      if (device.audio.enabled && device.profile !== 'helmet') {
         const audio = runtime.audio,
           target = cue.audio;
         const fadeIn = target.fadeIn ?? step.timings.audioIn,

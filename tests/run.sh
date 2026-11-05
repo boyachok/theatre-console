@@ -23,8 +23,8 @@ for TEST in http console_http; do
   c++ "${FLAGS[@]}" -pthread -Itests/http_mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in wifi remote_firmware; do
-  c++ "${FLAGS[@]}" -Itests/net_mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
+for TEST in wifi remote_firmware helmet_firmware; do
+  c++ "${FLAGS[@]}" -Itests/net_mock -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
 if [[ -n "${PLAYWRIGHT_PATH:-}" ]]; then

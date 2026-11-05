@@ -57,7 +57,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const history = prior && n.sent >= prior.sent ? prior.history : [];
       devices[key] = {
         mac: key,
-        role: n.role === 'remote' ? 'remote' : 'slave',
+        role: n.role === 'remote' ? 'remote' : n.role === 'helmet' ? 'helmet' : 'slave',
         name: n.name,
         ip: n.ip,
         online: n.ageMs !== null && n.ageMs < 3000,
@@ -154,6 +154,9 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     for (const device of devices) {
       const state = this.snapshot.devices[device.mac];
       if (state?.role === 'remote') throw new Error('remote — пульт: его нельзя назначить прибору');
+      const authored = project.devices.find((d) => d.id === device.id)!;
+      if (state && (authored.profile === 'helmet') !== (state.role === 'helmet'))
+        throw new Error('Тип прибора и прошивки контроллера не совпадают: Helmet / стандартный');
       if (state?.online && !state.scoreSupported)
         throw new Error(`Обновите прошивку ${state.name ?? device.mac} до 0.7.1`);
     }

@@ -41,6 +41,8 @@ inline void setPWMFrequency(Packet &p,uint32_t hz){
   if(p.type!=HELLO&&p.type!=ECHO)return;
   p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=4;p.value=hz&0xffff;
 }
+// Optional capability marker only; service/score packet layouts and timing stay unchanged.
+inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&p.padding[2]==5;}
 inline uint32_t reportedPWMFrequency(const Packet &p){
   if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>4))return 0;
   return p.value|((uint32_t)p.padding[1]<<16);

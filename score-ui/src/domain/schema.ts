@@ -8,6 +8,7 @@ export interface Parameter {
   relayMode?: 0 | 1 | 2;
 }
 export interface Device {
+  profile?: 'standard' | 'helmet';
   id: string;
   name: string;
   ip?: string | null;
@@ -39,6 +40,7 @@ export interface RelayCue {
   delayOff: number | null;
 }
 export interface AudioCue {
+  voiceOn?: boolean;
   lastTrack?: number;
   track: number | null;
   volume: number;

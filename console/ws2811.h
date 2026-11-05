@@ -7,19 +7,20 @@
 namespace Show {
 // RMT sends asynchronously. PWM fades, relay deadlines and UART never wait for a strip frame.
 class Ws2811 {
- rmt_data_t *symbols=nullptr;uint16_t count=0;bool ready=false,playing=false,dirty=true;
+ uint8_t pin; rmt_data_t *symbols=nullptr;uint16_t count=0;bool ready=false,playing=false,dirty=true;
  uint32_t started=0,lastFrame=0;Strip effect{};Preferences settings;
  bool resize(uint16_t n){
-  if(n==count)return true;if(!n||n>1024||!rmtTransmitCompleted(STRIP_PIN))return false;
+  if(n==count)return true;if(!n||n>1024||!rmtTransmitCompleted(pin))return false;
   auto *next=(rmt_data_t*)heap_caps_malloc((n*24+1)*sizeof(rmt_data_t),MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT);if(!next)return false;
   if(settings.getUShort("stripCount",0)!=n&&settings.putUShort("stripCount",n)!=sizeof(uint16_t)){heap_caps_free(next);return false;}
   heap_caps_free(symbols);symbols=next;count=n;return true;
  }
 public:
- ~Ws2811(){if(symbols&&rmtTransmitCompleted(STRIP_PIN))heap_caps_free(symbols);}
+ explicit Ws2811(uint8_t dataPin=STRIP_PIN):pin(dataPin){}
+ ~Ws2811(){if(symbols&&rmtTransmitCompleted(pin))heap_caps_free(symbols);}
  bool begin(){
-  settings.begin("stage-io",false);digitalWrite(STRIP_PIN,LOW);pinMode(STRIP_PIN,OUTPUT);
-  ready=rmtInit(STRIP_PIN,RMT_TX_MODE,RMT_MEM_NUM_BLOCKS_2,20000000);if(!ready)return false;
+  settings.begin("stage-io",false);digitalWrite(pin,LOW);pinMode(pin,OUTPUT);
+  ready=rmtInit(pin,RMT_TX_MODE,RMT_MEM_NUM_BLOCKS_2,20000000);if(!ready)return false;
   uint16_t n=settings.getUShort("stripCount",60);if(!n||n>1024)n=60;
   if(!resize(n))return false;tick(millis());return true;
  }
@@ -31,7 +32,7 @@ public:
   playing=true;return true;
  }
  void tick(uint32_t now){
-  if(!ready||!symbols||!rmtTransmitCompleted(STRIP_PIN))return;
+  if(!ready||!symbols||!rmtTransmitCompleted(pin))return;
   if(!dirty&&(!playing||effect.mode==2||(effect.mode==1&&lastFrame-started>=effect.duration)))return;
   if(!dirty&&now-lastFrame<33)return;
   float progress=effect.duration?(float)(uint32_t)(now-started)/effect.duration:1.f;
@@ -45,7 +46,7 @@ public:
    if(effect.order)std::swap(rgb[0],rgb[1]);for(auto byte:rgb)for(int bit=7;bit>=0;bit--){bool one=byte&(1<<bit);auto &s=symbols[pos++];s.level0=1;s.duration0=(one?13:6)*(effect.slow?2:1);s.level1=0;s.duration1=(one?12:19)*(effect.slow?2:1);}
   }
   symbols[pos].level0=0;symbols[pos].duration0=6000;symbols[pos].level1=0;symbols[pos].duration1=6000;
-  if(rmtWriteAsync(STRIP_PIN,symbols,pos+1)){dirty=false;lastFrame=now;}
+  if(rmtWriteAsync(pin,symbols,pos+1)){dirty=false;lastFrame=now;}
  }
 };
 }

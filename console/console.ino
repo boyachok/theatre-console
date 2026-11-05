@@ -60,7 +60,7 @@ struct Sample {
 };
 struct Node {
   bool used=false;uint8_t mac[6]{};String name;
-  uint8_t protocol=0,pwmChannels=0;bool pwmConfigSupported=false;
+  uint8_t protocol=0,pwmChannels=0;bool pwmConfigSupported=false,helmet=false;
   PwmStatus pwmConfig{};uint32_t pwmConfigAt=0,pwmReportSequence=0;
   uint32_t requestId=0,requestStartedAt=0,requestDeadline=0;bool boundedRequest=false;int32_t commandAckMs=-1;
   String uiClient;uint32_t uiSequence=0;
@@ -299,10 +299,10 @@ void handleMasterRx(const Rx &r) {
   if(n.deviceBoot&&newBoot) {
     n.pending=false;n.deferred=false;n.commandStatus="session_changed";n.uartAt=0;n.uartUptime=0;
   }
-  n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;n.pwmChannels=r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT;
+  n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;
   if(newBoot){n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreNext=n.scoreAt=0;n.scoreSupported=false;}
   if(newBoot||!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0) {
-    if(r.p.type==HELLO||r.p.type==ECHO){n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;}
+    if(r.p.type==HELLO||r.p.type==ECHO){n.helmet=helmetTag(r.p);n.pwmChannels=n.helmet?0:(r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT);n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=!n.helmet&&r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;}
     n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;
   }
   if(n.pending&&r.p.commandId==n.pendingPacket.commandId) {
@@ -461,7 +461,7 @@ String statusJSON(bool history) {
     j+=",\"rssiMaster\":"+(n.hasReply?String(n.lastMasterRssi):String("null"))+",\"rssiSlave\":"+(n.hasReply?String(n.lastSlaveRssi):String("null"))+",\"worstRssi\":"+(m.replies?String(m.worstRssi):String("null"));
     j+=",\"ageMs\":"+(n.hasReply?String(millis()-n.lastReply):String("null"))+",\"streak\":"+String(n.streak)+",\"maxStreak\":"+String(n.maxStreak)+",\"sent\":"+String(n.sent)+",\"received\":"+String(n.received)+",\"timeouts\":"+String(n.timeouts)+",\"late\":"+String(n.late)+",\"duplicates\":"+String(n.duplicates)+",\"maintenance\":"+(n.maintenance?"true":"false");
     j+=",\"control\":"+controlJSON(n.reported)+",\"reportAgeMs\":"+(n.reportAt?String(millis()-n.reportAt):String("null"));
-    j+=",\"deviceBoot\":"+String(n.deviceBoot)+",\"commandStatus\":"+jsonString(n.commandStatus)+",\"commandPending\":"+(n.pending?"true":"false")+",\"commandAttempts\":"+String(n.attempts)+",\"scoreSupported\":"+String(n.scoreSupported?"true":"false")+",\"scoreVersion\":"+String(n.scoreLoaded)+",\"scoreSent\":"+String(n.scoreSent)+",\"scoreReceived\":"+String(n.scoreReceived)+",\"scoreRttMs\":"+(n.scoreRtt<0?String("null"):String(n.scoreRtt))+",\"confirmedStep\":"+(n.scoreAt?String(n.scoreStep+1):String("null"))+",\"requestId\":"+String(n.requestId)+",\"commandAckMs\":"+(n.commandAckMs<0?String("null"):String(n.commandAckMs));
+    j+=",\"role\":"+jsonString(n.helmet?"helmet":"slave")+",\"voiceAvailable\":"+(n.helmet?String("false"):String("null"))+",\"deviceBoot\":"+String(n.deviceBoot)+",\"commandStatus\":"+jsonString(n.commandStatus)+",\"commandPending\":"+(n.pending?"true":"false")+",\"commandAttempts\":"+String(n.attempts)+",\"scoreSupported\":"+String(n.scoreSupported?"true":"false")+",\"scoreVersion\":"+String(n.scoreLoaded)+",\"scoreSent\":"+String(n.scoreSent)+",\"scoreReceived\":"+String(n.scoreReceived)+",\"scoreRttMs\":"+(n.scoreRtt<0?String("null"):String(n.scoreRtt))+",\"confirmedStep\":"+(n.scoreAt?String(n.scoreStep+1):String("null"))+",\"requestId\":"+String(n.requestId)+",\"commandAckMs\":"+(n.commandAckMs<0?String("null"):String(n.commandAckMs));
     j+=",\"uart\":"+(n.uartAt?uartJSON(n.uart):String("null"))+",\"uartReportAgeMs\":"+(n.uartAt?String(millis()-n.uartAt):String("null"));
     uint32_t finalized=n.received+n.timeouts;
     j+=",\"totalDeliveryPct\":"+(finalized?String(100.0*n.received/finalized,4):String("null"))+",\"totalDeadlinePct\":"+(finalized?String(100.0*n.deadlineReceived/finalized,4):String("null"));

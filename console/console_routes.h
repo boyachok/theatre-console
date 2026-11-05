@@ -1,10 +1,5 @@
 #pragma once
-bool mountShowFS(){
- if(LittleFS.begin(false,"/littlefs",8,"storage"))return true;
- const auto *partition=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_ANY,"storage");if(!partition)return false;
- uint8_t block[512];for(size_t at=0;at<partition->size;at+=sizeof(block)){if(esp_partition_read(partition,at,block,sizeof(block))!=ESP_OK)return false;for(auto byte:block)if(byte!=255){Serial.println("Storage is not blank: refusing automatic erase");return false;}}
- return LittleFS.format()&&LittleFS.begin(false,"/littlefs",8,"storage");
-}
+#include "show_filesystem.h"
 void handleShowAck(const Rx &r){
  int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];if(n.deviceBoot!=r.p.deviceBoot)return;
  n.scoreSupported=true;n.hasReply=true;n.lastReply=millis();n.lastMasterRssi=r.rssi;n.lastSlaveRssi=r.p.rssi;
