@@ -171,8 +171,16 @@ code {
 .header-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   flex: none;
+}
+.header-actions > select {
+  width: 72px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 3px 4px;
+  font-size: 11px;
 }
 .icon-button {
   width: 33px;

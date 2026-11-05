@@ -5,7 +5,7 @@ const uint8_t MASTER[6]={0xa0,0x85,0xe3,0xe2,0xbc,0xd4};
 template<class T>void inject(const T &p){uint8_t wire[300];auto n=encodeLAN(MASTER,network.mac,(const uint8_t*)&p,sizeof(p),wire);assert(n);mockUDPIn.push_back({IPAddress(192,168,50,119),LAN_PORT,std::vector<uint8_t>(wire,wire+n)});}
 void tick(uint32_t at){mockNow=at;loop();}
 Packet last(Type type){for(auto i=mockUDPOut.rbegin();i!=mockUDPOut.rend();++i){if(i->data.size()!=sizeof(Packet)+sizeof(LanHeader))continue;Packet p;memcpy(&p,i->data.data()+sizeof(LanHeader),sizeof(p));if(p.type==type)return p;}assert(false);return {};}
-Show::Packet scene(uint32_t sequence){Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.size=sizeof(p);p.type=Show::RUN;p.session=77;p.deviceBoot=selfBoot;p.run=200;p.transition=sequence;p.reserved=1;p.step=sequence-1;p.cue.strip={1,2,0,255,0,0,0,0,0,20,20,0,0,0,60,1000,1};return p;}
+Show::Packet scene(uint32_t sequence){Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.size=sizeof(p);p.type=Show::PREVIEW;p.session=77;p.deviceBoot=selfBoot;p.run=200;p.transition=sequence;p.reserved=1;p.step=sequence-1;p.cue.strip={1,2,0,255,0,0,0,0,0,20,20,0,0,0,60,1000,1};return p;}
 int main(){
  // Same filesystem safeguard as the master: format only genuinely erased flash.
  LittleFS.mountOK=false;mockPartitionData[42]=1;assert(!mountShowFS()&&LittleFS.formats==0);
@@ -31,11 +31,14 @@ int main(){
  store.step=1;store.cue=cues[1];inject(store);tick(1520);assert(scoreStore.version==0&&last(SCORE_ACK).value==0);
  store.step=0;store.cue=cues[0];inject(store);tick(1521);assert(scoreStore.version==3&&(last(SCORE_ACK).reserved&2));
  Show::SlaveStore reboot;reboot.begin();assert(reboot.version==3&&reboot.cues.size()==2); // Persistence does not execute at boot.
+ auto indexed=Show::reference(scene(3));indexed.type=Show::RUN;indexed.version=3;indexed.checksum=store.checksum;indexed.total=2;indexed.step=0;
+ inject(indexed);tick(1522);assert(last(SCORE_ACK).result==APPLIED&&runner.sequence==3&&runner.voice.requested());
+ indexed.transition=4;indexed.checksum++;inject(indexed);tick(1523);assert(last(SCORE_ACK).result==NOT_READY&&(last(SCORE_ACK).reserved&Show::MISSING_PLAN)&&runner.sequence==3);
  WiFi.state=0;tick(1600);assert(!linkFresh()&&runner.active);int before=mockRmtWrites;tick(1700);assert(mockRmtWrites>before);
  WiFi.state=WL_CONNECTED;tick(2000);inject(packet(DISCOVER,77));tick(2001);tick(2400);
- auto off=scene(3);off.cue.strip.action=1;off.cue.audio.enabled=0;inject(off);tick(2410);assert(runner.sequence==3&&!runner.voice.requested());
+ auto off=scene(4);off.cue.strip.action=1;off.cue.audio.enabled=0;inject(off);tick(2410);assert(runner.sequence==4&&!runner.voice.requested());
  Packet stop=packet(COMMAND,77);stop.deviceBoot=selfBoot;stop.commandId=10;stop.op=ALL_OFF;inject(stop);tick(2420);assert(!runner.active&&last(COMMAND_ACK).result==APPLIED);
- auto next=scene(4);inject(next);tick(2421);assert(runner.active);inject(stop);tick(2422);assert(runner.active); // Cached OFF must not stop a later scene.
+ auto next=scene(5);inject(next);tick(2421);assert(runner.active);inject(stop);tick(2422);assert(runner.active); // Cached OFF must not stop a later scene.
  for(auto v:mockPWMFrequency)assert(v==0);assert(mockLEDCClock==0&&mockUARTOut.empty());
  for(int pin=0;pin<49;pin++)if(pin!=47&&pin!=48)assert(mockModes[pin]==INPUT);
  puts("Actual helmet firmware: GPIO47 WS2811/configurable count, no PWM/relay/UART/HTTP, voice unavailable (desired only), master binding/ACK/dedup/stale protection, local animation/recovery, CRC score persistence and non-erasing FS guard passed");

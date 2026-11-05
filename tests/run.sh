@@ -8,7 +8,7 @@ for TEST in quality control lan remote; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors player compat console remote_master; do
+for TEST in actors player compat console scene_delivery remote_master; do
   c++ "${FLAGS[@]}" -Itests/mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done

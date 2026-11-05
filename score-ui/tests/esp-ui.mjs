@@ -23,6 +23,9 @@ const peer = {
   ip: '192.168.50.33',
   ageMs: 10,
   scoreSupported: true,
+  localScoreSupported: true,
+  sceneStatus: 'idle',
+  scoreReceived: 0,
   scoreVersion: 0,
   confirmedStep: null,
   sent: 3,
@@ -60,7 +63,15 @@ const status = {
     mac: 'A0:85:E3:E2:BC:D4',
     serverMs: 0,
     measuring: true,
-    console: { version: 0, fingerprint: '', step: null, preview: false },
+    console: {
+      version: 0,
+      fingerprint: '',
+      step: null,
+      preview: false,
+      ready: false,
+      storedDevices: 0,
+      plannedDevices: 0,
+    },
     nodes: [peer, helmet],
     remotes: [remote],
   },
@@ -99,12 +110,38 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify({ transition: seq }));
         return;
       }
+      if (path === '/api/console/go') {
+        const form = new URLSearchParams(raw),
+          seq = Number(form.get('seq'));
+        assert.equal(form.get('token'), status.token);
+        assert.equal(Number(form.get('version')), status.console.version);
+        assert(seq > lastSequence);
+        lastSequence = seq;
+        const remaining =
+          (Number(form.get('deadline')) - (Math.floor(performance.now()) >>> 0)) | 0;
+        assert(remaining >= 0 && remaining <= 1000);
+        assert(!form.has('devices') && !form.has('cue'));
+        if (!status.console.ready) {
+          res.writeHead(409).end('Показ не готов: ожидаем загрузку партитур');
+          return;
+        }
+        status.console.step = Number(form.get('step')) + 1;
+        status.console.preview = false;
+        peer.confirmedStep = null;
+        peer.sceneStatus = 'waiting_ack';
+        res.end(JSON.stringify({ transition: seq }));
+        return;
+      }
       if (path === '/api/console/publish') {
         const body = JSON.parse(raw);
         workspace = JSON.parse(body.workspaceJson);
         status.console.version = body.version;
         status.console.step = null;
         status.console.preview = false;
+        status.console.ready = false;
+        status.console.plannedDevices = body.devices.length;
+        peer.confirmedStep = null;
+        peer.sceneStatus = 'loading';
         res.end(JSON.stringify({ version: body.version }));
         return;
       }
@@ -224,11 +261,29 @@ try {
   assert.equal(publication.version, 1);
   assert.equal(publication.devices[0].mac, mac);
   assert.equal(peer.scoreVersion, 0); // HTTP success does not fabricate slave delivery.
+  assert.equal(await page.getByLabel('Режим плеера', { exact: true }).inputValue(), 'show');
+  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Показ не готов' }).waitFor();
+  assert.equal(status.console.step, null);
+  assert.equal(peer.confirmedStep, null);
+  status.console.ready = true;
+  status.console.storedDevices = 1;
+  peer.scoreVersion = 1;
+  peer.sceneStatus = 'ready';
+  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
+  await page.waitForFunction(
+    () => document.querySelector('#playing-step option:checked')?.textContent === '1',
+  );
+  assert.equal(status.console.preview, false);
+  assert.equal(peer.confirmedStep, null); // Successful GO is not a slave ACK.
   await page.locator('.step-heading').first().click();
   const previewCount = calls.filter((c) => c.path.endsWith('/preview')).length;
+  await page.getByLabel('Режим плеера', { exact: true }).selectOption('preview');
   // Emulate the real master's status change after a remote action, not GPIO/RF.
   status.console.step = 2;
   status.console.preview = false;
+  peer.sceneStatus = 'waiting_ack';
+  peer.confirmedStep = null;
   await page.waitForFunction(
     () => document.querySelector('#playing-step option:checked')?.textContent === '2',
   );
@@ -237,6 +292,36 @@ try {
     project.steps[1]?.id ?? workspace.published.project.steps[1].id,
   );
   assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, previewCount);
+  assert.equal(await page.getByLabel('Режим плеера', { exact: true }).inputValue(), 'show');
+  await page.getByRole('button', { name: 'Сеть', exact: true }).click();
+  await page.getByText('Ожидаем ACK', { exact: true }).waitFor();
+  const sceneRow = page.locator('.network-table tbody tr').first();
+  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '—');
+  peer.sceneStatus = 'applied';
+  peer.confirmedStep = 2;
+  peer.scoreReceived = 1;
+  await page.getByText('Применена', { exact: true }).waitFor();
+  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '2');
+  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  await page.getByLabel('Режим плеера', { exact: true }).selectOption('preview');
+  await page.selectOption('#playing-step', workspace.draft.steps[0].id);
+  await page.waitForFunction(
+    () => document.querySelector('#playing-step option:checked')?.textContent === '1',
+  );
+  assert.equal(status.console.preview, true);
+  assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, previewCount + 1);
+  for (const width of [390, 375, 320]) {
+    await page.setViewportSize({ width, height: 844 });
+    for (const name of ['Следующий шаг', 'Сеть']) {
+      const bounds = await page.getByRole('button', { name, exact: true }).boundingBox();
+      assert(
+        bounds.x >= 0 && bounds.x + bounds.width <= width,
+        `ESP header overflow ${width}: ${name}`,
+      );
+    }
+    assert((await page.getByLabel('Режим плеера', { exact: true }).boundingBox()).x >= 0);
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   await page.getByRole('button', { name: 'Сбросить сеть', exact: true }).click();
   await page
@@ -249,7 +334,7 @@ try {
   assert(calls.some((c) => c.path.endsWith('/network/reset')));
   assert.deepEqual(errors, []);
   console.log(
-    'ESP production UI / MOCK master: workspace load, real-adapter mode, IP/MAC, edit ≠ execution, guarded first-step preview, exact 200ms fade, receipt-only confirmation, publish without fake delivery, remote ping/RSSI/identify and actuator-binding exclusion, custom confirmation/test/reset passed.',
+    'ESP production UI / MOCK master: workspace load, real-adapter mode, IP/MAC, edit ≠ execution, guarded first-step preview, exact 200ms fade, receipt-only confirmation, publish without fake delivery, remote ping/RSSI/identify and actuator-binding exclusion, preload-blocked indexed GO, explicit show/preview modes, master-counter UI sync, pending/applied scene ACK, mobile header, custom confirmation/test/reset passed.',
   );
 } finally {
   await browser.close();

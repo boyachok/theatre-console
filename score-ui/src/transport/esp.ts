@@ -70,6 +70,9 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         rssi: n.worstRssi ?? n.rssiSlave,
         confirmedStep: n.confirmedStep ?? null,
         scoreSupported: !!n.scoreSupported,
+        localScoreSupported: !!n.localScoreSupported,
+        sceneStatus: n.sceneStatus,
+        sceneResponses: n.role === 'remote' ? undefined : n.scoreReceived,
         scoreVersion: n.role === 'remote' ? undefined : (n.scoreVersion ?? 0),
         history:
           fresh || missed
@@ -87,6 +90,10 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       masterMac: data.mac,
       activeStep: data.console.step,
       preview: data.console.preview,
+      transition: data.console.transition,
+      publicationReady: data.console.ready,
+      storedDevices: data.console.storedDevices,
+      plannedDevices: data.console.plannedDevices,
     };
     this.emit();
     return data;
@@ -97,10 +104,19 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       try {
         await this.status();
       } catch {
-        this.snapshot = { ...this.snapshot, connected: false };
+        this.snapshot = {
+          ...this.snapshot,
+          connected: false,
+          devices: Object.fromEntries(
+            Object.entries(this.snapshot.devices).map(([mac, info]) => [
+              mac,
+              { ...info, online: null, confirmedStep: null, sceneStatus: undefined },
+            ]),
+          ),
+        };
         this.emit();
       } finally {
-        if (generation === this.generation) this.timer = setTimeout(poll, 500);
+        if (generation === this.generation) this.timer = setTimeout(poll, 200);
       }
     };
     void poll();
@@ -157,8 +173,10 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const authored = project.devices.find((d) => d.id === device.id)!;
       if (state && (authored.profile === 'helmet') !== (state.role === 'helmet'))
         throw new Error('Тип прибора и прошивки контроллера не совпадают: Helmet / стандартный');
-      if (state?.online && !state.scoreSupported)
-        throw new Error(`Обновите прошивку ${state.name ?? device.mac} до 0.7.1`);
+      if (state?.online && !state.localScoreSupported)
+        throw new Error(
+          `Обновите прошивку ${state.name ?? device.mac} до 0.7.4: нужен запуск локальных сцен`,
+        );
     }
     return devices;
   }
@@ -198,6 +216,20 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     );
     await this.status();
     return published;
+  }
+  async go(version: number, step: number, restart: boolean) {
+    if (!this.clock || performance.now() - this.clock.at > 10000) await this.status();
+    const deadline =
+      Math.floor(this.clock!.server + performance.now() - this.clock!.at + 700) >>> 0;
+    await this.post('/api/console/go', {
+      version,
+      step,
+      reason: Number(restart),
+      deadline,
+      client: this.client,
+      seq: ++this.sequence,
+    });
+    await this.status();
   }
   async preview(project: Project, step: Step, restart: boolean) {
     if (!this.clock || performance.now() - this.clock.at > 10000) await this.status();

@@ -1,48 +1,6 @@
 #pragma once
 #include "show_filesystem.h"
-void handleShowAck(const Rx &r){
- int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];if(n.deviceBoot!=r.p.deviceBoot)return;
- n.scoreSupported=true;n.hasReply=true;n.lastReply=millis();n.lastMasterRssi=r.rssi;n.lastSlaveRssi=r.p.rssi;
- if(r.p.channel==0){if(r.p.reserved&2)n.scoreLoaded=r.p.commandId;n.scoreNext=r.p.value;return;}
- n.scoreReceived++;uint32_t sentAt=r.p.op|((uint32_t)r.p.padding[0]<<8)|((uint32_t)r.p.padding[1]<<16)|((uint32_t)r.p.padding[2]<<24);
- n.scoreRtt=(uint32_t)(millis()-sentAt)<60000?(uint32_t)(millis()-sentAt):-1;
- if(r.p.commandId==showMaster.run&&(!n.scoreSeq||Show::newer(r.p.seq,n.scoreSeq)||r.p.seq==n.scoreSeq)){n.scoreSeq=r.p.seq;if((r.p.reserved&1)&&r.p.result==APPLIED){n.scoreAt=millis();n.scoreStep=r.p.value;}else n.scoreAt=0;}
- if(!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0){n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;}
-}
-bool handleShowMessage(const LanMessage &message){
- if(message.length!=sizeof(Show::Packet))return false;
- Show::Packet p;memcpy(&p,message.payload,sizeof(p));
- if(RADIO_MASTER||p.magic!=Show::MAGIC||p.protocol!=Show::PROTOCOL||p.size!=sizeof(p)||!masterKnown||memcmp(message.mac,masterMAC,6)||p.session!=masterSession||p.deviceBoot!=bootSession){network.rxInvalid++;return true;}
- if(p.type!=Show::STORE&&p.type!=Show::RUN)return true;
- masterSeen=lastProbe=millis();probeReceivedAt=millis();slaveHealth=p.health<=OFFLINE?(Health)p.health:BAD;
- bool accepted=false;
- if(!otaSafetyLock){if(p.type==Show::STORE)accepted=showStore.accept(p);else if(p.reserved&1){accepted=showRunner.apply(p,millis(),showRecovery&&showRunner.active);if(accepted)showRecovery=false;}else accepted=true;}
- Packet reply=packet(SCORE_ACK,masterSession);reply.deviceBoot=bootSession;reply.channel=p.type==Show::STORE?0:1;reply.result=accepted?APPLIED:NOT_READY;reply.rssi=message.rssi;reply.state=actors.snapshot();
- reply.op=p.sentAt&255;reply.padding[0]=(p.sentAt>>8)&255;reply.padding[1]=(p.sentAt>>16)&255;reply.padding[2]=(p.sentAt>>24)&255;
- if(p.type==Show::STORE){reply.commandId=showStore.version;reply.value=showStore.nextMissing();if(showStore.version==p.version&&showStore.checksum==p.checksum)reply.reserved|=2;}
- else{reply.commandId=showRunner.run;reply.seq=showRunner.sequence;reply.value=showRunner.step;if(showRunner.active)reply.reserved|=1;}
- sendPacket(masterMAC,reply);return true;
-}
-void showMasterTick(){
- if(!RADIO_MASTER||!network.ready()||networkResetActive)return;
- static uint32_t slot=0;uint32_t now=millis();if((int32_t)(now-slot)<0)return;
- static int cursor=0;
- for(int k=0;k<MAX_NODES;k++){
-  int i=cursor;cursor=(cursor+1)%MAX_NODES;Node &n=nodes[i];if(!n.used||!n.deviceBoot||!n.scoreSupported||(uint32_t)network.peerIP(n.mac)==0)continue;
-  Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.size=sizeof(p);p.session=bootSession;p.deviceBoot=n.deviceBoot;p.run=showMaster.run;p.transition=showMaster.sequence;p.sentAt=now;p.health=metrics(n).health;
-  if((int32_t)(now-n.nextScore)>=0){
-   n.nextScore=now+500;p.type=Show::RUN;
-   auto plan=showMaster.find(n.mac,showMaster.isPreview);
-   if(showMaster.active&&plan){uint16_t index=showMaster.isPreview?0:showMaster.step;if(index<plan->cues.size()){p.reserved=1;p.cue=plan->cues[index];p.version=showMaster.isPreview?0:showMaster.version;p.step=showMaster.step;p.total=showMaster.isPreview?showMaster.previewTotal:showMaster.stepIds.size();p.reason=showMaster.reason;}}
-   network.send(n.mac,(const uint8_t*)&p,sizeof(p));n.scoreSent++;slot=now+10;return;
-  }
-  auto plan=showMaster.find(n.mac);
-  if(plan&&n.scoreLoaded!=showMaster.version&&(int32_t)(now-n.nextStore)>=0){
-   n.nextStore=now+100;p.type=Show::STORE;p.version=showMaster.version;p.checksum=plan->checksum;p.total=plan->cues.size();p.step=n.scoreNext<p.total?n.scoreNext:0;p.cue=plan->cues[p.step];network.send(n.mac,(const uint8_t*)&p,sizeof(p));slot=now+10;return;
-  }
- }
-}
-void invalidateShowDelivery(){for(auto &n:nodes){n.nextScore=n.nextStore=0;n.scoreLoaded=n.scoreNext=0;}}
+#include "scene_delivery.h"
 void consoleButtons(){
  if(!RADIO_MASTER)return;
  static Remote::Buttons keys;auto action=keys.tick(digitalRead(BUTTON_FORWARD_PIN)==LOW,digitalRead(BUTTON_BACK_PIN)==LOW,!otaSafetyLock&&!networkResetActive&&!showMaster.stepIds.empty(),millis());
@@ -66,6 +24,13 @@ void consoleRoutes(){
  web.on("/api/console/publish",HTTP_POST,[]{
   if(!consoleForm())return;if(!showFSReady){web.send(503);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
   if(!showMaster.loadPayload(body,true,error)){web.send(400,"text/plain",error);return;}invalidateShowDelivery();web.send(200,"application/json","{\"version\":"+String(showMaster.version)+"}");
+ });
+ web.on("/api/console/go",HTTP_POST,[]{
+  if(!consoleForm()||!guardShowRequest())return;uint32_t target,version,reason;
+  if(!unsignedArg("step",Show::MAX_STEPS-1,target)||!unsignedArg("version",0xffffffffUL,version)||!unsignedArg("reason",1,reason)){web.send(400);return;}
+  if(version!=showMaster.version){web.send(409,"text/plain","Опубликованная версия изменилась: обновите партитуру");return;}
+  if(!goPublished(target,reason)){web.send(409,"text/plain","Показ не готов: дождитесь загрузки партитур, проверьте версии контроллеров в Сети");return;}
+  web.send(200,"application/json","{\"transition\":"+String(showMaster.sequence)+",\"step\":"+String(showMaster.step+1)+"}");
  });
  web.on("/api/console/preview",HTTP_POST,[]{
   if(!consoleForm()||!guardShowRequest())return;String body=web.takePlain(),error;if(body.length()>60000){web.send(413);return;}

@@ -28,6 +28,7 @@ Actors actors;
 Show::Runner showRunner(actors);Show::SlaveStore showStore;Show::MasterStore showMaster;bool showRecovery=false,showFSReady=false;
 bool mountShowFS();
 void consoleRoutes();void showMasterTick();void consoleButtons();bool handleShowMessage(const LanMessage &message);
+bool publishedReady();size_t storedPlans();bool goPublished(uint16_t target,uint8_t reason);
 uint32_t lastControlId=0;
 Result lastControlResult=APPLIED;
 uint32_t probeReceivedAt=0,pwmReportSeq=0;
@@ -52,6 +53,7 @@ uint32_t lastProbeSeq=0;
 
 struct Rx { uint8_t mac[6]; Packet p; UartStats uart; PwmStatus pwm; uint32_t pwmHz=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
+struct Node;bool currentSceneConfirmed(const Node &n);const char *sceneStatus(const Node &n);
 bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigatePublished(uint8_t action);
 struct Sample {
   uint32_t seq=0, atUs=0, rttUs=0;
@@ -64,7 +66,7 @@ struct Node {
   PwmStatus pwmConfig{};uint32_t pwmConfigAt=0,pwmReportSequence=0;
   uint32_t requestId=0,requestStartedAt=0,requestDeadline=0;bool boundedRequest=false;int32_t commandAckMs=-1;
   String uiClient;uint32_t uiSequence=0;
-  uint32_t pwmHz=0;bool scoreSupported=false;uint32_t scoreLoaded=0,scoreNext=0,scoreAt=0,scoreSeq=0,scoreSent=0,scoreReceived=0,nextScore=0,nextStore=0;uint16_t scoreStep=0;int32_t scoreRtt=-1;
+  uint32_t pwmHz=0;bool scoreSupported=false,localScoreSupported=false;uint32_t scoreLoaded=0,scoreChecksum=0,scoreStoredUptime=0,scoreNext=0,scoreAt=0,scoreSeq=0,scoreFeedbackAt=0,scoreFeedbackUptime=0,scoreSent=0,scoreReceived=0,nextScore=0,nextStore=0;uint16_t scoreStep=0;uint8_t scoreResult=NOT_READY;int32_t scoreRtt=-1;
   Sample samples[WINDOW];
   uint32_t seq=0,measureSeq=0,sent=0,received=0,deadlineReceived=0,timeouts=0,late=0,duplicates=0;
   uint32_t lastReply=0, lastSeen=0, nextPoll=0, streak=0, maxStreak=0;
@@ -300,9 +302,9 @@ void handleMasterRx(const Rx &r) {
     n.pending=false;n.deferred=false;n.commandStatus="session_changed";n.uartAt=0;n.uartUptime=0;
   }
   n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;
-  if(newBoot){n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreNext=n.scoreAt=0;n.scoreSupported=false;}
+  if(newBoot){n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
   if(newBoot||!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0) {
-    if(r.p.type==HELLO||r.p.type==ECHO){n.helmet=helmetTag(r.p);n.pwmChannels=n.helmet?0:(r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT);n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=!n.helmet&&r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;}
+    if(r.p.type==HELLO||r.p.type==ECHO){n.helmet=helmetTag(r.p);n.pwmChannels=n.helmet?0:(r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT);n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=!n.helmet&&r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;n.localScoreSupported=localScoreTag(r.p);}
     n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;
   }
   if(n.pending&&r.p.commandId==n.pendingPacket.commandId) {
@@ -461,7 +463,7 @@ String statusJSON(bool history) {
     j+=",\"rssiMaster\":"+(n.hasReply?String(n.lastMasterRssi):String("null"))+",\"rssiSlave\":"+(n.hasReply?String(n.lastSlaveRssi):String("null"))+",\"worstRssi\":"+(m.replies?String(m.worstRssi):String("null"));
     j+=",\"ageMs\":"+(n.hasReply?String(millis()-n.lastReply):String("null"))+",\"streak\":"+String(n.streak)+",\"maxStreak\":"+String(n.maxStreak)+",\"sent\":"+String(n.sent)+",\"received\":"+String(n.received)+",\"timeouts\":"+String(n.timeouts)+",\"late\":"+String(n.late)+",\"duplicates\":"+String(n.duplicates)+",\"maintenance\":"+(n.maintenance?"true":"false");
     j+=",\"control\":"+controlJSON(n.reported)+",\"reportAgeMs\":"+(n.reportAt?String(millis()-n.reportAt):String("null"));
-    j+=",\"role\":"+jsonString(n.helmet?"helmet":"slave")+",\"voiceAvailable\":"+(n.helmet?String("false"):String("null"))+",\"deviceBoot\":"+String(n.deviceBoot)+",\"commandStatus\":"+jsonString(n.commandStatus)+",\"commandPending\":"+(n.pending?"true":"false")+",\"commandAttempts\":"+String(n.attempts)+",\"scoreSupported\":"+String(n.scoreSupported?"true":"false")+",\"scoreVersion\":"+String(n.scoreLoaded)+",\"scoreSent\":"+String(n.scoreSent)+",\"scoreReceived\":"+String(n.scoreReceived)+",\"scoreRttMs\":"+(n.scoreRtt<0?String("null"):String(n.scoreRtt))+",\"confirmedStep\":"+(n.scoreAt?String(n.scoreStep+1):String("null"))+",\"requestId\":"+String(n.requestId)+",\"commandAckMs\":"+(n.commandAckMs<0?String("null"):String(n.commandAckMs));
+    j+=",\"role\":"+jsonString(n.helmet?"helmet":"slave")+",\"voiceAvailable\":"+(n.helmet?String("false"):String("null"))+",\"deviceBoot\":"+String(n.deviceBoot)+",\"commandStatus\":"+jsonString(n.commandStatus)+",\"commandPending\":"+(n.pending?"true":"false")+",\"commandAttempts\":"+String(n.attempts)+",\"scoreSupported\":"+String(n.scoreSupported?"true":"false")+",\"localScoreSupported\":"+String(n.localScoreSupported?"true":"false")+",\"sceneStatus\":"+jsonString(sceneStatus(n))+",\"scoreVersion\":"+String(n.scoreLoaded)+",\"scoreSent\":"+String(n.scoreSent)+",\"scoreReceived\":"+String(n.scoreReceived)+",\"scoreRttMs\":"+(n.scoreRtt<0?String("null"):String(n.scoreRtt))+",\"confirmedStep\":"+(currentSceneConfirmed(n)?String(n.scoreStep+1):String("null"))+",\"requestId\":"+String(n.requestId)+",\"commandAckMs\":"+(n.commandAckMs<0?String("null"):String(n.commandAckMs));
     j+=",\"uart\":"+(n.uartAt?uartJSON(n.uart):String("null"))+",\"uartReportAgeMs\":"+(n.uartAt?String(millis()-n.uartAt):String("null"));
     uint32_t finalized=n.received+n.timeouts;
     j+=",\"totalDeliveryPct\":"+(finalized?String(100.0*n.received/finalized,4):String("null"))+",\"totalDeadlinePct\":"+(finalized?String(100.0*n.deadlineReceived/finalized,4):String("null"));
@@ -477,7 +479,7 @@ String statusJSON(bool history) {
   }
   j+="]";
   if(!RADIO_MASTER)j+=",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics());
-  if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.active?String(showMaster.step+1):String("null"))+",\"preview\":"+String(showMaster.isPreview?"true":"false")+"}";
+  if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.active?String(showMaster.step+1):String("null"))+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
   if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
   j+="}";return j;
 }

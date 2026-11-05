@@ -12,8 +12,8 @@ bool navigatePublished(uint8_t action){
  if(!RADIO_MASTER||networkResetActive||otaSafetyLock||!Remote::validAction(action)||showMaster.stepIds.empty())return false;
  uint16_t target=Remote::target((Remote::Action)action,showMaster.stepIds.size(),showMaster.step,showMaster.active);
  if(showMaster.active&&!showMaster.isPreview&&target==showMaster.step)return true;
- if(!showMaster.go(target,action==Remote::BACK||action==Remote::FIRST?1:0))return false;
- for(auto &n:nodes)n.nextScore=0;return true;
+ if(!goPublished(target,action==Remote::BACK||action==Remote::FIRST?1:0))return false;
+ return true;
 }
 void remoteMasterTick(){
  if(!RADIO_MASTER||networkResetActive||!network.ready())return;

@@ -75,8 +75,10 @@ export default function App() {
     useEspBackend ? new EspConsoleTransport() : new DisconnectedNetworkTransport(),
   );
   const [backendReady, setBackendReady] = useState(!useEspBackend);
+  const [showMode, setShowMode] = useState(false);
   const requestBusy = useRef(false),
-    appliedSignature = useRef('');
+    appliedSignature = useRef(''),
+    authorityKey = useRef('');
   const transition = useRef(0),
     [activeId, setActiveId] = useState<string | null>(null);
   const [selectedStepId, setSelectedStepId] = useState(project.steps[0].id),
@@ -107,13 +109,23 @@ export default function App() {
       const source = state.preview ? latest.current.draft : latest.current.published?.project;
       const target = state.activeStep == null ? null : source?.steps[state.activeStep - 1];
       if (!target) {
+        authorityKey.current = '';
         setActiveId(null);
         return;
       }
       setActiveId(target.id);
-      if (engine.getSnapshot().stepId !== target.id && source) {
+      const key = `${state.transition ?? ''}:${state.preview}:${state.activeStep}`;
+      if (authorityKey.current !== key) {
+        authorityKey.current = key;
+        setShowMode(!state.preview);
+      }
+      const signature = (state.preview ? 'preview:' : 'show:') + previewSignature(source!, target);
+      if (
+        source &&
+        (engine.getSnapshot().stepId !== target.id || appliedSignature.current !== signature)
+      ) {
         engine.apply(source, target, 'recover', ++transition.current);
-        appliedSignature.current = previewSignature(source, target);
+        appliedSignature.current = signature;
       }
     });
     network
@@ -122,6 +134,7 @@ export default function App() {
         if (!mounted) return;
         if (saved) {
           setWorkspace(saved);
+          setShowMode(!!saved.published);
           setSelectedStepId(saved.draft.steps[0].id);
           setDeviceId(saved.draft.devices[0].id);
           setSelection(null);
@@ -266,15 +279,23 @@ export default function App() {
   };
   const run = useCallback(
     async (id: string, reason: TransitionReason) => {
-      const p = latest.current.draft,
+      const p = showMode
+          ? (latest.current.published?.project ?? latest.current.draft)
+          : latest.current.draft,
         step = p.steps.find((s) => s.id === id);
       if (!step || requestBusy.current) return;
-      const signature = previewSignature(p, step);
+      const signature = (showMode ? 'show:' : 'preview:') + previewSignature(p, step);
       if (engine.getSnapshot().stepId === id && appliedSignature.current === signature) return;
       if (network instanceof EspConsoleTransport) {
         try {
           requestBusy.current = true;
-          await network.preview(p, step, reason === 'back' || reason === 'first');
+          if (showMode && latest.current.published)
+            await network.go(
+              latest.current.published.version,
+              p.steps.findIndex((s) => s.id === id),
+              reason === 'back' || reason === 'first',
+            );
+          else await network.preview(p, step, reason === 'back' || reason === 'first');
         } catch (error) {
           setToast(error instanceof Error ? error.message : 'Нет подтверждения мастера');
           return;
@@ -292,11 +313,15 @@ export default function App() {
         );
       }
     },
-    [engine, network],
+    [engine, network, showMode],
   );
   const navigate = useCallback(
     (action: 'back' | 'forward' | 'first' | 'last') => {
-      const steps = latest.current.draft.steps,
+      const steps = (
+          showMode
+            ? (latest.current.published?.project ?? latest.current.draft)
+            : latest.current.draft
+        ).steps,
         index =
           useEspBackend && network.getSnapshot().activeStep == null
             ? -1
@@ -311,11 +336,12 @@ export default function App() {
               : Math.min(steps.length - 1, index + 1);
       run(steps[to].id, action);
     },
-    [run, engine, network],
+    [run, engine, network, showMode],
   );
   const choosePlaybackStep = (id: string) => {
-    const before = project.steps.findIndex((s) => s.id === engine.getSnapshot().stepId),
-      after = project.steps.findIndex((s) => s.id === id);
+    const steps = (showMode ? (workspace.published?.project ?? project) : project).steps;
+    const before = steps.findIndex((s) => s.id === engine.getSnapshot().stepId),
+      after = steps.findIndex((s) => s.id === id);
     run(id, after < before ? 'back' : 'select');
   };
   const publish = async () => {
@@ -323,7 +349,10 @@ export default function App() {
     try {
       const published = await transport.current.publish(workspace.draft, workspace.published);
       setWorkspace((w) => ({ ...w, published }));
-      if (network instanceof EspConsoleTransport) appliedSignature.current = '';
+      if (network instanceof EspConsoleTransport) {
+        appliedSignature.current = '';
+        setShowMode(true);
+      }
       setToast(`Версия ${published.version} сохранена`);
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Ошибка сохранения');
@@ -412,7 +441,9 @@ export default function App() {
         </div>
         <div className="step-control-strip">
           <StepPlayer
-            steps={project.steps}
+            steps={
+              showMode && workspace.published ? workspace.published.project.steps : project.steps
+            }
             activeId={activeId}
             selectedIndex={selectedIndex}
             onNavigate={navigate}
@@ -450,6 +481,24 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          {useEspBackend && (
+            <select
+              aria-label="Режим плеера"
+              title="Показ — сохранённые сцены; Пропись — черновик"
+              value={showMode ? 'show' : 'preview'}
+              onChange={(e) => {
+                const state = network.getSnapshot();
+                authorityKey.current = `${state.transition ?? ''}:${state.preview}:${state.activeStep}`;
+                setShowMode(e.target.value === 'show');
+                appliedSignature.current = '';
+              }}
+            >
+              <option value="preview">Пропись</option>
+              <option value="show" disabled={!workspace.published}>
+                Показ
+              </option>
+            </select>
+          )}
           <button
             className="icon-button"
             aria-label="Приборы"

@@ -95,6 +95,7 @@ test('ESP transport distinguishes helmet from ordinary slaves and rejects wrong-
               ip: null,
               ageMs: 0,
               scoreSupported: true,
+              localScoreSupported: true,
               sent: 0,
               received: 0,
               timeouts: 0,

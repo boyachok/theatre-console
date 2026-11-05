@@ -8,6 +8,9 @@ export interface NetworkDeviceStatus {
   mac?: string;
   name?: string;
   scoreSupported?: boolean;
+  localScoreSupported?: boolean;
+  sceneStatus?: 'idle' | 'upgrade' | 'loading' | 'ready' | 'waiting_ack' | 'applied' | 'rejected';
+  sceneResponses?: number;
   scoreVersion?: number;
   ip: string | null;
   online: boolean | null;
@@ -28,6 +31,10 @@ export interface NetworkSnapshot {
   masterMac?: string;
   activeStep?: number | null;
   preview?: boolean;
+  transition?: number;
+  publicationReady?: boolean;
+  storedDevices?: number;
+  plannedDevices?: number;
 }
 export interface NetworkTransport {
   readonly kind: 'local' | 'esp';

@@ -7,7 +7,7 @@
 #include "show_filesystem.h"
 #include "runtime.h"
 // Dedicated actuator role. No Actors/Player, PWM, relay, HTTP or OTA driver.
-// Existing protocol sizes and master send/retry scheduling are unchanged.
+// Published RUN is a 44B local-plan reference; draft PREVIEW remains explicit.
 WifiTransport network;Helmet::Runner runner;Show::SlaveStore scoreStore;
 uint8_t masterMAC[6]{};bool masterKnown=false,hasHeartbeat=false,recovery=false,storageReady=false;
 uint32_t selfBoot=1,masterSession=0,generation=0,masterSeen=0,lastHeartbeat=0,lastProbeSeq=0,helloAt=0,identifyUntil=0;
@@ -17,8 +17,8 @@ uint32_t randomId(){uint32_t n=esp_random();return n?n:1;}
 bool linkFresh(){return network.ready()&&hasHeartbeat&&millis()-lastHeartbeat<OFFLINE_MS;}
 Packet message(Type type,uint32_t seq=0){
  Packet p=packet(type,masterSession,seq);p.deviceBoot=selfBoot;p.nodeId=assignedId;p.rssi=(int8_t)WiFi.RSSI();p.state=runner.snapshot(linkFresh());
- // P/5: score-capable helmet, no PWM. Same 72-byte HELLO/ECHO envelope.
- if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=5;}
+ // P/7: indexed-score helmet, no PWM. Same 72-byte HELLO/ECHO envelope.
+ if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=7;}
  return p;
 }
 void resetLink(bool forget){
@@ -31,19 +31,24 @@ void receiveHelmet(){
  LanMessage wire;int budget=32;
  while(budget--&&network.receive(wire)){
   uint32_t now=millis();
-  if(wire.length==sizeof(Show::Packet)){
-   Show::Packet p;memcpy(&p,wire.payload,sizeof(p));
-   if(p.magic!=Show::MAGIC||p.protocol!=Show::PROTOCOL||p.size!=sizeof(p)||!fromMaster(wire,p.session)||p.deviceBoot!=selfBoot){network.rxInvalid++;continue;}
-   if(p.type!=Show::STORE&&p.type!=Show::RUN)continue;
+  if(wire.length==sizeof(Show::Packet)||wire.length==sizeof(Show::RunPacket)){
+   Show::Packet p{};memcpy(&p,wire.payload,wire.length);bool indexed=wire.length==sizeof(Show::RunPacket);
+   if(p.magic!=Show::MAGIC||p.protocol!=Show::PROTOCOL||p.size!=wire.length||!fromMaster(wire,p.session)||p.deviceBoot!=selfBoot){network.rxInvalid++;continue;}
+   if((indexed&&p.type!=Show::RUN)||(!indexed&&p.type!=Show::STORE&&p.type!=Show::PREVIEW)){network.rxInvalid++;continue;}
    masterSeen=lastHeartbeat=now;hasHeartbeat=true;grade=p.health<=OFFLINE?(Health)p.health:BAD;
-   bool accepted=false;
+   bool accepted=false,missing=false;
    if(p.type==Show::STORE)accepted=storageReady&&Helmet::supported(p.cue)&&scoreStore.accept(p);
-   else if(p.reserved&1){accepted=runner.apply(p,now,recovery&&runner.active);if(accepted)recovery=false;}
-   else accepted=true;
+   else if(p.reserved==Show::ACTIVE&&p.run&&p.transition){
+    if(indexed){auto lookup=scoreStore.resolve(Show::reference(p),p.cue);missing=lookup==Show::SlaveStore::Lookup::MISSING;
+     if(lookup==Show::SlaveStore::Lookup::READY)accepted=runner.apply(p,now,recovery&&runner.active);
+    }else accepted=runner.apply(p,now,recovery&&runner.active);
+    accepted=accepted&&runner.active&&runner.run==p.run&&runner.sequence==p.transition&&runner.step==p.step;
+    if(accepted)recovery=false;
+   }else accepted=p.reserved==0;
    Packet ack=message(SCORE_ACK);ack.channel=p.type==Show::STORE?0:1;ack.result=accepted?APPLIED:NOT_READY;
    ack.op=p.sentAt&255;ack.padding[0]=(p.sentAt>>8)&255;ack.padding[1]=(p.sentAt>>16)&255;ack.padding[2]=(p.sentAt>>24)&255;
-   if(p.type==Show::STORE){ack.commandId=scoreStore.version;ack.value=scoreStore.nextMissing();if(scoreStore.version==p.version&&scoreStore.checksum==p.checksum)ack.reserved|=2;}
-   else {ack.commandId=runner.run;ack.seq=runner.sequence;ack.value=runner.step;if(runner.active)ack.reserved|=1;}
+   if(p.type==Show::STORE){ack.commandId=scoreStore.version;ack.seq=p.checksum;ack.value=scoreStore.nextMissing();if(scoreStore.version==p.version&&scoreStore.checksum==p.checksum)ack.reserved|=Show::LOADED;}
+   else {ack.commandId=p.run;ack.seq=p.transition;ack.value=runner.step;if(accepted&&p.reserved==Show::ACTIVE&&runner.active)ack.reserved|=Show::ACTIVE;if(missing)ack.reserved|=Show::MISSING_PLAN;}
    network.send(masterMAC,(const uint8_t*)&ack,sizeof(ack));continue;
   }
   if(wire.length!=sizeof(Packet))continue;

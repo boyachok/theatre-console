@@ -39,12 +39,14 @@ static_assert(sizeof(Packet)==72&&sizeof(LegacyPacket)==64&&sizeof(DebugPacket)=
 // Optional HELLO/ECHO telemetry. Older 0.5.0 producers leave this tag zero.
 inline void setPWMFrequency(Packet &p,uint32_t hz){
   if(p.type!=HELLO&&p.type!=ECHO)return;
-  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=4;p.value=hz&0xffff;
+  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=6;p.value=hz&0xffff;
 }
-// Optional capability marker only; service/score packet layouts and timing stay unchanged.
-inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&p.padding[2]==5;}
+// P/6 regular and P/7 helmet support local indexed scenes; P/4 and P/5 are older full-cue firmware.
+// Service packet layout stays 72B; the separately versioned score protocol is 7.
+inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==5||p.padding[2]==7);}
+inline bool localScoreTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==6||p.padding[2]==7);}
 inline uint32_t reportedPWMFrequency(const Packet &p){
-  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>4))return 0;
+  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>6)||helmetTag(p))return 0;
   return p.value|((uint32_t)p.padding[1]<<16);
 }
 inline LegacyPacket legacyPacket(const Packet &p){

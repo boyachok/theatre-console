@@ -5,7 +5,15 @@
 #include <algorithm>
 namespace Show {
 constexpr uint32_t MAGIC=0x32574f48;
-constexpr uint8_t PROTOCOL=6,STORE=12,RUN=13,ACK=14;
+constexpr uint8_t PROTOCOL=7,STORE=12,RUN=13,ACK=14,PREVIEW=15;
+constexpr uint32_t REPEAT_MS=200,IDLE_MS=500;
+constexpr uint8_t ACTIVE=1,LOADED=2,MISSING_PLAN=4;
+// Compact published-scene reference. No output values travel in RUN.
+struct __attribute__((packed)) RunPacket {
+ uint32_t magic;uint8_t protocol,type;uint16_t size;
+ uint32_t session,deviceBoot,run,transition,version,checksum;
+ uint16_t step,total;uint8_t reason,health;int8_t rssi;uint8_t reserved;uint32_t sentAt;
+};
 constexpr uint16_t MAX_STEPS=512;
 struct __attribute__((packed)) Dimmer {uint8_t value;uint32_t inMs,outMs;};
 struct __attribute__((packed)) Relay {uint8_t on,mode;uint32_t onMs,offMs;};
@@ -18,7 +26,10 @@ struct __attribute__((packed)) Packet {
  uint16_t step,total;uint8_t reason,health;int8_t rssi;uint8_t reserved;uint32_t sentAt;Cue cue;
 };
 struct __attribute__((packed)) FileHeader {uint32_t magic,version,checksum;uint16_t total,reserved;};
-static_assert(sizeof(Cue)==170&&sizeof(Packet)==214&&sizeof(FileHeader)==16,"Show wire sizes");
+static_assert(sizeof(Cue)==170&&sizeof(Packet)==214&&sizeof(RunPacket)==44&&sizeof(FileHeader)==16,"Show wire sizes");
+static_assert(offsetof(Packet,cue)==sizeof(RunPacket),"Shared scene header prefix");
+inline RunPacket reference(const Packet &p){RunPacket r{};std::memcpy(&r,&p,sizeof(r));r.size=sizeof(r);return r;}
+inline Packet expand(const RunPacket &r){Packet p{};std::memcpy(&p,&r,sizeof(r));return p;}
 inline uint32_t crc32(const void *source,size_t count){
  const uint8_t *bytes=(const uint8_t*)source;uint32_t crc=0xffffffff;
  while(count--){crc^=*bytes++;for(int b=0;b<8;b++)crc=(crc>>1)^((crc&1)?0xedb88320:0);}return ~crc;

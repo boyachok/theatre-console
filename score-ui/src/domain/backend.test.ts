@@ -45,6 +45,7 @@ test('real transport sends publication/workspace and confirmed API calls without
         ip: '192.168.50.33',
         ageMs: 10,
         scoreSupported: true,
+        localScoreSupported: true,
         scoreVersion: 0,
         scoreSent: 0,
         scoreReceived: 0,

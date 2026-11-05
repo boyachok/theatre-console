@@ -155,6 +155,14 @@ export function NetworkDialog({
             </button>
           </div>
         </div>
+        {snapshot.plannedDevices !== undefined && snapshot.plannedDevices > 0 && (
+          <p className="muted">
+            Партитуры: {snapshot.storedDevices ?? 0}/{snapshot.plannedDevices} ·{' '}
+            {snapshot.publicationReady
+              ? 'показ готов'
+              : 'ожидаем загрузку / обновление контроллеров'}
+          </p>
+        )}
         {error && (
           <p role="alert" className="network-error">
             {error}
@@ -188,11 +196,12 @@ export function NetworkDialog({
                   'p95, мс',
                   'TX',
                   'RX',
-                  'ACK',
+                  'Ответы сцен',
                   'Потери',
                   'RSSI, dBm',
                   'Шаг',
                   'Версия',
+                  'Сцена',
                   '',
                 ].map((label, i) => (
                   <th key={i}>{label}</th>
@@ -220,11 +229,24 @@ export function NetworkDialog({
                     <td>{metric(r?.p95Ms)}</td>
                     <td>{r?.sent ?? '—'}</td>
                     <td>{r?.received ?? '—'}</td>
-                    <td>{r?.acknowledged ?? '—'}</td>
+                    <td>{r?.sceneResponses ?? '—'}</td>
                     <td>{r?.lost ?? '—'}</td>
                     <td>{metric(r?.rssi)}</td>
                     <td>{r?.confirmedStep ?? '—'}</td>
                     <td>{r?.scoreVersion ?? '—'}</td>
+                    <td title="Программный ACK применения сцены; не датчик нагрузки и не завершение фейда">
+                      {r?.role === 'remote'
+                        ? '—'
+                        : {
+                            idle: '—',
+                            upgrade: 'Обновить прошивку',
+                            loading: 'Загрузка плана',
+                            ready: 'План готов',
+                            waiting_ack: 'Ожидаем ACK',
+                            applied: 'Применена',
+                            rejected: 'Ошибка / не готов',
+                          }[r?.sceneStatus ?? 'idle']}
+                    </td>
                     <td>
                       <button
                         className="icon-button"
