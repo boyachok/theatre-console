@@ -7,6 +7,7 @@
 #include <vector>
 #else
 #include <miniz.h>
+#include "workspace_inflate.h"
 #endif
 namespace Show {
 struct WorkspaceHeader {uint32_t magic=0x315a4354,length=0,checksum=0;};
@@ -32,7 +33,7 @@ inline String readWorkspaceFile(const char *path){
 #ifdef THEATRE_HOST_TEST
  uLongf actual=h.length;ok=ok&&uncompress((Bytef*)output,&actual,input,n)==Z_OK&&actual==h.length;
 #else
- ok=ok&&tinfl_decompress_mem_to_mem(output,h.length,input,n,TINFL_FLAG_PARSE_ZLIB_HEADER)==h.length;
+ ok=ok&&inflateWorkspace(output,h.length,input,n);
 #endif
  ok=ok&&crc32(output,h.length)==h.checksum;output[h.length]=0;String result=ok?String(output):String();heap_caps_free(input);heap_caps_free(output);return result;
 }
