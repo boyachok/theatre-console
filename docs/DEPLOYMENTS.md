@@ -200,3 +200,30 @@ flash16777216/PSRAM8388608. В финальном снимке RSSI−47/−55dB
 **Итого подтверждены восемь разных slave0.7.2**, включая новую30:30:F9:32:02:30.
 Это не означает обновление всех восьми из старого инвентаря: для исторической
 F0:9E:9E:16:18:A4 запись0.7.2 этим журналом пока не подтверждена. ID/IP/USB изменяемы.
+
+## Восстановление master — 0.7.2-recovery.1, A0:85:E3:E2:BC:D4
+
+По явной команде пользователя «ты перепрошивал его? перепрошей» записан минимальный
+совместимый ремонт0.7.2, не новый score7. До записи: аппаратная MAC,
+ESP32-S3 rev0.2/16MB/8MB проверены esptool; OTA-селектор прочитан и побайтно совпал
+с полной16MB копией (app0). Полная flash и JSON партитуры с проверенным CRC уже
+сохранены вне Git; подробности: [MASTER_RECOVERY.md](MASTER_RECOVERY.md).
+
+- Исходники: ветка `recovery/master-072-stack`, commit494f1ee (отv0.7.2).
+- Образ `build/console-master-wifi/console.ino.bin` из recovery-worktree,1227616B.
+- SHA256 `ceccfe1ee25bfc5c7a0ae1067e862a618ea4700354c0301f538024b1e1d99429`.
+- USB `/dev/cu.usbmodem11101`, MAC проверена перед записью повторно.
+- **Только app0:0x10000**, keep flash mode/frequency/size,115200;
+  esptool hash verified, watchdog-reset. Никакого erase-flash; bootloader,
+  partitions/otadata/NVS/storage не входят в диапазон записи.
+- Реальный Serial115200 после boot: rolemaster,version0.7.2-recovery.1,
+  YOUR_WIFI_SSID,IP192.168.50.119,hoststage-master-e2bcd4,flash16777216/PSRAM8388608.
+- console.version1/fingerprint503ee907/stepnull/previewfalse. Uptime двух снимков
+  36.1s→128.5s, loopGapMax6.99ms. В post-flash захватах нет stack-canary/Guru/reboot.
+- Никаких включающих/сценовых тестовых команд инструментами не отправлялось.
+  Slave и remote не перепрошивались, score6 совместимость сохранена.
+- HTTP с Mac снова timeout: Mac192.168.0.104, ESP192.168.50.x. Браузерную проверку
+  делать из YOUR_WIFI_SSID; доступ к workspace по HTTP этим Mac не подтверждён.
+
+Ремонт заменяет stack-heavy ROM inflate на state в PSRAM. Новая main0.7.5 остаётся
+только подготовленной, её новые индексы/режимы не выдавать за установленный recovery.
