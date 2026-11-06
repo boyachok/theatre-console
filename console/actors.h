@@ -54,7 +54,7 @@ public:
     s.ready=linkReady;s.relayOn=relayOn;s.relayMode=relayMode;s.fault=fault;s.audioEnabled=1;
     s.audioState=player.state;s.audioVolume=player.volume;s.audioMode=player.mode;s.audioEq=player.eq;s.audioDrive=player.drive;
     s.audioTrack=player.track;s.audioTracks=player.tracks;
-    s.audioAge=player.lastRx?(uint16_t)std::min((uint32_t)65534,millis()-player.lastRx):65535;return s;
+    s.audioAge=player.hasResponse()?(uint16_t)std::min((uint32_t)65534,millis()-player.lastRx):65535;return s;
   }
   Result apply(Op op,uint8_t channel,uint16_t value,bool heartbeatFresh){
     if(!validControl(op,channel,value))return INVALID;
@@ -89,18 +89,18 @@ public:
     if(op==AUDIO_QUERY){player.poll();return APPLIED;}
     if(op==UART_CLEAR){player.clearStats();return APPLIED;}
     if(op==UART_POLL){player.autoPoll=value;return APPLIED;}
-    if(op==AUDIO_PAUSE)return player.enqueue(0x03)?APPLIED:IO_ERROR;
-    if(!player.ready())return PLAYER_OFFLINE;
+    if(op==AUDIO_PAUSE)return player.pause()?APPLIED:IO_ERROR;
+    if(!player.bootSettled())return PLAYER_OFFLINE; // One-way UART is usable; reply telemetry remains unknown until a real response.
     bool ok=false;
     switch(op){
-      case AUDIO_TRACK:ok=player.enqueue(0x07,value,2);break;
-      case AUDIO_RESUME:ok=player.enqueue(0x02);break;
-      case AUDIO_NEXT:ok=player.enqueue(0x06);break;
-      case AUDIO_PREV:ok=player.enqueue(0x05);break;
-      case AUDIO_VOLUME:ok=player.enqueue(0x13,value,1);if(ok)player.volume=value;break;
-      case AUDIO_MODE:ok=player.enqueue(0x18,value,1);if(ok)player.mode=value;break;
-      case AUDIO_EQ:ok=player.enqueue(0x1A,value,1);if(ok)player.eq=value;break;
-      case AUDIO_DRIVE:ok=player.enqueue(0x0B,value,1);break;
+      case AUDIO_TRACK:ok=player.playTrack(value);break;
+      case AUDIO_RESUME:ok=player.resume();break;
+      case AUDIO_NEXT:ok=player.next();break;
+      case AUDIO_PREV:ok=player.previous();break;
+      case AUDIO_VOLUME:ok=player.setVolume(value);break;
+      case AUDIO_MODE:if(value!=1&&value!=2)return INVALID;ok=player.setRepeat(value==1);break;
+      case AUDIO_EQ:ok=player.setEq(value);break;
+      case AUDIO_DRIVE:if(value!=1)return INVALID;ok=player.selectTF();break;
       default:return INVALID;
     }
     return ok?APPLIED:IO_ERROR;

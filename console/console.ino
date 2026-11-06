@@ -40,7 +40,7 @@ uint32_t &txErrors=network.txErrors;
 uint32_t bootSession=0,testStart=0,restartAt=0,networkEpochSeen=0;
 String csrfToken;
 bool otaActive=false,otaOK=false,otaSafetyLock=false,radioReady=false;
-uint32_t identifyUntil=0,debugUntil=0,nextDebugAt=0;
+uint32_t identifyUntil=0,debugUntil=0,nextDebugAt=0;bool extendedDebugRequested=false;
 bool measurementsRunning=true;
 uint32_t measurementStoppedAt=0,discoverAt=0,networkResetAt=0;
 bool networkResetActive=false;
@@ -51,7 +51,7 @@ uint32_t masterSession=0, masterSeen=0, lastProbe=0, helloAt=0;
 uint8_t assignedId=0;
 uint32_t lastProbeSeq=0;
 
-struct Rx { uint8_t mac[6]; Packet p; UartStats uart; PwmStatus pwm; uint32_t pwmHz=0; int8_t rssi; uint32_t atUs; };
+struct Rx { uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm; uint32_t pwmHz=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
 struct Node;bool currentSceneConfirmed(const Node &n);const char *sceneStatus(const Node &n);
 bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigateCurrent(uint8_t action);
@@ -73,7 +73,7 @@ struct Node {
   int8_t lastMasterRssi=0, lastSlaveRssi=0;
   bool hasReply=false, maintenance=false;
   ControlState reported{};uint32_t reportAt=0,reportUptime=0,deviceBoot=0,nextCommand=0;
-  UartStats uart{};uint32_t uartAt=0,uartUptime=0;
+  UartStats uart{};PlayerDebug playerDebug{};uint32_t uartAt=0,uartUptime=0;
   Packet pendingPacket{};bool pending=false;uint8_t attempts=0;
   uint32_t commandAt=0,retryAt=0;String commandStatus="none";
   bool deferred=false;Op desiredOp=ALL_OFF;uint8_t desiredChannel=0;uint16_t desiredValue=0;
@@ -136,9 +136,8 @@ bool decodeMessage(const LanMessage &message,Rx &r) {
     LegacyPacket old;memcpy(&old,data,sizeof(old));
     if(old.magic!=MAGIC||old.protocol!=LEGACY_PROTOCOL||old.size!=sizeof(old)||old.type==DEBUG_REPORT)return false;
     r.p=expandPacket(old);
-  } else if(len==(int)sizeof(DebugPacket)) {
-    DebugPacket p;memcpy(&p,data,sizeof(p));
-    if(p.magic!=MAGIC||(p.protocol!=PROTOCOL&&p.protocol!=LEGACY_PROTOCOL)||p.size!=sizeof(p)||p.type!=DEBUG_REPORT)return false;
+  } else if(len==(int)sizeof(DebugPacket)||len==(int)sizeof(ExtendedDebugPacket)) {
+    DebugPacket p;if(!decodeDebugReport(data,len,p,r.playerDebug))return false;
     r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;r.p.nodeId=p.nodeId;
     r.uart=p.uart;
   } else return false;
@@ -153,9 +152,10 @@ bool sendPacket(const uint8_t *mac,const Packet &p){
 }
 void sendUartReport() {
   if(!masterKnown||!heartbeatFresh())return;
-  DebugPacket p{};p.magic=MAGIC;p.protocol=PROTOCOL;p.type=DEBUG_REPORT;p.size=sizeof(p);
-  p.session=masterSession;p.deviceBoot=bootSession;p.uptime=millis();p.nodeId=assignedId;p.uart=actors.player.diagnostics();
-  network.send(masterMAC,(const uint8_t*)&p,sizeof(p));
+  ExtendedDebugPacket full{};auto &p=full.legacy;p.magic=MAGIC;p.protocol=PROTOCOL;p.type=DEBUG_REPORT;p.size=sizeof(full);
+  p.session=masterSession;p.deviceBoot=bootSession;p.uptime=millis();p.nodeId=assignedId;p.uart=actors.player.diagnostics();full.player=actors.player.debug();
+  if(extendedDebugRequested)network.send(masterMAC,(const uint8_t*)&full,sizeof(full));
+  else{p.size=sizeof(p);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}
 }
 void sendPwmReport(){
   if(!masterKnown||!heartbeatFresh())return;
@@ -291,7 +291,7 @@ void handleMasterRx(const Rx &r) {
   if(r.p.type==DEBUG_REPORT) {
     int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];
     if(n.deviceBoot!=r.p.deviceBoot)return;
-    if(!n.uartAt||(int32_t)(r.p.uptime-n.uartUptime)>=0){n.uart=r.uart;n.uartAt=millis();n.uartUptime=r.p.uptime;}
+    if(!n.uartAt||(int32_t)(r.p.uptime-n.uartUptime)>=0){n.uart=r.uart;n.playerDebug=r.playerDebug;n.uartAt=millis();n.uartUptime=r.p.uptime;}
     return;
   }
   if(r.p.type!=HELLO&&r.p.type!=ECHO&&r.p.type!=COMMAND_ACK)return;
@@ -370,13 +370,14 @@ void handleSlaveRx(const Rx &r) {
     else if(newSequence(r.p.commandId,lastControlId)) {
       bool fresh=heartbeatFresh()&&(uint32_t)((uint32_t)esp_timer_get_time()-r.atUs)<500000;
       if((Op)r.p.op==ALL_OFF)showRunner.stop();
-      result=otaSafetyLock&&!safeDuringOTA((Op)r.p.op,r.p.value)?NOT_READY:actors.apply((Op)r.p.op,r.p.channel,r.p.value,fresh);
+      if((Op)r.p.op==AUDIO_STOP)showRunner.stopAudio();
+      result=(otaSafetyLock&&!safeDuringOTA((Op)r.p.op,r.p.value))||(showRunner.active&&manualAudioChanges((Op)r.p.op))?NOT_READY:actors.apply((Op)r.p.op,r.p.channel,r.p.value,fresh);
       lastControlId=r.p.commandId;lastControlResult=result;
     }
     Packet reply=packet(COMMAND_ACK,masterSession);reply.deviceBoot=bootSession;
     reply.commandId=r.p.commandId;reply.result=result;reply.state=actors.snapshot();sendPacket(masterMAC,reply);sendPwmReport();
   } else if(r.p.type==DEBUG_REQUEST) {
-    if(r.p.deviceBoot==bootSession){debugUntil=now+15000;nextDebugAt=now;}
+    if(r.p.deviceBoot==bootSession){extendedDebugRequested=r.p.reserved==1;debugUntil=now+15000;nextDebugAt=now;}
   } else if(r.p.type==IDENTIFY) identifyUntil=now+5000;
   else if(r.p.type==MAINTENANCE)actors.off(3);
 }
@@ -440,12 +441,15 @@ String controlJSON(const ControlState &s) {
 String hexString(const uint8_t *bytes,uint8_t length) {
   String s;for(uint8_t i=0;i<length;i++){char b[4];snprintf(b,sizeof(b),"%02X",bytes[i]);if(i)s+=' ';s+=b;}return s;
 }
-String uartJSON(const UartStats &s) {
+String uartJSON(const UartStats &s,const PlayerDebug &player) {
+  uint8_t fullTx[10]{};memcpy(fullTx,s.lastTx,8);fullTx[8]=player.txTail[0];fullTx[9]=player.txTail[1];
   String j="{\"txFrames\":"+String(s.txFrames)+",\"txBytes\":"+String(s.txBytes)+",\"rxBytes\":"+String(s.rxBytes)+",\"validFrames\":"+String(s.validFrames)+",\"replies\":"+String(s.replies);
   j+=",\"checksumErrors\":"+String(s.checksumErrors)+",\"lengthErrors\":"+String(s.lengthErrors)+",\"frameTimeouts\":"+String(s.frameTimeouts)+",\"loopbacks\":"+String(s.loopbacks)+",\"txFailures\":"+String(s.txFailures);
   j+=",\"txPin\":"+String(s.txPin)+",\"rxPin\":"+String(s.rxPin)+",\"rxLevel\":"+String(s.rxLevel)+",\"polling\":"+String(s.polling?"true":"false");
   j+=",\"txAgeMs\":"+(s.txAge==65535?String("null"):String(s.txAge))+",\"rxAgeMs\":"+(s.rxAge==65535?String("null"):String(s.rxAge))+",\"replyAgeMs\":"+(s.replyAge==65535?String("null"):String(s.replyAge));
-  j+=",\"lastTx\":"+jsonString(hexString(s.lastTx,std::min(s.txLen,(uint8_t)8)))+",\"lastRx\":"+jsonString(hexString(s.lastRx,std::min(s.rxLen,(uint8_t)16)))+"}";return j;
+  j+=",\"player\":"+jsonString(player.family==1?"YX6300":"XY-V17B (legacy)");
+  if(player.family==1)j+=",\"playerAcks\":"+String(player.acks)+",\"playerErrors\":"+String(player.errors)+",\"playerEnds\":"+String(player.ends)+",\"lastPlayerError\":"+String(player.lastError);
+  j+=",\"lastTx\":"+jsonString(hexString(fullTx,std::min(s.txLen,(uint8_t)(player.family==1?10:8))))+",\"lastRx\":"+jsonString(hexString(s.lastRx,std::min(s.rxLen,(uint8_t)16)))+"}";return j;
 }
 String statusJSON(bool history) {
   String j;j.reserve(history?90000:10000);
@@ -464,7 +468,7 @@ String statusJSON(bool history) {
     j+=",\"ageMs\":"+(n.hasReply?String(millis()-n.lastReply):String("null"))+",\"streak\":"+String(n.streak)+",\"maxStreak\":"+String(n.maxStreak)+",\"sent\":"+String(n.sent)+",\"received\":"+String(n.received)+",\"timeouts\":"+String(n.timeouts)+",\"late\":"+String(n.late)+",\"duplicates\":"+String(n.duplicates)+",\"maintenance\":"+(n.maintenance?"true":"false");
     j+=",\"control\":"+controlJSON(n.reported)+",\"reportAgeMs\":"+(n.reportAt?String(millis()-n.reportAt):String("null"));
     j+=",\"role\":"+jsonString(n.helmet?"helmet":"slave")+",\"voiceAvailable\":"+(n.helmet?String("false"):String("null"))+",\"deviceBoot\":"+String(n.deviceBoot)+",\"commandStatus\":"+jsonString(n.commandStatus)+",\"commandPending\":"+(n.pending?"true":"false")+",\"commandAttempts\":"+String(n.attempts)+",\"scoreSupported\":"+String(n.scoreSupported?"true":"false")+",\"localScoreSupported\":"+String(n.localScoreSupported?"true":"false")+",\"sceneStatus\":"+jsonString(sceneStatus(n))+",\"scoreVersion\":"+String(n.scoreLoaded)+",\"scoreSent\":"+String(n.scoreSent)+",\"scoreReceived\":"+String(n.scoreReceived)+",\"scoreRttMs\":"+(n.scoreRtt<0?String("null"):String(n.scoreRtt))+",\"confirmedStep\":"+(currentSceneConfirmed(n)?String(n.scoreStep+1):String("null"))+",\"requestId\":"+String(n.requestId)+",\"commandAckMs\":"+(n.commandAckMs<0?String("null"):String(n.commandAckMs));
-    j+=",\"uart\":"+(n.uartAt?uartJSON(n.uart):String("null"))+",\"uartReportAgeMs\":"+(n.uartAt?String(millis()-n.uartAt):String("null"));
+    j+=",\"uart\":"+(n.uartAt?uartJSON(n.uart,n.playerDebug):String("null"))+",\"uartReportAgeMs\":"+(n.uartAt?String(millis()-n.uartAt):String("null"));
     uint32_t finalized=n.received+n.timeouts;
     j+=",\"totalDeliveryPct\":"+(finalized?String(100.0*n.received/finalized,4):String("null"))+",\"totalDeadlinePct\":"+(finalized?String(100.0*n.deadlineReceived/finalized,4):String("null"));
     if(history) {
@@ -478,7 +482,8 @@ String statusJSON(bool history) {
     j+='}';
   }
   j+="]";
-  if(!RADIO_MASTER)j+=",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics());
+  if(!RADIO_MASTER){j+=",\"hardwareProfile\":\"s3-yx6300-rx1-tx2-v1\",\"dimmerPins\":[";for(int i=0;i<DIMMER_COUNT;i++){if(i)j+=',';j+=PWM_PINS[i];}j+="],\"relayPins\":["+String(RELAY_PIN)+","+String(RELAY2_PIN)+"],\"stripPin\":"+String(STRIP_PIN);}
+  if(!RADIO_MASTER)j+=",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics(),actors.player.debug());
   if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.cursorValid?String(showMaster.step+1):String("null"))+",\"stepId\":"+jsonString(showMaster.cursorId())+",\"livePreview\":"+String(showMaster.livePreview?"true":"false")+",\"running\":"+String(showMaster.active?"true":"false")+",\"syncing\":"+String((showMaster.syncPending||(!showMaster.livePreview&&showMaster.draftUnsaved()))?"true":"false")+",\"navigation\":"+String(showMaster.navigation)+",\"draftFingerprint\":"+jsonString(showMaster.draftFingerprint)+",\"syncFingerprint\":"+jsonString(showMaster.syncFingerprint)+",\"draftRevision\":"+String(showMaster.draftRevision)+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
   if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
   j+="}";return j;
@@ -524,7 +529,7 @@ void routes() {
   web.on("/uart/request",HTTP_POST,[] {
     if(!validForm())return;int i=targetNode();
     if(i<0||!nodes[i].deviceBoot){web.send(400);return;}
-    Packet p=packet(DEBUG_REQUEST,bootSession);p.deviceBoot=nodes[i].deviceBoot;
+    Packet p=packet(DEBUG_REQUEST,bootSession);p.deviceBoot=nodes[i].deviceBoot;p.reserved=1; // Ask for extended YX telemetry; old slaves safely return their legacy report.
     bool ok=sendPacket(nodes[i].mac,p);web.send(ok?202:503,"text/plain",ok?"Requested":"Send failed");
   });
   web.on("/command",HTTP_POST,[] {
@@ -545,6 +550,7 @@ void routes() {
   });
   web.on("/stop-all",HTTP_POST,[] {
     if(!validForm())return;if(!RADIO_MASTER){web.send(400,"text/plain","Master only");return;}
+    showMaster.queueShow(showMaster.draftFingerprint); // Explicit ALL OFF also suspends LIVE/reconciliation.
     int count=0;for(int i=0;i<MAX_NODES;i++)if(queueCommand(i,ALL_OFF))count++;
     web.send(202,"text/plain","ALL OFF: "+String(count));
   });
@@ -629,7 +635,7 @@ void loop() {
     if(c=='i')Serial.printf("WiFi %s role=%s SSID=%s IP=%s connected=%d channel=%d RSSI=%d host=%s.local uptime=%lus id=%u master=%s RXdrops=%lu TXerrors=%lu flash=%u PSRAM=%u\n",RADIO_VERSION,RADIO_MASTER?"master":"slave",STAGE_WIFI_SSID,WiFi.localIP().toString().c_str(),network.ready(),WiFi.channel(),WiFi.RSSI(),network.hostname.c_str(),(unsigned long)(millis()/1000),assignedId,masterKnown?macString(masterMAC).c_str():"none",(unsigned long)rxDrops.load(),(unsigned long)txErrors,ESP.getFlashChipSize(),ESP.getPsramSize());
     if(c=='r')resetStats();
     if(c=='j')Serial.println(statusJSON(false));
-    if(c=='u'&&!RADIO_MASTER)Serial.println(uartJSON(actors.player.diagnostics()));
+    if(c=='u'&&!RADIO_MASTER)Serial.println(uartJSON(actors.player.diagnostics(),actors.player.debug()));
     if(c=='q'&&!RADIO_MASTER){actors.player.poll();Serial.println("UART status query queued");}
     if(c=='!'){if(!RADIO_MASTER)showRunner.stop();else {showMaster.active=false;for(int i=0;i<MAX_NODES;i++)queueCommand(i,ALL_OFF);}}
   }

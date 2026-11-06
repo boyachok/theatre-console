@@ -9,3 +9,8 @@ struct __attribute__((packed)) UartStats {
   uint32_t loopbacks,txFailures;
 };
 static_assert(sizeof(UartStats)==76,"UART stats wire size");
+// Optional debug extension. The legacy 76B telemetry and 72B service packet stay unchanged.
+struct __attribute__((packed)) PlayerDebug {
+ uint8_t txTail[2]{},family=0,lastError=0;uint32_t acks=0,errors=0,ends=0;
+};
+static_assert(sizeof(PlayerDebug)==16,"Player debug extension size");

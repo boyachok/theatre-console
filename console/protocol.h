@@ -19,6 +19,16 @@ struct __attribute__((packed)) DebugPacket {
   uint32_t magic;uint8_t protocol,type;uint16_t size;
   uint32_t session,deviceBoot,uptime;uint8_t nodeId,padding[3];UartStats uart;
 };
+// Optional extended UART report; old 100B reports remain accepted by a new master.
+struct __attribute__((packed)) ExtendedDebugPacket {DebugPacket legacy;PlayerDebug player;};
+static_assert(sizeof(ExtendedDebugPacket)==116,"Extended UART report size");
+inline bool decodeDebugReport(const uint8_t *data,size_t len,DebugPacket &base,PlayerDebug &extra){
+ if(len!=sizeof(DebugPacket)&&len!=sizeof(ExtendedDebugPacket))return false;
+ memcpy(&base,data,sizeof(base));extra=PlayerDebug{};
+ if(base.magic!=MAGIC||(base.protocol!=PROTOCOL&&base.protocol!=LEGACY_PROTOCOL)||base.size!=len||base.type!=DEBUG_REPORT)return false;
+ if(len==sizeof(ExtendedDebugPacket)){ExtendedDebugPacket full;memcpy(&full,data,sizeof(full));extra=full.player;}
+ return true;
+}
 struct __attribute__((packed)) PwmPacket {
   uint32_t magic;uint8_t protocol,type;uint16_t size;
   uint32_t session,deviceBoot,uptime;uint8_t nodeId,padding[3];

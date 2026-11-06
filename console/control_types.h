@@ -43,6 +43,7 @@ inline bool validControl(Op op,uint8_t channel,uint16_t value){
     default:return false;
   }
 }
+inline bool manualAudioChanges(Op op){return op==AUDIO_TRACK||op==AUDIO_RESUME||op==AUDIO_PAUSE||op==AUDIO_NEXT||op==AUDIO_PREV||op==AUDIO_VOLUME||op==AUDIO_MODE||op==AUDIO_EQ||op==AUDIO_DRIVE;}
 inline bool legacyNeedsAudio(Op op){
   return op==AUDIO_TRACK||op==AUDIO_RESUME||op==AUDIO_NEXT||op==AUDIO_PREV||op==AUDIO_VOLUME||op==AUDIO_MODE||op==AUDIO_EQ||op==AUDIO_DRIVE;
 }

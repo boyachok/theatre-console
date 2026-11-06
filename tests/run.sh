@@ -8,7 +8,7 @@ for TEST in quality control lan remote; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors player compat console scene_delivery remote_master; do
+for TEST in actors player yx_player compat console scene_delivery remote_master; do
   c++ "${FLAGS[@]}" -Itests/mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
@@ -31,6 +31,7 @@ for TEST in wifi remote_firmware remote_ota remote_buttons helmet_firmware; do
 done
 if [[ -n "${PLAYWRIGHT_PATH:-}" ]]; then
   node tests/ui.cjs
+  node tests/yx_uart_ui.cjs
 else
   echo 'UI test skipped: set PLAYWRIGHT_PATH to an installed playwright package.'
 fi

@@ -27,10 +27,11 @@ inline void pinMode(uint8_t p,uint8_t value){mockModes[p]=value;}
 inline int digitalRead(uint8_t p){return mockLevels[p];}
 inline bool ledcAttach(uint8_t pin,uint32_t hz,uint8_t bits){if(mockAttachOK){mockPWMFrequency[pin]=hz;mockPWMResolution[pin]=bits;}return mockAttachOK;}
 inline bool ledcWrite(uint8_t pin,uint32_t value){mockPWM[pin]=value;return mockAttachOK;}
+inline int mockUARTBaud=0,mockUARTConfig=0,mockUARTRx=-1,mockUARTTx=-1;
 class HardwareSerial {
 public:
   explicit HardwareSerial(int){}
-  void begin(int,int,int,int){}
+  void begin(int baud,int config,int rx,int tx){mockUARTBaud=baud;mockUARTConfig=config;mockUARTRx=rx;mockUARTTx=tx;}
   int available(){return mockUARTIn.size();}
   int read(){int c=mockUARTIn.front();mockUARTIn.pop_front();return c;}
   size_t write(const uint8_t *p,size_t n){n=std::min(n,mockWriteLimit);mockUARTOut.insert(mockUARTOut.end(),p,p+n);return n;}

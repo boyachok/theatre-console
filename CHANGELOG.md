@@ -1,5 +1,27 @@
 # Изменения Theatre console
 
+## 0.7.9 — новая разводка slave и YX6300 (подготовлена, НЕ прошита)
+
+- По карте оператора: ESP RX1←playerTX, ESP TX2→playerRX; REL1/2=39/38,
+  DIM1–12=5,6,7,15,16,17,18,8,9,10,11,12; WS2811DATA47/status48 без изменений.
+  Все GPIO проверены на пересечения,12PWM сохраняют25кГц/8LEDC+4MCPWM. Логические
+  NVS уровни/инверсии/полярность реле не инвертированы/не стёрты. Старые профили не менялись.
+- Новый YX codec10B/checksum/parser/resync; semantic player API вместо XY opcodes.
+  Safe STOP/mute/TF/200мс settle без startup PLAY, explicit one-way control после init,
+  ACK/NACK/EOF отдельно от успешной передачи/звука, эхо не даёт ready.
+- Сценовые mute/repeat-off/play ставятся атомарно; fade-in начинается от фактического
+  TX PLAY, не FIFO admission. Volume coalesce сохраняет mute barrier. EOF single
+  останавливает, late old EOF не отменяет queued switch; repeat/STOP/reboot/error paths.
+- Optional UART report116B с полнымTX10B/playerACK/NACK/EOF, по request reserved1;
+  legacy100B/Stats76/Service72/Score7 сохранены. Старый master получает100B по своему
+  запросу; новый master принимает100/116. Нет принудительного fleet protocol upgrade.
+- `/uart` стенд: GPIO/полный TX/RX, real counters, volume10/play1/pause/resume/STOP.
+  При активном local runner ручные изменения аудио блокируются до ALL_OFF; отдельный
+  audio STOP отменяет pending start/ramp. ALL_OFF также прекращает LIVE на master.
+- ASan/UBSan настоящий driver/Actors/Runner + UART MOCK UI/mobile, существующие
+  тесты и4сборки. Реального звука/уровней6300/частоты новой разводки не проверяли;
+  на платы9не писали, реальный комплект остаётся0.7.8. [Стенд/ограничения](docs/YX6300.md).
+
 ## 0.7.8 — LIVE-предпросмотр, master-owned draft counter и long ACK (OTA10плат)
 
 После разработки/тестов отдельно разрешён и выполнен OTA-rollout **master+8slave+
