@@ -11,7 +11,7 @@ void heartbeat(uint32_t at){Packet p=packet(REMOTE_PING,77,++pingSeq);p.deviceBo
 void acknowledge(uint32_t id,uint32_t at){Packet p=packet(REMOTE_ACK,77,id);p.deviceBoot=selfBoot;p.commandId=id;p.result=APPLIED;p.value=1;p.padding[0]='R';p.padding[1]=1;inject(p);tick(at);}
 int main(){
  mockLevels[13]=mockLevels[14]=HIGH;mockNow=100;setup();assert(mockModes[13]==INPUT_PULLUP&&mockModes[14]==INPUT_PULLUP);assert(WiFi.ssid=="YOUR_WIFI_SSID"&&WiFi.password=="YOUR_WIFI_PASSWORD"&&WiFi.host.find("stage-remote-")==0);
- WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,88);tick(1000);assert(MDNS.services==0&&!masterKnown);
+ WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,88);tick(1000);assert(MDNS.services==1&&httpReady&&!masterKnown);
  inject(packet(DISCOVER,77));tick(1001);tick(1500);auto hello=last(REMOTE_HELLO);assert(remoteTag(hello)&&hello.deviceBoot==selfBoot);
  heartbeat(1501);assert(last(REMOTE_PONG).seq==pingSeq);tick(1535);assert(canOperate(mockNow)&&mockRgbColor==0x14);
  mockLevels[13]=LOW;tick(1600);tick(1640);mockLevels[13]=HIGH;tick(1700);tick(1740);auto forward=last(REMOTE_EVENT);assert(forward.op==Remote::FORWARD&&forward.commandId==1&&mockRgbColor==0x141414);
@@ -21,5 +21,5 @@ int main(){
  WiFi.state=0;tick(5200);mockLevels[13]=LOW;tick(5600);assert(!canOperate(mockNow)&&outbox.size()==0);
  WiFi.state=WL_CONNECTED;tick(6000);inject(packet(DISCOVER,77));tick(6001);tick(6400);heartbeat(6500);for(uint32_t t=7000;t<=10000;t+=500)heartbeat(t);mockLevels[13]=HIGH;tick(10100);tick(10140);assert(outbox.size()==0);
  std::set<uint32_t> ids;for(auto &wire:mockUDPOut){Packet p;memcpy(&p,wire.data.data()+sizeof(LanHeader),sizeof(p));if(p.type==REMOTE_EVENT)ids.insert(p.commandId);}assert(ids==std::set<uint32_t>({1,2}));for(auto value:mockPWMFrequency)assert(value==0);
- puts("Actual remote firmware: dedicated input-only GPIO13/14, same WLAN, no HTTP advertisement, discovery/boot-bound handshake, ping echo, forward/3s-first, one white pulse (not retry/ACK), no offline/held-reconnect phantom command, no PWM outputs passed");
+ puts("Actual remote firmware: dedicated input-only GPIO13/14, same WLAN, maintenance HTTP/OTA advertisement, discovery/boot-bound handshake, ping echo, forward/3s-first, one white pulse (not retry/ACK), no offline/held-reconnect phantom command, no PWM outputs passed");
 }

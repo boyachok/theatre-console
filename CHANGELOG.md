@@ -1,5 +1,25 @@
 # Изменения Theatre console
 
+## 0.7.6 — OTA пульта и безопасная проверка белого (remote записан)
+
+- Remote: служебный HTTP /api/status и страница обслуживания, mDNS HTTP,
+  без редактора/FS/нагрузок. /update требует token, точную MAC,role remote, Origin;
+  inactive app slot, header/6MiB/role-marker + Update validation. Это не подпись/TLS.
+- Commit только после полного multipart; отказ wrong-role/body, abort/write/end/
+  timeout не переключает boot на недописанный образ. На OTA кнопки/очередь отменены,
+  held/reconnect не дают фантомной команды. Общий HTTP-worker не блокирует UDP TCP-ожиданием.
+- Безопасный TX-тест с id0/actionNONE/пустым challenge даёт белый80мс и STALE ACK,
+  не двигает master. Счётчики диагностики отдельно от навигации. GPIO-состояния,
+  PING age, bootId/otaSlot, OTA ошибки доступны по HTTP/Serial.
+- `deploy ota remote` разрешён для нового пульта, MAC/роль/версия и смена token
+  проверяются после reboot. Старый remote0.7.2 требует первого USB-обновления.
+- Реальный remote30:30:F9:1B:FD:6C: полный16MB backup, USB app0-only, затем тот же
+  образ965056B по OTA, HTTP200, новая сессия и app1. Wrong-MAC403 проверен.
+  Identify5с/TX-тест вызваны: diagSent1/diagAcks1/STALE6/whitePulses1; master counter
+  v2/stepnull/previewfalse неизменён. Физическую видимость RGB подтвердить оператору;
+  реальные кнопки/нагрузки сценовыми командами не тестировались.
+- R/1 не менялся: master0.7.2-recovery.1 и8slave0.7.2 не перепрошивались.
+
 ## 0.7.5 — исправление стека распаковщика (НЕ прошита)
 
 - На реальном master0.7.2 обнаружен boot-loop `Stack canary ... loopTask` при

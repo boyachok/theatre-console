@@ -38,6 +38,7 @@ int main(){
  remoteMasterTick();assert(sent.back().p.type==REMOTE_PING);Packet ping=sent.back().p;assert(ping.deviceBoot==9);assert(remoteStatusJSON().find("remote")!=std::string::npos);
  r.p=packet(REMOTE_PONG,bootSession,ping.seq);r.p.deviceBoot=9;r.p.commandId=ping.commandId;r.p.padding[0]='R';r.p.padding[1]=1;r.p.rssi=-60;mockNow=102;r.atUs=102000;handleRemoteRx(r);assert(remotePeers[0].monitor.received==1);
  auto event=[&](uint32_t id,uint8_t action){r.p=packet(REMOTE_EVENT,bootSession,ping.commandId);r.p.deviceBoot=9;r.p.commandId=id;r.p.op=action;r.p.uptime=mockNow+700;r.p.padding[0]='R';r.p.padding[1]=1;};
+ event(0,Remote::NONE);r.p.seq=r.p.uptime=0;handleRemoteRx(r);assert(showMaster.calls==0&&sent.back().p.result==STALE); // Safe TX/white diagnostic can never navigate.
  event(1,Remote::FORWARD);handleRemoteRx(r);assert(showMaster.step==0&&showMaster.calls==1&&sent.back().p.result==APPLIED);handleRemoteRx(r);assert(showMaster.calls==1);event(2,Remote::FORWARD);handleRemoteRx(r);assert(showMaster.step==1&&showMaster.calls==2);
  event(3,Remote::BACK);r.p.uptime=mockNow-1;handleRemoteRx(r);assert(showMaster.calls==2&&sent.back().p.result==STALE);
  event(3,Remote::LAST);r.p.deviceBoot=10;handleRemoteRx(r);assert(showMaster.calls==2);r.p.deviceBoot=9;r.p.session=88;handleRemoteRx(r);assert(showMaster.calls==2);

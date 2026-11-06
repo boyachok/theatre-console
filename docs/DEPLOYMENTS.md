@@ -227,3 +227,40 @@ ESP32-S3 rev0.2/16MB/8MB проверены esptool; OTA-селектор про
 
 Ремонт заменяет stack-heavy ROM inflate на state в PSRAM. Новая main0.7.5 остаётся
 только подготовленной, её новые индексы/режимы не выдавать за установленный recovery.
+
+## Remote 0.7.6 — первое добавление OTA и реальная OTA-проверка
+
+По явному запросу «добавим ota и проверим мигание, подключаю его по юсб» обновлён
+**только remote30:30:F9:1B:FD:6C**. MAC прочитана из USB и независимо esptool,
+ESP32-S3 rev0.2/16MB flash/8MB PSRAM. До изменений Serial подтвердил remote0.7.2,
+Wi-Fi/masterReady true,sent0/acks0; сохранён снимок counter мастера.
+
+Полная исходная flash16MB (SHA256
+`501c39d1d355857ca3af4b7dd2bcfae3bdd66e4c4aa88218a0cc4e1b4194b94d`),
+образ/логи/статусы — вне Git:
+`~/Theatre-console-backups/remote-3030F91BFD6C-20261106-135313/`.
+
+1. Перед USB повторно проверены MAC и OTA selector (побайтно как backup, app0).
+   Записано **только app0 по0x10000**, без bootloader/partitions/otadata/NVS/storage.
+   Esptool hash verified, watchdog-reset.
+2. Образ965056B, `build/console-remote-wifi/remote.ino.bin`, SHA256
+   `4fec26ac0e3f2bd851fa1b64a99449f6ce5998011ea015cc0ec83a607de92ef2`.
+   Boot: role remote/version0.7.6,IP192.168.50.4,app0/65536,HTTP otaSupported true,
+   GPIO13/14 отпущены, masterReady/buttonsEnabled true.
+3. Реальный OTA-запрос с target MAC мастера к remote получил403, app/boot/token
+   не изменились, otaBytes0. Затем **тот же бинарник** загружен по HTTP multipart:
+   ответ200 «Remote update OK. Rebooting.».
+4. После OTA: remote0.7.6/MAC прежние, новый token/bootId, **app1/0x610000**,
+   serverMs3952 в первом подтверждённом ответе, masterReady true. Это не только
+   успешный ответ upload, но проверка фактического нового запуска другого slot.
+5. Вызваны identify5с и безопасный tx-test (eventID0/actionNONE/challenge0).
+   Master обязан отклонить его: diagSent1/diagAcks1/diagResult6(STALE),whitePulses1,
+   навигационныеsent0/acks0. Обычный outbox не использовался. Это реальный UDP/ACK,
+   не симуляция. Физическую видимость белого ещё подтверждает оператор; GPIO
+   светодиода программно выставлен, но оптического датчика нет.
+6. Counter мастера до/после: v2/fingerprint93081004/stepnull/previewfalse — без
+   изменения. Никаких действительных команд навигации/включения нагрузок не было.
+
+Мастер остаётся0.7.2-recovery.1,8slave —0.7.2; они не перепрошивались. R/1 прежний.
+Реальные кнопки коротко/3с на нагрузках не тестировались. Source0.7.6 для остальных
+ролей не выдавать за установленный комплект. Подробности HTTP/OTA: [REMOTE.md](REMOTE.md).

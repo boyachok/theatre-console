@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 CLI='/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli'
 ESPROOT="$HOME/Library/Arduino15/packages/esp32"
 FQBN='esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,FlashMode=dio,PSRAM=opi,PartitionScheme=custom'
-usage(){ echo 'Usage: ./deploy {master|slave|remote|helmet} [USB_PORT] | ./deploy build {master|slave|remote|helmet} | ./deploy ota {master|slave} IP'; }
+usage(){ echo 'Usage: ./deploy {master|slave|remote|helmet} [USB_PORT] | ./deploy build {master|slave|remote|helmet} | ./deploy ota {master|slave|remote} IP'; }
 ACTION=usb
 case "${1:-}" in
   build|ota) ACTION="$1"; shift ;;
@@ -17,7 +17,7 @@ case "$PROFILE" in console|control|wifi04|espnow|radio) ;; *) echo 'PROFILE must
 SKETCH="$PROFILE"
 if [[ "$ROLE" == remote || "$ROLE" == helmet ]]; then
   [[ "$PROFILE" == console ]] || { echo "$ROLE is supported only by PROFILE=console";exit 1; }
-  [[ "$ACTION" != ota ]] || { echo "$ROLE has no HTTP/OTA server: use USB";exit 1; }
+  if [[ "$ROLE" == helmet && "$ACTION" == ota ]]; then echo 'helmet has no HTTP/OTA server: use USB';exit 1;fi
   SKETCH="$ROLE"
 fi
 FLAGS="-DRADIO_MASTER=$MASTER"
@@ -57,13 +57,13 @@ case "$ACTION" in
  ota)
    IP="${1:?Specify the device IP}"
    STATUS="$(curl --noproxy '*' --fail --silent --show-error --connect-timeout 3 --max-time 8 "http://$IP/api/status")"
-   IDENTITY="$(printf '%s' "$STATUS" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["role"]==sys.argv[1], "Wrong target role";print(d["mac"].upper(),d["token"])' "$ROLE")"
+   IDENTITY="$(printf '%s' "$STATUS" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["role"]==sys.argv[1], "Wrong target role";assert sys.argv[1]!="remote" or d.get("otaSupported"), "Old remote needs initial USB update";print(d["mac"].upper(),d["token"])' "$ROLE")"
    read -r MAC TOKEN <<< "$IDENTITY";check_mac "$MAC"
-   curl --noproxy '*' --fail --show-error --connect-timeout 3 --max-time 120 -F "firmware=@$OUT/$BIN.bin" "http://$IP/update?token=$TOKEN&target=$MAC"
+   curl --noproxy '*' --fail --show-error --connect-timeout 3 --max-time 120 -F "firmware=@$OUT/$BIN.bin" "http://$IP/update?token=$TOKEN&target=$MAC&role=$ROLE"
    EXPECTED_VERSION='';if [[ "$PROFILE" == console ]]; then EXPECTED_VERSION="$(python3 -c 'import json;print(json.load(open("version.json"))["version"])')";fi
    for attempt in {1..15}; do
      sleep 1
-     if curl --noproxy '*' --fail --silent --connect-timeout 2 --max-time 3 "http://$IP/api/status" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["mac"].upper()==sys.argv[1] and d["role"]==sys.argv[2] and (not sys.argv[3] or d["version"]==sys.argv[3])' "$MAC" "$ROLE" "$EXPECTED_VERSION" 2>/dev/null; then echo "Verified $ROLE $MAC $EXPECTED_VERSION after reboot";exit 0;fi
+     if curl --noproxy '*' --fail --silent --connect-timeout 2 --max-time 3 "http://$IP/api/status" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["mac"].upper()==sys.argv[1] and d["role"]==sys.argv[2] and (not sys.argv[3] or d["version"]==sys.argv[3]) and d.get("token")!=sys.argv[4]' "$MAC" "$ROLE" "$EXPECTED_VERSION" "$TOKEN" 2>/dev/null; then echo "Verified $ROLE $MAC $EXPECTED_VERSION after reboot";exit 0;fi
    done
    echo 'Upload returned, but reboot/version could not be verified. Check DHCP/Serial; not declaring success.' >&2;exit 1 ;;
 esac
