@@ -8,8 +8,12 @@ size_t storedPlans(){
 }
 bool publishedReady(){return showMaster.version&&!showMaster.plans.empty()&&storedPlans()==showMaster.plans.size();}
 bool goPublished(uint16_t target,uint8_t reason){
- if(!RADIO_MASTER||networkResetActive||otaSafetyLock||!publishedReady())return false;
+ if(!RADIO_MASTER||networkResetActive||otaSafetyLock||(!showMaster.livePreview&&showMaster.draftUnsaved())||!publishedReady())return false;
  if(!showMaster.go(target,reason))return false;
+ for(auto &n:nodes)n.nextScore=0;return true;
+}
+bool goDraft(uint16_t target,uint8_t reason){
+ if(!RADIO_MASTER||networkResetActive||otaSafetyLock||!showMaster.goDraft(target,reason))return false;
  for(auto &n:nodes)n.nextScore=0;return true;
 }
 bool currentSceneConfirmed(const Node &n){return showMaster.active&&showMaster.find(n.mac,showMaster.isPreview)&&n.scoreAt&&n.scoreStep==showMaster.step&&n.scoreSeq==showMaster.sequence&&n.scoreResult==APPLIED&&millis()-n.scoreAt<OFFLINE_MS;}
@@ -76,6 +80,7 @@ bool handleShowMessage(const LanMessage &message){
 }
 void showMasterTick(){
  if(!RADIO_MASTER||!network.ready()||networkResetActive)return;
+ if(showMaster.syncPending&&!showMaster.draftUnsaved()&&publishedReady())showMaster.syncPending=false;
  static uint32_t slot=0;uint32_t now=millis();if((int32_t)(now-slot)<0)return;
  static int cursor=0;
  for(int k=0;k<MAX_NODES;k++){
@@ -85,7 +90,7 @@ void showMasterTick(){
    n.nextScore=now+(showMaster.active?Show::REPEAT_MS:Show::IDLE_MS);
    p.type=showMaster.isPreview?Show::PREVIEW:Show::RUN;
    auto plan=showMaster.find(n.mac,showMaster.isPreview);
-   if(showMaster.active&&plan){uint16_t index=showMaster.isPreview?0:showMaster.step;if(index<plan->cues.size()){
+   if(showMaster.active&&plan){uint16_t index=showMaster.isPreview?showMaster.previewIndex():showMaster.step;if(index<plan->cues.size()){
     p.reserved=Show::ACTIVE;p.version=showMaster.isPreview?0:showMaster.version;p.checksum=plan->checksum;p.step=showMaster.step;p.total=showMaster.isPreview?showMaster.previewTotal:showMaster.stepIds.size();p.reason=showMaster.reason;
     if(showMaster.isPreview)p.cue=plan->cues[index];
    }}

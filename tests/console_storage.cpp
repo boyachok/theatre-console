@@ -19,5 +19,28 @@ int main(){
  LittleFS.failPlanRename=true;String three=payload(3);assert(store.loadPayload(three,true,error));assert(store.version==3);Show::MasterStore interrupted;interrupted.begin();assert(interrupted.version==3);LittleFS.failPlanRename=false;Show::MasterStore recovered;recovered.begin();assert(recovered.version==3&&LittleFS.files.count("/published.json.tmp")==0);
  String next=payload(4);JsonDocument uncommitted;deserializeJson(uncommitted,next);uncommitted.remove("workspaceJson");String stage;serializeJson(uncommitted,stage);assert(Show::stageText("/published.json.tmp",stage.c_str()));Show::MasterStore beforeCommit;beforeCommit.begin();assert(beforeCommit.version==3);
  String invalid=payload(4);JsonDocument bad;deserializeJson(bad,invalid);bad["devices"][1]["mac"]=bad["devices"][0]["mac"];invalid.clear();serializeJson(bad,invalid);assert(!store.loadPayload(invalid,true,error)&&store.version==3);
+ // Actual master draft bank: patches are atomic/revision-bound and remote cursor survives edits/reorder.
+ JsonDocument draft;deserializeJson(draft,payload(4));draft.remove("workspaceJson");draft["base"]="";draft["revision"]=0;draft["fingerprint"]="draft-a";
+ auto text=[&](JsonDocument &d){String out;serializeJson(d,out);return out;};
+ assert(store.draftPayload(text(draft),error)&&!store.livePreview&&store.version==3&&store.draftRevision==1);
+ assert(store.goDraft(49,0)&&store.cursorValid&&store.cursorId()=="s49"&&store.previewIndex()==49);auto navigation=store.navigation,sequence=store.sequence;
+ auto patch=[&](int step,int value,const char *fp){JsonDocument delta;delta["base"]=store.draftFingerprint;delta["revision"]=store.draftRevision;delta["fingerprint"]=fp;auto p=delta["patches"].to<JsonArray>().add<JsonObject>();p["id"]="device0";p["step"]=step;p["cue"]=draft["devices"][0]["cues"][step];p["cue"]["d"][0][0]=value;return text(delta);};
+ auto update=patch(49,123,"draft-b");assert(store.draftPayload(update,error)&&store.sequence==sequence+1&&store.navigation==navigation&&store.draftPlans[0].cues[49].dimmers[0].value==123);
+ assert(!store.draftPayload(update,error)&&store.sequence==sequence+1); // Replay cannot reapply even if data is valid.
+ sequence=store.sequence;assert(store.draftPayload(patch(2,33,"draft-c"),error)&&store.sequence==sequence&&store.step==49);
+ assert(store.draftPayload(patch(49,123,"draft-a"),error));assert(!store.draftPayload(update,error)); // ABA fingerprint reuse still rejects the stale revision.
+ auto brokenPatch=patch(49,999,"bad");assert(!store.draftPayload(brokenPatch,error)&&store.draftFingerprint=="draft-a"&&store.draftPlans[0].cues[49].dimmers[0].value==123);
+ draft["base"]=store.draftFingerprint;draft["revision"]=store.draftRevision;draft["fingerprint"]="draft-d";draft["steps"][7]="s49";draft["steps"][49]="s7";
+ assert(store.draftPayload(text(draft),error)&&store.cursorId()=="s49"&&store.step==7&&store.navigation==navigation+1);
+ assert(store.queueShow()&&!store.livePreview&&!store.active&&store.syncPending&&store.cursorId()=="s49"&&store.step==49);
+ assert(store.loadPayload(payload(4),true,error)&&store.cursorValid&&store.step==49&&!store.active&&store.syncPending); // Synchronization cannot queue a delayed GO.
+ assert(store.goDraft(7,0));assert(store.queueShow("invalid-editor")&&!store.livePreview&&!store.active&&store.draftUnsaved()); // OFF works before validation/publish.
+ assert(store.goDraft(7,0));assert(store.loadPayload(payload(5),true,error)&&store.cursorId()=="s49"&&store.step==49&&!store.active); // Direct publish from LIVE also preserves the actual master's ID.
+ JsonDocument expanded;deserializeJson(expanded,payload(6));expanded["steps"].as<JsonArray>().add("new-step");for(auto d:expanded["devices"].as<JsonArray>())d["cues"].as<JsonArray>().add(d["cues"][0]);
+ String publishExpanded=text(expanded);expanded.remove("workspaceJson");expanded["base"]=store.draftFingerprint;expanded["revision"]=store.draftRevision;
+ assert(store.draftPayload(text(expanded),error)&&store.goDraft(100,0)&&store.cursorId()=="new-step");
+ assert(store.queueShow("p6")&&store.cursorId()=="new-step"&&store.step==100); // Newly added scene need not exist in the OLD publication.
+ assert(store.loadPayload(publishExpanded,true,error)&&store.cursorId()=="new-step"&&store.step==100&&!store.active&&!store.draftUnsaved());
+ printf("Master programming: full RAM draft + atomic patches/revision/replay, immediate active-cue edits only in preview, no movement on nonselected edits, stable-ID cursor reorder, show sync without delayed execution passed\n");
  printf("Master persistence: repeated 100-step/10-device publications, flash peak %zu < 4128768; restart/journal recovery and uncommitted/invalid rejection passed\n",LittleFS.peakBytes);
 }

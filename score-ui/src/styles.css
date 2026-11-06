@@ -175,6 +175,10 @@ code {
   gap: 4px;
   flex: none;
 }
+.preview-toggle { display: flex; align-items: center; gap: 4px; font-size: 11px; white-space: nowrap; cursor: pointer; }
+.preview-toggle input { width: 16px; height: 16px; accent-color: #54e0b4; }
+.sync-chip { font-size: 10px; color: #a6bdca; }
+@media (max-width: 1100px) { .sync-chip { display: none; } }
 .header-actions > select {
   width: 72px;
   min-width: 0;

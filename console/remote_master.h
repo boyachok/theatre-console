@@ -8,10 +8,12 @@ int findRemote(const uint8_t *mac){for(int i=0;i<2;i++)if(remotePeers[i].used&&!
 void resetRemoteNetwork(){for(auto &peer:remotePeers)peer=RemotePeer{};}
 void resetRemoteStats(){for(auto &p:remotePeers)if(p.used){auto &n=p.monitor;for(auto &s:n.samples)s=Sample{};n.sent=n.received=n.deadlineReceived=n.timeouts=n.late=n.duplicates=n.streak=n.maxStreak=0;n.hasReply=false;p.nextPing=0;}}
 void pauseRemoteMeasurements(){for(auto &p:remotePeers)for(auto &s:p.monitor.samples)if(s.used&&!s.received&&!s.expired)s.used=false;}
-bool navigatePublished(uint8_t action){
- if(!RADIO_MASTER||networkResetActive||otaSafetyLock||!Remote::validAction(action)||showMaster.stepIds.empty())return false;
- uint16_t target=Remote::target((Remote::Action)action,showMaster.stepIds.size(),showMaster.step,showMaster.active);
- if(showMaster.active&&!showMaster.isPreview&&target==showMaster.step)return true;
+bool navigateCurrent(uint8_t action){
+ if(!RADIO_MASTER||networkResetActive||otaSafetyLock||!Remote::validAction(action)||!showMaster.navigationCount())return false;
+ if(!showMaster.livePreview&&(showMaster.draftUnsaved()||!publishedReady()))return false;
+ uint16_t target=Remote::target((Remote::Action)action,showMaster.navigationCount(),showMaster.step,showMaster.cursorValid);
+ if(showMaster.active&&showMaster.isPreview==showMaster.livePreview&&target==showMaster.step){showMaster.bumpNavigation();return true;}
+ if(showMaster.livePreview)return goDraft(target,action==Remote::BACK||action==Remote::FIRST?1:0);
  if(!goPublished(target,action==Remote::BACK||action==Remote::FIRST?1:0))return false;
  return true;
 }
@@ -22,7 +24,7 @@ void remoteMasterTick(){
  static uint32_t lastSend=0;static bool sentBefore=false;if(sentBefore&&now-lastSend<20)return;
  for(auto &p:remotePeers){auto &n=p.monitor;if(!p.used||!n.deviceBoot||(p.nextPing&&(int32_t)(now-p.nextPing)<0)||(uint32_t)network.peerIP(p.mac)==0)continue;
   p.nextPing=now+500;lastSend=now;sentBefore=true;Packet ping=packet(REMOTE_PING,bootSession,++n.seq);if(!ping.seq)ping.seq=++n.seq;
-  ping.deviceBoot=n.deviceBoot;ping.commandId=freshSession();p.gate.issue(ping.commandId,now);ping.padding[0]='R';ping.padding[1]=1;ping.health=metrics(n).health;ping.reserved=measurementsRunning?1:0;ping.value=showMaster.active?showMaster.step+1:0;
+  ping.deviceBoot=n.deviceBoot;ping.commandId=freshSession();p.gate.issue(ping.commandId,now);ping.padding[0]='R';ping.padding[1]=1;ping.health=metrics(n).health;ping.reserved=measurementsRunning?1:0;ping.value=showMaster.cursorValid?showMaster.step+1:0;
   if(measurementsRunning){auto &s=n.samples[ping.seq%WINDOW];s=Sample{};s.used=true;s.seq=ping.seq;s.atUs=(uint32_t)esp_timer_get_time();n.sent++;}
   sendPacket(p.mac,ping);break;
  }
@@ -53,8 +55,8 @@ bool handleRemoteRx(const Rx &r){
  if(r.p.type==REMOTE_EVENT){
   auto decision=peer.gate.inspect(r.p.commandId,r.p.op,r.p.seq,r.p.uptime,now);Result result=STALE;
   if(decision==Remote::Gate::DUPLICATE)result=(Result)peer.gate.lastResult;
-  else if(decision==Remote::Gate::NEW){result=navigatePublished(r.p.op)?APPLIED:NOT_READY;peer.gate.remember(r.p.commandId,r.p.op,result);peer.seen=now;}
-  Packet ack=packet(REMOTE_ACK,bootSession,r.p.commandId);ack.deviceBoot=n.deviceBoot;ack.commandId=r.p.commandId;ack.result=result;ack.value=showMaster.active?showMaster.step+1:0;ack.health=metrics(n).health;ack.padding[0]='R';ack.padding[1]=1;sendPacket(peer.mac,ack);return true;
+  else if(decision==Remote::Gate::NEW){result=navigateCurrent(r.p.op)?APPLIED:NOT_READY;peer.gate.remember(r.p.commandId,r.p.op,result);peer.seen=now;}
+  Packet ack=packet(REMOTE_ACK,bootSession,r.p.commandId);ack.deviceBoot=n.deviceBoot;ack.commandId=r.p.commandId;ack.result=result;ack.value=showMaster.cursorValid?showMaster.step+1:0;ack.health=metrics(n).health;ack.padding[0]='R';ack.padding[1]=1;sendPacket(peer.mac,ack);return true;
  }return true;
 }
 bool identifyRemote(const uint8_t *mac){int i=findRemote(mac);if(i<0)return false;auto &p=remotePeers[i];Packet command=packet(IDENTIFY,bootSession);command.deviceBoot=p.monitor.deviceBoot;return sendPacket(mac,command);}
@@ -67,5 +69,5 @@ String remoteStatusJSON(){
 }
 #else
 inline void resetRemoteNetwork(){} inline void resetRemoteStats(){} inline void pauseRemoteMeasurements(){} inline void remoteMasterTick(){}
-inline bool handleRemoteRx(const Rx &){return false;} inline bool identifyRemote(const uint8_t*){return false;} inline bool navigatePublished(uint8_t){return false;} inline String remoteStatusJSON(){return "[]";}
+inline bool handleRemoteRx(const Rx &){return false;} inline bool identifyRemote(const uint8_t*){return false;} inline bool navigateCurrent(uint8_t){return false;} inline String remoteStatusJSON(){return "[]";}
 #endif

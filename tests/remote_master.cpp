@@ -22,9 +22,11 @@ Node nodes[MAX_NODES];struct Rx{uint8_t mac[6]{};Packet p{};int8_t rssi=-50;uint
 struct FakeIP{operator uint32_t()const{return 1;}String toString()const{return "192.168.50.88";}};
 struct Network{bool connected=true;bool ready()const{return connected;}FakeIP peerIP(const uint8_t*)const{return {};}}network;
 struct Preferences{void remove(const char*){}}prefs;
-struct Publication{std::vector<String> stepIds{"s0","s1","s2"};bool active=false,isPreview=false;uint16_t step=0;int calls=0;bool go(uint16_t to,uint8_t){if(to>=stepIds.size())return false;step=to;active=true;isPreview=false;calls++;return true;}}showMaster;
+struct Publication{std::vector<String> stepIds{"s0","s1","s2"};bool active=false,isPreview=false,livePreview=false,cursorValid=false;std::vector<String> draftStepIds{"d0","d1","d2","d3","d4"};size_t navigationCount()const{return livePreview?draftStepIds.size():stepIds.size();}bool draftUnsaved()const{return false;}void bumpNavigation(){}uint16_t step=0;int calls=0;bool go(uint16_t to,uint8_t){if(to>=stepIds.size())return false;step=to;active=cursorValid=true;isPreview=false;calls++;return true;}}showMaster;
 bool networkResetActive=false,otaSafetyLock=false,measurementsRunning=true,plansReady=true;uint32_t bootSession=77;
+bool publishedReady(){return plansReady;}
 bool goPublished(uint16_t target,uint8_t reason){if(!plansReady)return false;if(!showMaster.go(target,reason))return false;for(auto &n:nodes)n.nextScore=0;return true;}
+bool goDraft(uint16_t target,uint8_t){if(target>=showMaster.draftStepIds.size())return false;showMaster.step=target;showMaster.active=showMaster.cursorValid=showMaster.isPreview=true;showMaster.calls++;return true;}
 uint32_t freshSession(){static uint32_t n=900;return ++n;}uint64_t esp_timer_get_time(){return (uint64_t)mockNow*1000;}
 struct Sent{uint8_t mac[6];Packet p;};std::vector<Sent> sent;
 bool sendPacket(const uint8_t *mac,const Packet &p){Sent item{};std::copy(mac,mac+6,item.mac);item.p=p;sent.push_back(item);return true;}
@@ -46,6 +48,8 @@ int main(){
  event(4,Remote::BACK);otaSafetyLock=true;handleRemoteRx(r);assert(sent.back().p.result==NOT_READY);otaSafetyLock=false;handleRemoteRx(r);assert(showMaster.calls==2);
  event(5,Remote::LAST);plansReady=false;handleRemoteRx(r);assert(sent.back().p.result==NOT_READY&&showMaster.calls==2);plansReady=true;handleRemoteRx(r);assert(showMaster.calls==2); // No delayed GO after preload completes.
  event(6,Remote::LAST);handleRemoteRx(r);assert(showMaster.step==2&&showMaster.calls==3);assert(identifyRemote(r.mac)&&sent.back().p.type==IDENTIFY&&sent.back().p.deviceBoot==9);
+ showMaster.livePreview=true;event(7,Remote::LAST);handleRemoteRx(r);assert(showMaster.step==4&&showMaster.calls==4&&sent.back().p.value==5);handleRemoteRx(r);assert(showMaster.calls==4);event(8,Remote::FIRST);handleRemoteRx(r);assert(showMaster.step==0&&showMaster.isPreview&&showMaster.calls==5);
+ showMaster.livePreview=false;showMaster.active=false;showMaster.step=1;event(9,Remote::FORWARD);handleRemoteRx(r);assert(showMaster.step==2&&showMaster.calls==6); // Saved-plan sync retains a counter even without a newly running scene.
  pauseRemoteMeasurements();measurementsRunning=false;auto count=remotePeers[0].monitor.sent;mockNow=600;remoteMasterTick();assert(sent.back().p.type==REMOTE_PING&&sent.back().p.reserved==0&&remotePeers[0].monitor.sent==count);
  mockNow=0x80000100U;resetRemoteStats();auto before=sent.size();remoteMasterTick();assert(sent.size()==before+1&&sent.back().p.type==REMOTE_PING);
  resetRemoteNetwork();assert(findRemote(r.mac)<0);puts("Actual master/remote handlers: separate role and 10 full actuator slots, handshake, real ping RTT, once-only published navigation, expired/wrong boot/session rejection, no delayed reset/OTA replay, identification and paused measurement heartbeat passed");

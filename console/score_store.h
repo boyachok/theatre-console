@@ -39,7 +39,16 @@ inline bool decodeCue(JsonVariantConst source,Cue &cue){
 struct Plan {uint8_t mac[6]{};String id;std::vector<Cue> cues;uint32_t checksum=0;};
 class MasterStore {
 public:
- std::vector<Plan> plans,preview;std::vector<String> stepIds;
+ std::vector<Plan> plans,preview,draftPlans;std::vector<String> stepIds,draftStepIds;
+ String draftFingerprint,syncFingerprint,pendingCursor;bool livePreview=false,programPreview=false,cursorValid=false,syncPending=false;uint32_t navigation=0,draftRevision=0;
+ String cursorId()const{if(cursorValid&&pendingCursor.length())return pendingCursor;const auto &ids=programPreview?draftStepIds:stepIds;return cursorValid&&step<ids.size()?ids[step]:String();}
+ bool draftUnsaved()const{return (syncFingerprint.length()&&syncFingerprint!=fingerprint)||(draftFingerprint.length()&&draftFingerprint!=fingerprint);}
+ size_t navigationCount()const{return livePreview?draftStepIds.size():stepIds.size();}
+ uint16_t previewIndex()const{return programPreview?step:0;}
+ void bumpSequence(){if(!++sequence)++sequence;}
+ void bumpNavigation(){if(!++navigation)++navigation;}
+ bool goDraft(uint16_t target,uint8_t why){if(target>=draftStepIds.size()||draftPlans.empty())return false;if(livePreview&&programPreview&&active&&target==step){bumpNavigation();return true;}pendingCursor=String();livePreview=programPreview=isPreview=active=cursorValid=true;syncPending=false;step=target;previewTotal=draftStepIds.size();reason=why;bumpSequence();bumpNavigation();return true;}
+ bool queueShow(const String &expected=String()){if(expected.length())syncFingerprint=expected;String id=cursorId();pendingCursor=id;uint16_t next=step;for(size_t i=0;i<stepIds.size();i++)if(stepIds[i]==id){next=i;break;}step=next;livePreview=programPreview=isPreview=active=false;syncPending=true;bumpNavigation();return true;}
  uint32_t version=0,run=0,sequence=0;uint16_t step=0;uint8_t reason=0;uint16_t previewTotal=1;bool active=false,isPreview=false;
  String fingerprint,workspace;bool workspaceFault=false;
  bool decodePlans(JsonVariantConst compiled,std::vector<Plan> &out,uint16_t count,String &error){
@@ -50,6 +59,38 @@ public:
    for(int i=0;i<count;i++)if(!decodeCue(cues[i],p.cues[i])){error="Неверные параметры или неподдерживаемая лента";return false;}
    p.checksum=crc32(p.cues.data(),p.cues.size()*sizeof(Cue));out.push_back(std::move(p));
   }return true;
+ }
+ bool draftPayload(const String &body,String &error){
+  JsonDocument doc(&jsonRam);if(deserializeJson(doc,body)){error="Неверный JSON черновика";return false;}
+  if(!doc["revision"].is<uint32_t>()||doc["revision"].as<uint32_t>()!=draftRevision||doc["base"].as<String>()!=draftFingerprint){error="Черновик уже изменён другим запросом: обновите страницу";return false;}
+  String fp=doc["fingerprint"].as<String>();if(!fp.length()||fp.length()>40){error="Нет отпечатка черновика";return false;}
+  std::vector<Plan> decoded;std::vector<String> ids;
+  if(doc["devices"].is<JsonArrayConst>()){
+   auto steps=doc["steps"].as<JsonArrayConst>();if(!steps.size()||steps.size()>MAX_STEPS){error="Неверные шаги черновика";return false;}
+   for(auto s:steps){String id=s.as<String>();if(!id.length()){error="Нет ID шага";return false;}for(const auto &old:ids)if(id==old){error="Повтор ID шага";return false;}ids.push_back(id);}
+   if(!decodePlans(doc["devices"],decoded,ids.size(),error))return false;
+  }else{
+   if(draftPlans.empty()||!doc["patches"].is<JsonArrayConst>()){error="Сначала нужен полный черновик";return false;}
+   decoded=draftPlans;ids=draftStepIds;std::vector<uint32_t> seen;bool affected[10]{};
+   for(auto patch:doc["patches"].as<JsonArrayConst>()){
+    String id=patch["id"].as<String>();size_t device=0;for(;device<decoded.size()&&decoded[device].id!=id;device++);
+    if(device==decoded.size()||!bounded(patch["step"],ids.size()-1)){error="Неверный patch черновика";return false;}
+    uint16_t index=patch["step"];uint32_t key=device*MAX_STEPS+index;for(auto old:seen)if(old==key){error="Повтор patch";return false;}seen.push_back(key);affected[device]=true;
+    if(!decodeCue(patch["cue"],decoded[device].cues[index])){error="Неверные параметры patch";return false;}
+   }
+   for(size_t i=0;i<decoded.size();i++)if(affected[i])decoded[i].checksum=crc32(decoded[i].cues.data(),decoded[i].cues.size()*sizeof(Cue));
+  }
+  String current=cursorId();uint16_t next=0;bool matched=false;for(size_t i=0;i<ids.size();i++)if(ids[i]==current){next=i;matched=true;break;}
+  if(!matched&&cursorValid)next=std::min<size_t>(step,ids.size()-1);
+  bool changed=next!=step||ids.size()!=draftStepIds.size()||decoded.size()!=draftPlans.size();
+  if(livePreview&&active)for(const auto &old:draftPlans){
+   const Plan *replacement=nullptr;for(const auto &p:decoded)if(!memcmp(old.mac,p.mac,6)){replacement=&p;break;}
+   if(!replacement){error="Сначала выключите предпросмотр перед отключением контроллера";return false;}
+   if(step>=old.cues.size()||memcmp(&old.cues[step],&replacement->cues[next],sizeof(Cue)))changed=true;
+  }
+  draftPlans=std::move(decoded);draftStepIds=std::move(ids);draftFingerprint=fp;if(!livePreview)syncFingerprint=fp;if(!++draftRevision)++draftRevision;
+  if(livePreview){bool moved=cursorValid&&(next!=step||current!=draftStepIds[next]);step=next;previewTotal=draftStepIds.size();if(moved)bumpNavigation();if(active&&changed){reason=0;bumpSequence();}}
+  return true;
  }
  bool loadPayload(const String &body,bool persist,String &error){
   JsonDocument doc(&jsonRam);auto result=deserializeJson(doc,body);if(result){error="Неверный JSON";return false;}
@@ -72,7 +113,10 @@ public:
    // The workspace rename is the commit marker; begin() can finish this final rename after a power failure.
    LittleFS.rename("/published.json.tmp","/published.json");workspace=String();workspace=readText("/workspace.json");workspaceFault=!workspace.length();active=false;preview.clear();isPreview=false;
   }
-  plans=std::move(decoded);stepIds=std::move(ids);version=next;fingerprint=doc["fingerprint"].as<String>();return true;
+  String current=cursorId();bool hadCursor=cursorValid,wasLive=livePreview;uint16_t oldStep=step;
+  plans=std::move(decoded);stepIds=std::move(ids);version=next;fingerprint=doc["fingerprint"].as<String>();syncFingerprint=fingerprint;
+  if(persist){uint16_t target=std::min<size_t>(step,stepIds.size()-1);for(size_t i=0;i<stepIds.size();i++)if(stepIds[i]==current){target=i;break;}step=target;cursorValid=hadCursor;pendingCursor=String();livePreview=programPreview=false;syncPending=true;if(wasLive||(hadCursor&&(target!=oldStep||current!=stepIds[target])))bumpNavigation();}
+  return true;
  }
  void begin(){
   workspace=readText("/workspace.json");workspaceFault=LittleFS.exists("/workspace.json")&&!workspace.length();String fp,error;uint32_t committed=workspaceVersion(workspace,fp);
@@ -80,13 +124,13 @@ public:
   if(committed&&staged.length()){JsonDocument head(&jsonRam);if(!deserializeJson(head,staged)&&(head["version"]|0U)==committed&&head["fingerprint"]==fp&&loadPayload(staged,false,error)){LittleFS.rename("/published.json.tmp","/published.json");recovered=true;}}
   if(!recovered){String body=readText("/published.json");if(body.length())loadPayload(body,false,error);}
  }
- Plan *find(const uint8_t *mac,bool forPreview=false){auto &list=forPreview?preview:plans;for(auto &p:list)if(!memcmp(mac,p.mac,6))return &p;return nullptr;}
- bool go(uint16_t target,uint8_t why){if(target>=stepIds.size())return false;step=target;reason=why;isPreview=false;active=true;if(!++sequence)++sequence;return true;}
+ Plan *find(const uint8_t *mac,bool forPreview=false){auto &list=forPreview?(programPreview?draftPlans:preview):plans;for(auto &p:list)if(!memcmp(mac,p.mac,6))return &p;return nullptr;}
+ bool go(uint16_t target,uint8_t why){if(target>=stepIds.size())return false;step=target;reason=why;pendingCursor=String();livePreview=programPreview=isPreview=false;active=cursorValid=true;syncPending=false;bumpSequence();bumpNavigation();return true;}
  bool previewPayload(const String &body,String &error){
   JsonDocument doc(&jsonRam);if(deserializeJson(doc,body)){error="Неверный JSON";return false;}
   std::vector<Plan> decoded;if(!decodePlans(doc["devices"],decoded,1,error))return false;
   uint16_t total=doc["total"]|0,target=doc["step"]|0;if(!total||total>MAX_STEPS||target>=total){error="Неверный шаг";return false;}previewTotal=total;
-  preview=std::move(decoded);step=target;reason=doc["reason"]|0;isPreview=true;active=true;if(!++sequence)++sequence;return true;
+  pendingCursor=String();preview=std::move(decoded);step=target;reason=doc["reason"]|0;livePreview=programPreview=false;isPreview=true;active=cursorValid=true;bumpSequence();bumpNavigation();return true;
  }
 };
 }

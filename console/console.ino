@@ -28,7 +28,7 @@ Actors actors;
 Show::Runner showRunner(actors);Show::SlaveStore showStore;Show::MasterStore showMaster;bool showRecovery=false,showFSReady=false;
 bool mountShowFS();
 void consoleRoutes();void showMasterTick();void consoleButtons();bool handleShowMessage(const LanMessage &message);
-bool publishedReady();size_t storedPlans();bool goPublished(uint16_t target,uint8_t reason);
+bool publishedReady();size_t storedPlans();bool goPublished(uint16_t target,uint8_t reason);bool goDraft(uint16_t target,uint8_t reason);
 uint32_t lastControlId=0;
 Result lastControlResult=APPLIED;
 uint32_t probeReceivedAt=0,pwmReportSeq=0;
@@ -54,7 +54,7 @@ uint32_t lastProbeSeq=0;
 struct Rx { uint8_t mac[6]; Packet p; UartStats uart; PwmStatus pwm; uint32_t pwmHz=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
 struct Node;bool currentSceneConfirmed(const Node &n);const char *sceneStatus(const Node &n);
-bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigatePublished(uint8_t action);
+bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigateCurrent(uint8_t action);
 struct Sample {
   uint32_t seq=0, atUs=0, rttUs=0;
   int8_t rssiMaster=0, rssiSlave=0;
@@ -479,7 +479,7 @@ String statusJSON(bool history) {
   }
   j+="]";
   if(!RADIO_MASTER)j+=",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics());
-  if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.active?String(showMaster.step+1):String("null"))+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
+  if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.cursorValid?String(showMaster.step+1):String("null"))+",\"stepId\":"+jsonString(showMaster.cursorId())+",\"livePreview\":"+String(showMaster.livePreview?"true":"false")+",\"running\":"+String(showMaster.active?"true":"false")+",\"syncing\":"+String((showMaster.syncPending||(!showMaster.livePreview&&showMaster.draftUnsaved()))?"true":"false")+",\"navigation\":"+String(showMaster.navigation)+",\"draftFingerprint\":"+jsonString(showMaster.draftFingerprint)+",\"syncFingerprint\":"+jsonString(showMaster.syncFingerprint)+",\"draftRevision\":"+String(showMaster.draftRevision)+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
   if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
   j+="}";return j;
 }

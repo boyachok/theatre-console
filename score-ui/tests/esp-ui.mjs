@@ -1,4 +1,4 @@
-// Production ESP build against an explicitly mocked HTTP master; never talks to an ESP.
+// Production ESP build against a MOCK HTTP master. No GPIO, RF or physical outputs.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -57,27 +57,58 @@ const helmet = {
   voiceAvailable: false,
 };
 const status = {
-    role: 'master',
-    version: INTERFACE_VERSION,
-    token: 'mock-only-token',
-    mac: 'A0:85:E3:E2:BC:D4',
-    serverMs: 0,
-    measuring: true,
-    console: {
-      version: 0,
-      fingerprint: '',
-      step: null,
-      preview: false,
-      ready: false,
-      storedDevices: 0,
-      plannedDevices: 0,
-    },
-    nodes: [peer, helmet],
-    remotes: [remote],
+  role: 'master',
+  version: INTERFACE_VERSION,
+  token: 'mock-only-token',
+  mac: 'A0:85:E3:E2:BC:D4',
+  serverMs: 0,
+  measuring: true,
+  console: {
+    version: 0,
+    fingerprint: '',
+    syncFingerprint: '',
+    draftFingerprint: '',
+    draftRevision: 0,
+    step: null,
+    stepId: '',
+    preview: false,
+    livePreview: false,
+    running: false,
+    syncing: false,
+    navigation: 0,
+    transition: 0,
+    ready: false,
+    storedDevices: 0,
+    plannedDevices: 0,
   },
-  calls = [],
+  nodes: [peer, helmet],
+  remotes: [remote],
+};
+const calls = [],
   errors = [];
-let lastSequence = 0;
+let draft = null,
+  lastSequence = 0;
+function command(form) {
+  assert.equal(form.get('token'), status.token);
+  const left = (Number(form.get('deadline')) - (Math.floor(performance.now()) >>> 0)) | 0;
+  assert(left >= 0 && left <= 1000);
+  assert(Number(form.get('seq')) > lastSequence);
+  lastSequence = Number(form.get('seq'));
+  return Number(form.get('navigation')) === status.console.navigation;
+}
+function select(index, live) {
+  status.console.step = index + 1;
+  status.console.stepId = (live ? draft.steps : workspace.published.project.steps.map((s) => s.id))[
+    index
+  ];
+  status.console.livePreview = status.console.preview = live;
+  status.console.running = true;
+  status.console.syncing = false;
+  status.console.navigation++;
+  status.console.transition++;
+  peer.confirmedStep = null;
+  peer.sceneStatus = 'waiting_ack';
+}
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost'),
@@ -87,89 +118,138 @@ const server = createServer(async (req, res) => {
       for await (const data of req) raw += data;
       calls.push({ path, raw, url });
       res.setHeader('Content-Type', 'application/json');
-      if (path === '/api/console/status') {
+      if (path.endsWith('/status')) {
         status.serverMs = Math.floor(performance.now()) >>> 0;
         res.end(JSON.stringify(status));
         return;
       }
-      if (path === '/api/console/workspace') {
-        if (req.method === 'POST') workspace = JSON.parse(raw);
+      if (path.endsWith('/workspace')) {
+        if (req.method === 'POST') {
+          const next = JSON.parse(raw);
+          if ((next.published?.version ?? 0) < status.console.version) {
+            res.writeHead(409).end('Stale workspace');
+            return;
+          }
+          workspace = next;
+        }
         res.end(JSON.stringify(req.method === 'POST' ? {} : workspace));
         return;
       }
-      if (path === '/api/console/preview') {
-        const seq = Number(url.searchParams.get('seq')),
-          remaining =
-            (Number(url.searchParams.get('deadline')) - (Math.floor(performance.now()) >>> 0)) | 0;
-        assert(remaining >= 0 && remaining <= 1000);
-        assert(seq > lastSequence);
-        lastSequence = seq;
+      if (path.endsWith('/draft')) {
         const body = JSON.parse(raw);
-        status.console.step = body.step + 1;
-        status.console.preview = true;
-        res.end(JSON.stringify({ transition: seq }));
+        assert.equal(body.base, status.console.draftFingerprint);
+        assert.equal(body.revision, status.console.draftRevision);
+        if (body.devices) draft = body;
+        else
+          for (const patch of body.patches)
+            draft.devices.find((d) => d.id === patch.id).cues[patch.step] = patch.cue;
+        draft.fingerprint = body.fingerprint;
+        status.console.draftFingerprint = body.fingerprint;
+        status.console.draftRevision++;
+        if (!status.console.livePreview) status.console.syncFingerprint = body.fingerprint;
+        if (status.console.livePreview) status.console.transition++;
+        res.end(JSON.stringify({ fingerprint: body.fingerprint }));
         return;
       }
-      if (path === '/api/console/go') {
-        const form = new URLSearchParams(raw),
-          seq = Number(form.get('seq'));
-        assert.equal(form.get('token'), status.token);
-        assert.equal(Number(form.get('version')), status.console.version);
-        assert(seq > lastSequence);
-        lastSequence = seq;
-        const remaining =
-          (Number(form.get('deadline')) - (Math.floor(performance.now()) >>> 0)) | 0;
-        assert(remaining >= 0 && remaining <= 1000);
-        assert(!form.has('devices') && !form.has('cue'));
-        if (!status.console.ready) {
-          res.writeHead(409).end('Показ не готов: ожидаем загрузку партитур');
+      if (path.endsWith('/preview-mode') || path.endsWith('/draft-go')) {
+        const form = new URLSearchParams(raw);
+        const current = command(form);
+        if (!current && !(path.endsWith('/preview-mode') && form.get('enabled') === '0')) {
+          res.writeHead(409).end('Сцена уже переключена мастером');
           return;
         }
-        status.console.step = Number(form.get('step')) + 1;
-        status.console.preview = false;
-        peer.confirmedStep = null;
-        peer.sceneStatus = 'waiting_ack';
-        res.end(JSON.stringify({ transition: seq }));
+        if (path.endsWith('/preview-mode') && form.get('enabled') === '0') {
+          status.console.syncFingerprint = form.get('fingerprint');
+          status.console.livePreview = status.console.preview = status.console.running = false;
+          status.console.syncing = true;
+          status.console.navigation++;
+        } else {
+          assert(draft);
+          select(draft.steps.indexOf(form.get('stepId')), true);
+        }
+        res.end('{}');
         return;
       }
-      if (path === '/api/console/publish') {
+      if (path.endsWith('/publish')) {
         const body = JSON.parse(raw);
+        assert.equal(body.version, status.console.version + 1);
+        const wasLive = status.console.livePreview;
         workspace = JSON.parse(body.workspaceJson);
         status.console.version = body.version;
-        status.console.step = null;
-        status.console.preview = false;
-        status.console.ready = false;
+        status.console.fingerprint = status.console.syncFingerprint = body.fingerprint;
+        status.console.livePreview =
+          status.console.preview =
+          status.console.running =
+          status.console.ready =
+            false;
+        status.console.syncing = true;
+        status.console.storedDevices = 0;
         status.console.plannedDevices = body.devices.length;
+        if (wasLive) status.console.navigation++;
         peer.confirmedStep = null;
         peer.sceneStatus = 'loading';
         res.end(JSON.stringify({ version: body.version }));
         return;
       }
+      if (path.endsWith('/navigate')) {
+        const form = new URLSearchParams(raw);
+        if (!command(form) || (!status.console.livePreview && !status.console.ready)) {
+          res.writeHead(409).end('Показ не готов: ожидаем загрузку партитур');
+          return;
+        }
+        const action = Number(form.get('action')),
+          count = status.console.livePreview
+            ? draft.steps.length
+            : workspace.published.project.steps.length;
+        const at = status.console.step == null ? -1 : status.console.step - 1;
+        const next =
+          action === 3
+            ? 0
+            : action === 4
+              ? count - 1
+              : action === 2
+                ? Math.max(0, at - 1)
+                : Math.min(count - 1, at + 1);
+        select(next, status.console.livePreview);
+        res.end('{}');
+        return;
+      }
+      if (path.endsWith('/go')) {
+        const form = new URLSearchParams(raw);
+        assert.equal(Number(form.get('version')), status.console.version);
+        assert(!form.has('cue') && !form.has('devices'));
+        if (!command(form) || !status.console.ready) {
+          res.writeHead(409).end('Показ не готов: ожидаем загрузку партитур');
+          return;
+        }
+        select(Number(form.get('step')), false);
+        res.end('{}');
+        return;
+      }
       const form = new URLSearchParams(raw);
       assert.equal(form.get('token'), status.token);
-      if (path === '/api/console/measure') status.measuring = form.get('enabled') === '1';
-      if (path === '/api/console/network/reset') {
+      if (path.endsWith('/measure')) status.measuring = form.get('enabled') === '1';
+      if (path.endsWith('/network/reset')) {
         status.nodes = [];
         status.remotes = [];
       }
       res.end('{}');
       return;
     }
-    if (path === '/favicon.ico') {
+    if (url.pathname === '/favicon.ico') {
       res.writeHead(204).end();
       return;
     }
-    const file = path === '/' ? '/index.html' : path;
+    const file = url.pathname === '/' ? '/index.html' : url.pathname;
     if (file.includes('..')) {
       res.writeHead(403).end();
       return;
     }
-    const bytes = await readFile(new URL('../dist' + file, import.meta.url));
     res.setHeader(
       'Content-Type',
       file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html',
     );
-    res.end(bytes);
+    res.end(await readFile(new URL('../dist' + file, import.meta.url)));
   } catch (error) {
     errors.push(String(error));
     res.writeHead(500).end(String(error));
@@ -188,138 +268,154 @@ try {
   await page.waitForFunction(
     () => document.querySelector('.device-group code')?.textContent === '192.168.50.33',
   );
+  await page.waitForFunction(() =>
+    document.querySelector('.version-chip')?.textContent.includes('v1'),
+  );
+  assert.equal(status.console.step, null);
+  assert.equal(status.console.running, false); // Initial sync cannot execute.
   const cell = page.locator('.parameter-row[data-parameter="pwm-1"]').first().locator('td').first();
   await cell.locator('button').click();
-  assert.equal(await page.getByLabel('Яркость', { exact: true }).inputValue(), '100');
   await page.getByLabel('Вход', { exact: true }).fill('0.2');
-  assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, 0);
-  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
+  assert.equal(
+    calls.filter(
+      (c) => c.path.endsWith('/go') || c.path.endsWith('/navigate') || c.path.endsWith('/draft-go'),
+    ).length,
+    0,
+  );
+  await page.getByRole('switch', { name: 'Предпросмотр', exact: true }).click();
   await page.waitForFunction(
     () => document.querySelector('#playing-step option:checked')?.textContent === '1',
   );
-  const preview = JSON.parse(calls.find((c) => c.path.endsWith('/preview')).raw);
-  assert.deepEqual(preview.devices[0].cues[0].d[0], [255, 200, 0]);
+  assert.equal(status.console.livePreview, true);
+  assert.deepEqual(draft.devices[0].cues[0].d[0], [255, 200, 0]);
+  const publications = calls.filter((c) => c.path.endsWith('/publish')).length;
+  await page.getByLabel('Яркость', { exact: true }).fill('60');
+  await page.waitForTimeout(600);
+  assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications); // Live editing never publishes.
+  assert(calls.some((c) => c.path.endsWith('/draft') && JSON.parse(c.raw).patches));
+  assert.equal(draft.devices[0].cues[0].d[0][0], 153);
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
   assert.equal(await panel.locator('tbody tr').count(), 3);
-  const remoteRow = panel.locator('tbody tr').filter({ hasText: 'remote' });
-  assert.equal(await remoteRow.count(), 1);
   await panel.getByRole('button', { name: 'Мигать remote', exact: true }).click();
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(80);
   assert(
     calls.some(
       (c) => c.path.endsWith('/identify') && new URLSearchParams(c.raw).get('mac') === remote.mac,
     ),
   );
-  assert.equal((await panel.locator('tbody tr td').nth(9).innerText()).trim(), '—');
+  const sceneRow = panel.locator('tbody tr').first();
+  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '—');
   peer.confirmedStep = 1;
-  await page.waitForFunction(
-    () => document.querySelector('.network-table tbody tr td:nth-of-type(10)')?.textContent === '1',
-  );
-  await panel.getByRole('button', { name: 'Мигать Прибор 1', exact: true }).click();
-  await page.waitForTimeout(100);
-  assert(
-    calls.some(
-      (c) => c.path.endsWith('/identify') && new URLSearchParams(c.raw).get('mac') === mac,
-    ),
-  );
+  peer.sceneStatus = 'applied';
+  peer.scoreReceived++;
+  await panel.getByText('Применена', { exact: true }).waitFor();
+  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '1');
   await panel.getByRole('switch', { name: 'Пинг-тест', exact: true }).click();
-  await page.waitForFunction(() => !document.querySelector('[role="switch"]').checked);
-  await page.waitForTimeout(150);
+  await page.waitForTimeout(250);
   assert.equal(status.measuring, false);
   await panel.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: 'Приборы', exact: true }).click();
-  const deviceSettings = page.getByRole('dialog', { name: 'Приборы', exact: true });
-  await deviceSettings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Приборы', exact: true });
+  await settings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
   assert.equal(
-    await deviceSettings
+    await settings
       .getByLabel('Контроллер прибора', { exact: true })
       .locator(`option[value="${remote.mac}"]`)
       .count(),
     0,
   );
+  await settings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
   assert.equal(
-    await deviceSettings
+    await settings
       .getByLabel('Контроллер прибора', { exact: true })
       .locator(`option[value="${helmet.mac}"]`)
       .count(),
+    1,
+  );
+  assert.equal(
+    await settings
+      .getByLabel('Контроллер прибора', { exact: true })
+      .locator(`option[value="${mac}"]`)
+      .count(),
     0,
   );
-  await deviceSettings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
-  const helmetBinding = deviceSettings.getByLabel('Контроллер прибора', { exact: true });
-  assert.equal(await helmetBinding.locator(`option[value="${mac}"]`).count(), 0);
-  assert.equal(await helmetBinding.locator(`option[value="${remote.mac}"]`).count(), 0);
-  assert.equal(await helmetBinding.locator(`option[value="${helmet.mac}"]`).count(), 1);
-  await deviceSettings.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await settings.getByRole('button', { name: 'Отмена', exact: true }).click();
   await page.getByRole('button', { name: 'Сдублировать шаг', exact: true }).click();
-  await page.getByRole('button', { name: 'Опубликовать', exact: true }).click();
-  await page.waitForFunction(() =>
-    document.querySelector('.version-chip')?.textContent.includes('v1'),
-  );
-  const publication = JSON.parse(calls.find((c) => c.path.endsWith('/publish')).raw);
-  assert.equal(publication.version, 1);
-  assert.equal(publication.devices[0].mac, mac);
-  assert.equal(peer.scoreVersion, 0); // HTTP success does not fabricate slave delivery.
-  assert.equal(await page.getByLabel('Режим плеера', { exact: true }).inputValue(), 'show');
-  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
-  await page.getByRole('status').filter({ hasText: 'Показ не готов' }).waitFor();
-  assert.equal(status.console.step, null);
-  assert.equal(peer.confirmedStep, null);
-  status.console.ready = true;
-  status.console.storedDevices = 1;
-  peer.scoreVersion = 1;
-  peer.sceneStatus = 'ready';
-  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
-  await page.waitForFunction(
-    () => document.querySelector('#playing-step option:checked')?.textContent === '1',
-  );
-  assert.equal(status.console.preview, false);
-  assert.equal(peer.confirmedStep, null); // Successful GO is not a slave ACK.
-  await page.locator('.step-heading').first().click();
-  const previewCount = calls.filter((c) => c.path.endsWith('/preview')).length;
-  await page.getByLabel('Режим плеера', { exact: true }).selectOption('preview');
-  // Emulate the real master's status change after a remote action, not GPIO/RF.
-  status.console.step = 2;
-  status.console.preview = false;
-  peer.sceneStatus = 'waiting_ack';
-  peer.confirmedStep = null;
   await page.waitForFunction(
     () => document.querySelector('#playing-step option:checked')?.textContent === '2',
   );
-  assert.equal(
-    await page.locator('.step-heading.active-column').getAttribute('data-step-id'),
-    project.steps[1]?.id ?? workspace.published.project.steps[1].id,
-  );
-  assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, previewCount);
-  assert.equal(await page.getByLabel('Режим плеера', { exact: true }).inputValue(), 'show');
-  await page.getByRole('button', { name: 'Сеть', exact: true }).click();
-  await page.getByText('Ожидаем ACK', { exact: true }).waitFor();
-  const sceneRow = page.locator('.network-table tbody tr').first();
-  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '—');
-  peer.sceneStatus = 'applied';
-  peer.confirmedStep = 2;
-  peer.scoreReceived = 1;
-  await page.getByText('Применена', { exact: true }).waitFor();
-  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '2');
-  await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  await page.getByLabel('Режим плеера', { exact: true }).selectOption('preview');
-  await page.selectOption('#playing-step', workspace.draft.steps[0].id);
+  assert.equal(draft.steps.length, 2);
+  assert.equal(status.console.version, workspace.published.version);
+  await page
+    .locator('.parameter-row[data-parameter="pwm-1"]')
+    .first()
+    .locator('td')
+    .nth(1)
+    .locator('button')
+    .click();
+  await page.getByLabel('Яркость', { exact: true }).fill('60');
+  await page.waitForTimeout(600);
+  // A remote action mutates ONLY the mock master's authoritative cursor. Browser must follow without posting GO back.
+  const before = calls.filter((c) => c.path.endsWith('/draft-go')).length;
+  select(0, true);
   await page.waitForFunction(
     () => document.querySelector('#playing-step option:checked')?.textContent === '1',
   );
-  assert.equal(status.console.preview, true);
-  assert.equal(calls.filter((c) => c.path.endsWith('/preview')).length, previewCount + 1);
+  await page.getByLabel('Яркость', { exact: true }).fill('45');
+  await page.waitForTimeout(600);
+  assert.equal(draft.devices[0].cues[0].d[0][0], 115);
+  assert.equal(draft.devices[0].cues[1].d[0][0], 153);
+  assert.equal(calls.filter((c) => c.path.endsWith('/draft-go')).length, before); // No echo loop or stale browser override.
+  await page.getByRole('switch', { name: 'Предпросмотр', exact: true }).click();
+  await page.waitForFunction(() => !document.querySelector('[aria-label="Предпросмотр"]').disabled);
+  assert.equal(status.console.livePreview, false);
+  assert.equal(status.console.running, false);
+  assert.equal(status.console.step, 1);
+  assert.equal(peer.scoreVersion, 0);
+  assert.equal(peer.confirmedStep, null); // HTTP acceptance is NOT storage/execution ACK.
+  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Показ не готов' }).waitFor();
+  assert.equal(status.console.step, 1);
+  status.console.ready = true;
+  status.console.syncing = false;
+  status.console.storedDevices = 1;
+  peer.scoreVersion = status.console.version;
+  peer.sceneStatus = 'ready';
+  await page.getByRole('button', { name: 'Следующий шаг', exact: true }).click();
+  await page.waitForFunction(
+    () => document.querySelector('#playing-step option:checked')?.textContent === '2',
+  );
+  assert.equal(status.console.preview, false);
+  assert.equal(peer.confirmedStep, null);
+  select(0, false);
+  await page.waitForFunction(
+    () => document.querySelector('#playing-step option:checked')?.textContent === '1',
+  );
+  assert.equal(
+    await page.getByRole('switch', { name: 'Предпросмотр', exact: true }).isChecked(),
+    false,
+  );
+  // In show mode edits synchronize storage, but never apply the edited current scene.
+  const goes = calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
+    oldVersion = status.console.version;
+  await cell.locator('button').click();
+  await page.waitForTimeout(900);
+  assert(status.console.version > oldVersion);
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
+    goes,
+  );
+  assert.equal(status.console.running, false);
   for (const width of [390, 375, 320]) {
     await page.setViewportSize({ width, height: 844 });
     for (const name of ['Следующий шаг', 'Сеть']) {
-      const bounds = await page.getByRole('button', { name, exact: true }).boundingBox();
-      assert(
-        bounds.x >= 0 && bounds.x + bounds.width <= width,
-        `ESP header overflow ${width}: ${name}`,
-      );
+      const b = await page.getByRole('button', { name, exact: true }).boundingBox();
+      assert(b.x >= 0 && b.x + b.width <= width, `${width}: ${name} overflow`);
     }
-    assert((await page.getByLabel('Режим плеера', { exact: true }).boundingBox()).x >= 0);
+    const b = await page.getByRole('switch', { name: 'Предпросмотр', exact: true }).boundingBox();
+    assert(b.x >= 0 && b.x + b.width <= width);
   }
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
@@ -331,10 +427,9 @@ try {
   await page.waitForFunction(
     () => document.querySelectorAll('.network-table tbody tr').length === 0,
   );
-  assert(calls.some((c) => c.path.endsWith('/network/reset')));
   assert.deepEqual(errors, []);
   console.log(
-    'ESP production UI / MOCK master: workspace load, real-adapter mode, IP/MAC, edit ≠ execution, guarded first-step preview, exact 200ms fade, receipt-only confirmation, publish without fake delivery, remote ping/RSSI/identify and actuator-binding exclusion, preload-blocked indexed GO, explicit show/preview modes, master-counter UI sync, pending/applied scene ACK, mobile header, custom confirmation/test/reset passed.',
+    'MOCK ESP production UI: preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

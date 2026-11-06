@@ -31,7 +31,7 @@ public:
  }
  Item *due(uint32_t now){while(count&&now-items[head].born>=EVENT_TTL_MS){head=(head+1)%4;count--;}if(!count)return nullptr;auto &e=items[head];return e.attempts<4&&(int32_t)(now-e.next)>=0?&e:nullptr;}
  void attempted(Item &e,uint32_t now){e.attempts++;e.next=now+120;}
- bool acknowledge(uint32_t id){if(!count||items[head].id!=id)return false;head=(head+1)%4;count--;return true;}
+ bool acknowledge(uint32_t id,Action *action=nullptr){if(!count||items[head].id!=id)return false;if(action)*action=items[head].action;head=(head+1)%4;count--;return true;}
  uint8_t size()const{return count;}
 };
 }

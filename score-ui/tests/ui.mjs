@@ -77,7 +77,11 @@ try {
     '',
   );
   const text = await p.locator('body').innerText();
-  assert(!/Предпросмотр|Локально|один шаг · одно нажатие|\bGO\b/.test(text));
+  assert(!/Локально|один шаг · одно нажатие|\bGO\b/.test(text));
+  assert.equal(
+    await p.getByRole('switch', { name: 'Предпросмотр', exact: true }).isChecked(),
+    false,
+  );
   await p.getByRole('button', { name: 'Сдублировать шаг', exact: true }).click();
   assert.equal(await p.locator('.step-heading').count(), 2);
   assert.equal(await current(p), '1');

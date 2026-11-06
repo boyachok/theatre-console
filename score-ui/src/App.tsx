@@ -75,7 +75,12 @@ export default function App() {
     useEspBackend ? new EspConsoleTransport() : new DisconnectedNetworkTransport(),
   );
   const [backendReady, setBackendReady] = useState(!useEspBackend);
-  const [showMode, setShowMode] = useState(false);
+  const [showMode, setShowMode] = useState(true);
+  const [selectionIntent, setSelectionIntent] = useState<{ id: string; nonce: number } | null>(
+    null,
+  );
+  const [editorSyncing, setEditorSyncing] = useState(false);
+  const [preload, setPreload] = useState({ pending: false, stored: 0, total: 0 });
   const requestBusy = useRef(false),
     appliedSignature = useRef(''),
     authorityKey = useRef('');
@@ -103,23 +108,41 @@ export default function App() {
     const stop = network.start();
     let mounted = true;
     const sync = network.subscribe(() => {
-      if (!mounted || requestBusy.current) return;
+      if (!mounted) return;
       const state = network.getSnapshot();
       if (!state.connected) return;
-      const source = state.preview ? latest.current.draft : latest.current.published?.project;
-      const target = state.activeStep == null ? null : source?.steps[state.activeStep - 1];
+      setPreload({
+        pending: !!state.syncing,
+        stored: state.storedDevices ?? 0,
+        total: state.plannedDevices ?? 0,
+      });
+      const live = state.livePreview ?? state.preview ?? false;
+      setShowMode(!live);
+      const source =
+        live || state.syncing ? latest.current.draft : latest.current.published?.project;
+      const target =
+        state.activeStep == null
+          ? null
+          : state.activeStepId
+            ? source?.steps.find((s) => s.id === state.activeStepId)
+            : source?.steps[state.activeStep - 1];
       if (!target) {
         authorityKey.current = '';
         setActiveId(null);
         return;
       }
       setActiveId(target.id);
-      const key = `${state.transition ?? ''}:${state.preview}:${state.activeStep}`;
+      const key = `${state.navigation ?? state.transition ?? ''}:${live}:${state.activeStepId ?? state.activeStep}`;
       if (authorityKey.current !== key) {
         authorityKey.current = key;
-        setShowMode(!state.preview);
+        if (live) {
+          setSelectedStepId(target.id);
+          setSelection((cell) => (cell ? { ...cell, stepId: target.id } : null));
+        }
       }
-      const signature = (state.preview ? 'preview:' : 'show:') + previewSignature(source!, target);
+      if (state.running === false || (live && state.draftFingerprint !== fingerprint(source!)))
+        return;
+      const signature = (live ? 'preview:' : 'show:') + previewSignature(source!, target);
       if (
         source &&
         (engine.getSnapshot().stepId !== target.id || appliedSignature.current !== signature)
@@ -134,7 +157,7 @@ export default function App() {
         if (!mounted) return;
         if (saved) {
           setWorkspace(saved);
-          setShowMode(!!saved.published);
+          setShowMode(!(network.getSnapshot().livePreview ?? false));
           setSelectedStepId(saved.draft.steps[0].id);
           setDeviceId(saved.draft.devices[0].id);
           setSelection(null);
@@ -231,12 +254,14 @@ export default function App() {
     setSelectedStepId(id);
     setSelection(null);
     setInspectorOpen(true);
+    setSelectionIntent((old) => ({ id, nonce: (old?.nonce ?? 0) + 1 }));
   }, []);
   const selectCell = useCallback((cell: CellSelection) => {
     setSelectedStepId(cell.stepId);
     setDeviceId(cell.deviceId);
     setSelection(cell);
     setInspectorOpen(true);
+    setSelectionIntent((old) => ({ id: cell.stepId, nonce: (old?.nonce ?? 0) + 1 }));
   }, []);
   const reorder = useCallback(
     (id: string, index: number) =>
@@ -248,6 +273,7 @@ export default function App() {
       result = duplicateStep(w.draft, selectedRef.current);
     setWorkspace({ ...w, draft: result.project });
     setSelectedStepId(result.id);
+    setSelectionIntent((old) => ({ id: result.id, nonce: (old?.nonce ?? 0) + 1 }));
     setSelection(null);
     requestAnimationFrame(() =>
       document
@@ -285,7 +311,12 @@ export default function App() {
         step = p.steps.find((s) => s.id === id);
       if (!step || requestBusy.current) return;
       const signature = (showMode ? 'show:' : 'preview:') + previewSignature(p, step);
-      if (engine.getSnapshot().stepId === id && appliedSignature.current === signature) return;
+      if (
+        engine.getSnapshot().stepId === id &&
+        appliedSignature.current === signature &&
+        (!(network instanceof EspConsoleTransport) || network.getSnapshot().running === true)
+      )
+        return;
       if (network instanceof EspConsoleTransport) {
         try {
           requestBusy.current = true;
@@ -295,13 +326,14 @@ export default function App() {
               p.steps.findIndex((s) => s.id === id),
               reason === 'back' || reason === 'first',
             );
-          else await network.preview(p, step, reason === 'back' || reason === 'first');
+          else await network.selectDraft(p, step.id, reason === 'back' || reason === 'first');
         } catch (error) {
           setToast(error instanceof Error ? error.message : 'Нет подтверждения мастера');
           return;
         } finally {
           requestBusy.current = false;
         }
+        return; // ESP status is authoritative: never repaint a requested stale step optimistically.
       }
       if (engine.apply(p, step, reason, ++transition.current)) {
         appliedSignature.current = signature;
@@ -315,8 +347,78 @@ export default function App() {
     },
     [engine, network, showMode],
   );
+  useEffect(() => {
+    if (selectionIntent && !showMode) void run(selectionIntent.id, 'select');
+    // Human selection only. Master-follow updates must not send another navigation command.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectionIntent]);
+  useEffect(() => {
+    if (!backendReady || saveBlocked) return;
+    if (!(network instanceof EspConsoleTransport)) {
+      if (!showMode) {
+        const step = project.steps.find((s) => s.id === selectedStepId);
+        if (step) {
+          engine.apply(project, step, 'select', ++transition.current);
+          setActiveId(step.id);
+        }
+      }
+      return;
+    }
+    let mounted = true;
+    const timer = setTimeout(
+      () => {
+        setEditorSyncing(true);
+        network
+          .reconcile(project)
+          .then((published) => {
+            if (published)
+              setWorkspace((w) =>
+                !w.published || published.version > w.published.version ? { ...w, published } : w,
+              );
+          })
+          .catch((error) => {
+            if (mounted) setToast(`Синхронизация: ${error.message}`);
+          })
+          .finally(() => {
+            if (mounted) setEditorSyncing(false);
+          });
+      },
+      showMode ? 350 : 100,
+    );
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+    };
+  }, [project, backendReady, saveBlocked, network, showMode, engine, selectedStepId]);
+  const changePreviewMode = async (enabled: boolean) => {
+    if (!(network instanceof EspConsoleTransport)) {
+      setShowMode(!enabled);
+      return;
+    }
+    setPublishing(true);
+    try {
+      const p = latest.current.draft;
+      const published = await network.changePreview(enabled, p, selectedRef.current);
+      if (published) setWorkspace((w) => ({ ...w, published }));
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Не удалось изменить режим');
+    } finally {
+      setPublishing(false);
+    }
+  };
   const navigate = useCallback(
     (action: 'back' | 'forward' | 'first' | 'last') => {
+      if (network instanceof EspConsoleTransport) {
+        if (requestBusy.current) return;
+        requestBusy.current = true;
+        void network
+          .navigate(action)
+          .catch((error) => setToast(error.message))
+          .finally(() => {
+            requestBusy.current = false;
+          });
+        return; // Relative navigation is resolved only by the master, never the browser engine.
+      }
       const steps = (
           showMode
             ? (latest.current.published?.project ?? latest.current.draft)
@@ -340,7 +442,15 @@ export default function App() {
   );
   const choosePlaybackStep = (id: string) => {
     const steps = (showMode ? (workspace.published?.project ?? project) : project).steps;
-    const before = steps.findIndex((s) => s.id === engine.getSnapshot().stepId),
+    const state = network.getSnapshot();
+    const before =
+        network instanceof EspConsoleTransport
+          ? state.activeStep == null
+            ? -1
+            : state.activeStepId
+              ? steps.findIndex((s) => s.id === state.activeStepId)
+              : state.activeStep - 1
+          : steps.findIndex((s) => s.id === engine.getSnapshot().stepId),
       after = steps.findIndex((s) => s.id === id);
     run(id, after < before ? 'back' : 'select');
   };
@@ -442,7 +552,9 @@ export default function App() {
         <div className="step-control-strip">
           <StepPlayer
             steps={
-              showMode && workspace.published ? workspace.published.project.steps : project.steps
+              showMode && workspace.published && !preload.pending
+                ? workspace.published.project.steps
+                : project.steps
             }
             activeId={activeId}
             selectedIndex={selectedIndex}
@@ -481,23 +593,30 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          <label
+            className="preview-toggle"
+            title="Включён: выбор и правки сразу исполняются. Выключен: синхронизация памяти без автозапуска."
+          >
+            <input
+              type="checkbox"
+              role="switch"
+              aria-label="Предпросмотр"
+              checked={!showMode}
+              disabled={publishing || !backendReady}
+              onChange={(e) => void changePreviewMode(e.target.checked)}
+            />
+            Предпросмотр
+          </label>
           {useEspBackend && (
-            <select
-              aria-label="Режим плеера"
-              title="Показ — сохранённые сцены; Пропись — черновик"
-              value={showMode ? 'show' : 'preview'}
-              onChange={(e) => {
-                const state = network.getSnapshot();
-                authorityKey.current = `${state.transition ?? ''}:${state.preview}:${state.activeStep}`;
-                setShowMode(e.target.value === 'show');
-                appliedSignature.current = '';
-              }}
-            >
-              <option value="preview">Пропись</option>
-              <option value="show" disabled={!workspace.published}>
-                Показ
-              </option>
-            </select>
+            <span className="sync-chip" role="status">
+              {publishing || editorSyncing
+                ? 'Синхронизация…'
+                : preload.pending
+                  ? `Память ${preload.stored}/${preload.total}`
+                  : !showMode
+                    ? 'Черновик · LIVE'
+                    : 'Память контроллеров'}
+            </span>
           )}
           <button
             className="icon-button"
@@ -540,15 +659,17 @@ export default function App() {
           >
             <Upload size={17} />
           </button>
-          <button
-            className="icon-button publish-button"
-            aria-label="Опубликовать"
-            title="Опубликовать"
-            disabled={publishing || !dirty}
-            onClick={publish}
-          >
-            <Radio size={18} />
-          </button>
+          {!useEspBackend && (
+            <button
+              className="icon-button publish-button"
+              aria-label="Опубликовать"
+              title="Опубликовать"
+              disabled={publishing || !dirty}
+              onClick={publish}
+            >
+              <Radio size={18} />
+            </button>
+          )}
           {published && (
             <span className="version-chip" title="Сохранённая версия">
               v{published.version}

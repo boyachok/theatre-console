@@ -1,5 +1,29 @@
 # Изменения Theatre console
 
+## 0.7.8 — LIVE-предпросмотр, master-owned draft counter и long ACK (не записана)
+
+- Один переключатель: ON явно исполняет текущую сцену/правки; OFF останавливает
+  live-reconciliation до валидации, автоматически публикует/синхронизирует flash,
+  но не ставит отложенный GO. Не STOP: старые локальные программы/фейды продолжаются.
+- Все draft-шаги в RAM master; initial full snapshot/структурные обновления и
+  маленькие cue patches с base+revision, atomic validation/ABA rejection.
+  Remote/web navigation используют master; UI/инспектор следуют без echo-loop.
+- cursorValid отделён от runActive; ID выбранной в LIVE новой сцены сохраняется
+  через mode-OFF/публикацию, даже если её ещё нет в старой публикации. Counter
+  не сбрасывается при sync, stale browser selection защищён navigation epoch.
+- Нет отдельного ESP-браузерного счётчика для Next/Back: относительный action
+  рассчитывается сервером. Без preload ACK всех назначенных новых GO не будет.
+- Remote: после совпавшего APPLIED ACK FIRST/LAST два ярких белых120мс, не на retry,
+  не на отрицательном/чужом ответе. На3с нет второго шага при отпускании.
+  NVS диагностического режима сохраняется, OTA сама не разрешает навигацию.
+- ASan/UBSan actual store/dispatch/scheduler/remote,30domain tests, browser local
+  +production ESP/MOCK/mobile. Все4бинарника собираются. Это не физическая проверка
+  нового режима/нагрузок; обновление реальных плат в этом этапе не выполнялось.
+- Сохранён/readonly-скомпилирован актуальный JSON9шагов/2прибора/v2, fp93081004.
+  Реально установлен master0.7.2-recovery.1/8slave0.7.2/remote0.7.7(test lock).
+  На remote после исправления проводки GPIO13 press5, diagnostic4/4; GPIO14 ещё0.
+  План/ограничения/согласованная установка: [PREVIEW_MODE.md](docs/PREVIEW_MODE.md).
+
 ## 0.7.7 — безопасная проверка физических кнопок (remote записан)
 
 - Сервисный buttonTest блокирует реальную навигацию и сохраняется в NVS через

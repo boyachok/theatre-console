@@ -5,12 +5,30 @@ import { parseBackup } from '../domain/validation.ts';
 import type { ScoreTransport } from './preview.ts';
 import type { NetworkSnapshot, NetworkTransport, NetworkDeviceStatus } from './network.ts';
 import { INTERFACE_VERSION } from '../version.ts';
+import { compileDraft, draftDelta, type DraftPlan } from '../domain/programming.ts';
 export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
   readonly kind = 'esp' as const;
   private snapshot: NetworkSnapshot = { connected: false, testEnabled: false, devices: {} };
   private listeners = new Set<() => void>();
   private token = '';
-  private manifest = { version: 0 };
+  private manifest: {
+    version: number;
+    fingerprint?: string;
+    syncFingerprint?: string;
+    draftFingerprint?: string;
+    draftRevision?: number;
+    livePreview?: boolean;
+  } = { version: 0 };
+  private draftCache: DraftPlan | null = null;
+  private editorQueue: Promise<unknown> = Promise.resolve();
+  private editorRevision = 0;
+  private statusRequest = 0;
+  private acceptedStatus = 0;
+  private enqueue<T>(job: () => Promise<T>): Promise<T> {
+    const next = this.editorQueue.then(job, job);
+    this.editorQueue = next.catch(() => {});
+    return next;
+  }
   private clock: { server: number; at: number } | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private generation = 0;
@@ -32,18 +50,23 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     try {
       const r = await fetch(path, { ...options, signal: controller.signal, cache: 'no-store' });
       if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+      if (options.method === 'POST') this.acceptedStatus = ++this.statusRequest;
       return r;
     } finally {
       clearTimeout(timer);
     }
   }
   private async status() {
+    const stamp = ++this.statusRequest;
     const r = await this.request('/api/console/status'),
       data = await r.json();
     if (data.role !== 'master' || !data.console || data.version !== INTERFACE_VERSION)
       throw new Error(
         `Обновите страницу и мастер: нужна одинаковая версия Theatre console ${INTERFACE_VERSION}`,
       );
+    if (stamp < this.acceptedStatus) return data;
+    this.acceptedStatus = stamp;
+    if (this.token && this.token !== data.token) this.draftCache = null;
     this.token = data.token;
     this.manifest = data.console;
     this.clock = { server: data.serverMs, at: performance.now() };
@@ -89,6 +112,12 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       devices,
       masterMac: data.mac,
       activeStep: data.console.step,
+      activeStepId: data.console.stepId,
+      livePreview: data.console.livePreview,
+      running: data.console.running,
+      syncing: data.console.syncing,
+      navigation: data.console.navigation,
+      draftFingerprint: data.console.draftFingerprint,
       preview: data.console.preview,
       transition: data.console.transition,
       publicationReady: data.console.ready,
@@ -217,11 +246,120 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     await this.status();
     return published;
   }
+  private async uploadDraft(project: Project) {
+    const next = compileDraft(project),
+      base = this.manifest.draftFingerprint ?? '';
+    this.checkDevices(project, project.steps);
+    if (
+      next.fingerprint === base &&
+      (!this.manifest.syncFingerprint ||
+        this.manifest.syncFingerprint === next.fingerprint ||
+        this.manifest.livePreview)
+    ) {
+      this.draftCache = next;
+      return;
+    }
+    if (this.draftCache && this.draftCache.fingerprint !== base)
+      throw new Error('Черновик в мастере уже изменён: обновите страницу');
+    await this.request(
+      `/api/console/draft?token=${this.token}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...draftDelta(next, this.draftCache, base),
+          revision: this.manifest.draftRevision ?? 0,
+        }),
+      },
+      20000,
+    );
+    this.draftCache = next;
+    this.manifest.draftFingerprint = next.fingerprint;
+    this.manifest.draftRevision = (this.manifest.draftRevision ?? 0) + 1;
+    if (!this.manifest.livePreview) this.manifest.syncFingerprint = next.fingerprint;
+  }
+  private navigationFields(navigation = this.snapshot.navigation ?? 0) {
+    if (!this.clock) throw new Error('Нет свежего времени мастера');
+    return {
+      navigation,
+      deadline: Math.floor(this.clock.server + performance.now() - this.clock.at + 700) >>> 0,
+      client: this.client,
+      seq: ++this.sequence,
+    };
+  }
+  reconcile(project: Project): Promise<PublishedScore | null> {
+    const revision = ++this.editorRevision;
+    return this.enqueue(async () => {
+      if (revision !== this.editorRevision) return null;
+      await this.status();
+      await this.uploadDraft(project);
+      // Preview updates only RAM/current scene. Show edits sync flash, never execute a scene.
+      if (!this.manifest.livePreview && this.manifest.fingerprint !== fingerprint(project))
+        return this.publish(project, null);
+      await this.status();
+      return null;
+    });
+  }
+  changePreview(
+    enabled: boolean,
+    project: Project,
+    stepId: string,
+  ): Promise<PublishedScore | null> {
+    ++this.editorRevision;
+    const navigation = this.snapshot.navigation ?? 0;
+    return this.enqueue(async () => {
+      await this.status();
+      if (!enabled) {
+        // Suspend live execution BEFORE compilation: OFF must work even with an invalid draft.
+        await this.post('/api/console/preview-mode', {
+          enabled: 0,
+          fingerprint: fingerprint(project),
+          ...this.navigationFields(navigation),
+        });
+        await this.status();
+        await this.uploadDraft(project);
+        if (this.manifest.fingerprint !== fingerprint(project)) return this.publish(project, null);
+        return null; // Flash sync never queues a delayed GO.
+      }
+      await this.uploadDraft(project);
+      await this.post('/api/console/preview-mode', {
+        enabled: 1,
+        stepId,
+        ...this.navigationFields(navigation),
+      });
+      await this.status();
+      return null;
+    });
+  }
+  selectDraft(project: Project, stepId: string, restart: boolean) {
+    const navigation = this.snapshot.navigation ?? 0;
+    return this.enqueue(async () => {
+      await this.status();
+      await this.uploadDraft(project);
+      await this.post('/api/console/draft-go', {
+        stepId,
+        reason: Number(restart),
+        ...this.navigationFields(navigation),
+      });
+      await this.status();
+    });
+  }
+  async navigate(action: 'back' | 'forward' | 'first' | 'last') {
+    const navigation = this.snapshot.navigation ?? 0;
+    if (!this.clock || performance.now() - this.clock.at > 10000) await this.status();
+    await this.post('/api/console/navigate', {
+      action: { forward: 1, back: 2, first: 3, last: 4 }[action],
+      ...this.navigationFields(navigation),
+    });
+    await this.status();
+  }
   async go(version: number, step: number, restart: boolean) {
+    const navigation = this.snapshot.navigation ?? 0;
     if (!this.clock || performance.now() - this.clock.at > 10000) await this.status();
     const deadline =
       Math.floor(this.clock!.server + performance.now() - this.clock!.at + 700) >>> 0;
     await this.post('/api/console/go', {
+      navigation,
       version,
       step,
       reason: Number(restart),

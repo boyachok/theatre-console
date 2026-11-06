@@ -19,7 +19,10 @@ struct Node {
 struct Rx {uint8_t mac[6]{};Packet p{};int8_t rssi=-50;};
 struct Plan {uint8_t mac[6]{};std::vector<Show::Cue> cues;uint32_t checksum=0;};
 struct Publication {
- std::vector<Plan> plans,preview;std::vector<int> stepIds{0,1};uint32_t version=12,run=300,sequence=0;uint16_t step=0,previewTotal=2;uint8_t reason=0;bool active=false,isPreview=false;
+ std::vector<Plan> plans,preview;std::vector<int> stepIds{0,1};uint32_t version=12,run=300,sequence=0;uint16_t step=0,previewTotal=2;uint8_t reason=0;bool active=false,isPreview=false,syncPending=false,programPreview=false,livePreview=false,dirty=false;
+ bool draftUnsaved()const{return dirty;}
+ uint16_t previewIndex()const{return programPreview?step:0;}
+ bool goDraft(uint16_t target,uint8_t why){if(target>=previewTotal)return false;step=target;reason=why;active=isPreview=programPreview=true;sequence++;return true;}
  Plan *find(const uint8_t *mac,bool draft=false){for(auto &p:(draft?preview:plans))if(!memcmp(mac,p.mac,6))return &p;return nullptr;}
  bool go(uint16_t next,uint8_t why){if(next>=stepIds.size())return false;step=next;reason=why;isPreview=false;active=true;if(!++sequence)++sequence;return true;}
 }showMaster;
@@ -71,7 +74,7 @@ int main(){
  }
  assert(!publishedReady()&&!goPublished(0,0)&&showMaster.sequence==0);
  auto stored=[&](int i,bool good){Rx r;memcpy(r.mac,nodes[i].mac,6);r.p=packet(SCORE_ACK,77);r.p.deviceBoot=nodes[i].deviceBoot;r.p.channel=0;r.p.reserved=Show::LOADED;r.p.result=APPLIED;r.p.commandId=12;r.p.seq=showMaster.plans[i].checksum+(good?0:1);r.p.value=2;handleShowAck(r);};
- for(int i=0;i<9;i++)stored(i,true);stored(9,false);assert(storedPlans()==9&&!goPublished(0,0));stored(9,true);assert(publishedReady()&&goPublished(0,0)&&showMaster.sequence==1);
+ for(int i=0;i<9;i++)stored(i,true);stored(9,false);assert(storedPlans()==9&&!goPublished(0,0));stored(9,true);showMaster.dirty=true;assert(publishedReady()&&!goPublished(0,0)&&showMaster.sequence==0);showMaster.dirty=false;assert(publishedReady()&&goPublished(0,0)&&showMaster.sequence==1);
  for(mockNow=10000;mockNow<10400;mockNow++)showMasterTick();
  std::array<int,10> counts{};std::array<uint32_t,10> first{};
  for(auto &frame:network.sent){assert(frame.bytes.size()==44);Show::RunPacket r;memcpy(&r,frame.bytes.data(),sizeof(r));assert(r.type==Show::RUN&&r.version==12&&r.total==2&&r.reserved==Show::ACTIVE);int i=frame.mac[5]-1;assert(r.checksum==showMaster.plans[i].checksum&&r.deviceBoot==nodes[i].deviceBoot);if(counts[i]++==0)first[i]=frame.at;else assert(frame.at-first[i]==200);}
@@ -88,5 +91,6 @@ int main(){
  // Explicit preview is still full-size and cannot alter the stored publication.
  showMaster.preview=showMaster.plans;showMaster.isPreview=true;showMaster.previewTotal=2;showMaster.sequence++;for(auto &n:nodes)n.nextScore=0;
  mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1&&network.sent[0].bytes.size()==214);Show::Packet draft;memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.version==0);
+ showMaster.programPreview=true;showMaster.step=1;showMaster.sequence++;for(auto &n:nodes)n.nextScore=0;mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1);memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.step==1&&draft.cue.dimmers[0].value==180&&showMaster.version==12); // Full RAM bank follows the master's selected index, not cue0.
  puts("Actual scene delivery: 44B indexed RUN from CRC-bound flash plans, no legacy full-cue fallback; explicit draft PREVIEW, preload barrier, 200ms/10-node scheduler, stale/negative ACK isolation, current-scene confirmation and STOP latch passed");
 }

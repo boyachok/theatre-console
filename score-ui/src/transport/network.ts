@@ -30,6 +30,12 @@ export interface NetworkSnapshot {
   devices: Record<string, NetworkDeviceStatus>;
   masterMac?: string;
   activeStep?: number | null;
+  activeStepId?: string;
+  livePreview?: boolean;
+  running?: boolean;
+  syncing?: boolean;
+  navigation?: number;
+  draftFingerprint?: string;
   preview?: boolean;
   transition?: number;
   publicationReady?: boolean;

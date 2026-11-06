@@ -296,3 +296,24 @@ GPIO13/14 всёHIGH, rawEdges/Presses0, ни одного diagnostic или nav
 Master counter v2/fingerprint93081004/stepnull/previewfalse неизменён; master
 0.7.2-recovery.1 и8slave0.7.2 не перепрошивались. **Диагностический lock оставлен
 включённым** до завершения проверки/явного разрешения навигации.
+
+## Подготовка0.7.8 — без записи плат
+
+После исправления оператором проводки remote0.7.7 (MAC прежняя) read-only показал
+GPIO13 presses5, diagnosticTX4/ACK4, navigationTX0,masterReadytrue; GPIO14 presses0.
+Это подтверждает работу GPIO13/UDP диагностики, не FIRST/LAST/нового LED0.7.8.
+Диагностический persistent lock **остаётся включённым**. Master counter по-прежнему
+v2/fingerprint93081004/stepnull/previewfalse, установлен0.7.2-recovery.1.
+
+Для запрошенных live-preview+remote draft navigation/auto flash sync+long ACK
+подготовлена0.7.8: source/tests/build, не deployment. Согласованное обновление ещё
+требует разрешения; нельзя незаметно заменить score6 master на score7 при старых
+назначенных slave. В проекте2назначенные MAC: DC:DA:0C:43:C3:C0 и30:30:F9:32:02:30.
+Неназначенные6slave не обновлялись; helmet также не записывался.
+
+Свежий JSON и статусы вне Git:
+`~/Theatre-console-backups/before-preview-mode-20261106-171157/`.
+Score SHA256 `586d5e663e063fb2a4b391d01702695f84c131ad155858c31e793ed5531e81a7`.
+JSON read-only прошёл parseBackup+compileDraft:9steps/2devices,
+draft fp93081004=publicationv2. Никаких сцен/изменений workspace по API не посылалось.
+[Новая логика/план установки](PREVIEW_MODE.md).
