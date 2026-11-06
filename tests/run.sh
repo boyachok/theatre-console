@@ -25,7 +25,7 @@ for TEST in http console_http; do
   c++ "${FLAGS[@]}" -pthread -Itests/http_mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in wifi remote_firmware remote_ota helmet_firmware; do
+for TEST in wifi remote_firmware remote_ota remote_buttons helmet_firmware; do
   c++ "${FLAGS[@]}" -Itests/net_mock -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done

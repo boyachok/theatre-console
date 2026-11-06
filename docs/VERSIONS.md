@@ -2,13 +2,14 @@
 
 Название проекта: **Theatre console**. Источник версии: `version.json`.
 Веб, master, slave, remote и helmet активного профиля имеют одну версию исходников
-**0.7.6**: remote реально записан/OTA проверен; master/slave/helmet main не записаны.
+**0.7.7**: remote реально записан/OTA проверен; включён безопасный NVS-lock
+для диагностики GPIO13/14/белого held. До явного завершения теста навигации нет; master/slave/helmet main не записаны.
 Фактический master —0.7.2-recovery.1,8slave —0.7.2 (DEPLOYMENTS.md).
-Следующая стендовая итерация — **0.7.7**; меняется независимо от того, правили
+Следующая стендовая итерация — **0.7.8**; меняется независимо от того, правили
 только интерфейс, только прошивку или оба. Архивные профили сохраняют старые номера.
 
 ```sh
-python3 tools/release.py --set 0.7.6
+python3 tools/release.py --set 0.7.7
 python3 tools/release.py --check
 ```
 
@@ -28,7 +29,7 @@ remote R/1 прежние. OTA-пульт0.7.6 поэтому совместим
 Отдельная аварийная ветка `recovery/master-072-stack` помечена
 `0.7.2-recovery.1`, чтобы не выдавать исправленный образ за прежний0.7.2 и не
 переводить старый комплект на новый score7 без согласования. В ней общий номер
-веб/master/slave/remote тот же recovery; это не активный main0.7.6.
+веб/master/slave/remote тот же recovery; это не активный main0.7.7.
 См.[MASTER_RECOVERY.md](MASTER_RECOVERY.md). Pre-release этой архивной ветки задан
 в manifest и генерируется `python3 tools/release.py`; --set основного инструмента
 по-прежнему принимает только X.Y.Z.

@@ -264,3 +264,35 @@ Wi-Fi/masterReady true,sent0/acks0; сохранён снимок counter мас
 Мастер остаётся0.7.2-recovery.1,8slave —0.7.2; они не перепрошивались. R/1 прежний.
 Реальные кнопки коротко/3с на нагрузках не тестировались. Source0.7.6 для остальных
 ролей не выдавать за установленный комплект. Подробности HTTP/OTA: [REMOTE.md](REMOTE.md).
+
+## Remote0.7.7 — проверка физических кнопок без сцен
+
+После сообщения оператора «жму кнопки… ничего с индикацией» read-only статус0.7.6
+показал свежую загрузку~124с, masterReady/buttonsEnabled true, PING/PONG241/241,
+но navsent0/whitePulses0, GPIO13/14 HIGH. Это не доказывает неисправность GPIO/LED,
+но не подтверждает нажатия. Подтяжка10кОм сама по себе не замыкает вход наGND.
+
+Добавлен диагностический режим (подробно REMOTE.md), bright white-held и непрерывный
+probe raw-edge/30мс press/release. Настоящие команды навигации в нём запрещены,
+на отпускание возможен лишь invalid id0 diagnostic TX/STALE. Lock persistent NVS,
+без ключа/при неуспешном чтении default safe commissioning; выход явный и без
+held replay. Никаких произвольных GPIO для поиска LED не перебиралось: status48.
+
+После native ASan/UBSan тестов обновлён **только remote30:30:F9:1B:FD:6C** через
+`EXPECTED_MAC=… ./deploy ota remote 192.168.50.4`. Реальный script подтвердил MAC,
+новую версию0.7.7 и смену token после OTA. HTTP подтвердил **app0**, masterReadytrue,
+buttonTesttrue/buttonsEnabledfalse. Дополнительно enabled=1 записал lock в NVS;
+перезапуск не должен сам разрешать навигацию. Первый boot default уже locked.
+
+Образ968576B SHA256
+`3304d143dbd1fa3cd88d9adbbe97a6457f7958a6bc7cb036f635f9df6a30250d`.
+`remote-0.7.7.bin`, SHA, API/monitor/master snapshots в том же private backup
+`~/Theatre-console-backups/remote-3030F91BFD6C-20261106-135313/`, не в Git.
+
+Оператору предложено нажимать по очереди2–3с. За60с:339HTTP-чтений/0ошибок,
+GPIO13/14 всёHIGH, rawEdges/Presses0, ни одного diagnostic или navigation event.
+Это условный вывод: **если физические кнопки нажимались в том окне**, ESP не увидел
+замыканий. Нажатия и видимость purple/white/yellow ещё требуют ответа оператора.
+Master counter v2/fingerprint93081004/stepnull/previewfalse неизменён; master
+0.7.2-recovery.1 и8slave0.7.2 не перепрошивались. **Диагностический lock оставлен
+включённым** до завершения проверки/явного разрешения навигации.

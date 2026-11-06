@@ -12,6 +12,7 @@ void finish(){web.request("/update",HTTP_POST);}
 std::vector<uint8_t> image(bool marker=true){std::vector<uint8_t> data(512,0x11);data[0]=0xe9;data[1]=1;if(marker)memcpy(data.data()+240,RemoteOta::ROLE_MARKER,sizeof(RemoteOta::ROLE_MARKER)-1);return data;}
 void feed(const std::vector<uint8_t> &v){web.uploadEvent(UPLOAD_FILE_WRITE,v.data(),251);web.uploadEvent(UPLOAD_FILE_WRITE,v.data()+251,v.size()-251);}
 int main(){
+ mockPrefsBytes["buttonTest"]={0}; // Already commissioned: normal navigation fixture.
  mockLevels[13]=mockLevels[14]=HIGH;mockNow=100;setup();WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,88);tick(1000);inject(packet(DISCOVER,77));tick(1001);tick(1500);heartbeat(1501);assert(httpReady&&canOperate(mockNow));
  auth();web.request("/api/status",HTTP_GET);assert(web.code==200&&web.response.find("\"otaSupported\":true")!=std::string::npos&&web.response.find(RemoteOta::ROLE_MARKER)!=std::string::npos);
  web.args["token"]="wrong";web.uploadEvent(UPLOAD_FILE_START);finish();assert(web.code==403&&Update.begins==0&&!otaLocked);
