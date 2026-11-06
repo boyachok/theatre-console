@@ -1,6 +1,6 @@
-# Предпросмотр и пульт — 0.7.8 (подготовлено, НЕ установлено)
+# Предпросмотр и пульт — 0.7.8 (мастер,8slave и remote установлены OTA)
 
-## Почему перехода сейчас не было видно
+## Почему до обновления перехода не было видно
 
 В реально установленном remote0.7.7 был включён оставленный нами buttonTest:
 пакеты только диагностические id0/STALE, navigationTX0 и master stepnull. Поэтому
@@ -84,7 +84,8 @@ GPIO13/14 INPUT_PULLUP и внешние10кОм к3,3V; кнопки напря
   или датчика нагрузки. Если уже на краю, counter остаётся там, ACK всё равно допустим.
 - Безопасный buttonTest0.7.7 — другой режим: purple idle/white held/yellow both,
   навигация запрещена. Его persistent NVS-lock надо **явно** завершить перед реальным
-  показом, не автоматически при OTA. На момент подготовки0.7.8 lock ещё включён.
+  показом, не автоматически при OTA. При установке0.7.8 lock **явно снят** после
+  проверки готовности2/2планов и отпущенных входов.
 
 ## API/состояние
 
@@ -109,11 +110,14 @@ mode/replay/epoch/OFF on invalid. Production browser на MOCK HTTP провер
 без GO, readiness/ACK distinction, helmet/remote binding, mobile320/375/390.
 Это не физические RF/нагрузочные испытания и не доказательство видимости LED.
 
-**На платы0.7.8 не записывалась.** Фактически master0.7.2-recovery.1,8slave0.7.2,
-remote0.7.7 (buttonTest=on). Поэтому новые режимы ещё не появятся в реальном вебе.
-Для установки отдельно согласовать master +2назначенных slave и remote; у первых
-другой score-протокол, нельзя просто незаметно обновить только master. Остальные
-6неназначенных slave могут оставаться старыми до их отдельного обновления/назначения.
+**После отдельного разрешения обновлены все10найденных плат по OTA0.7.8**:
+master,8slave,remote; MAC/роль/версия/смена token после reboot проверены у каждой.
+Пульт normal mode (test=false/buttonsEnabled=true/masterReady=true). Планы2/2
+реально подтверждены, workspacev2 JSON-equivalent сохранён, master idle/LIVEoff.
+Новый gzip JS интерфейса проверен GET без исполнения браузера/сцен.
+Fresh rollout backup: `~/Theatre-console-backups/ota-all-078-20261106-182002/`.
+Не было физического GO/FIRST/LAST-теста; это следующим действием оператора.
+Подробная таблица/образы — [DEPLOYMENTS.md](DEPLOYMENTS.md).
 
 Свежий backup (HTTP read-only):
 `~/Theatre-console-backups/before-preview-mode-20261106-171157/score-backup.json`,

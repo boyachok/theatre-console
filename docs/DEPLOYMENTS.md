@@ -1,5 +1,9 @@
 # Проверенные записи на платы
 
+**Текущий комплект:0.7.8 на master,8slave и remote (10/10 OTA), пульт normal mode.**
+История ниже хронологическая; последняя запись — «OTA0.7.8 всего найденного комплекта».
+Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
+
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
 
 По явной команде пользователя `deploy remote` записан отдельный пульт.
@@ -317,3 +321,67 @@ Score SHA256 `586d5e663e063fb2a4b391d01702695f84c131ad155858c31e793ed5531e81a7`.
 JSON read-only прошёл parseBackup+compileDraft:9steps/2devices,
 draft fp93081004=publicationv2. Никаких сцен/изменений workspace по API не посылалось.
 [Новая логика/план установки](PREVIEW_MODE.md).
+
+## OTA0.7.8 всего найденного комплекта — фактически установлена
+
+Явные разрешения: «ота обновление всех… снимаем диагностическую проверку с пульта»
+и дополнительно «можно и мастер и ремоут тоже прошить по ота». Все10HTTP-идентичностей
+до записи проверены по MAC/role; IP использовался только как адрес транспорта.
+Не было USB/erase-flash, NVS/storage не очищались. Штатный OTA master ставит ALL_OFF
+в очередь, OTA slave останавливает runner: это безопасное поведение обновления,
+не сценный тест GO. Новые сцены/предпросмотр тестовыми командами не запускались.
+
+До начала сохранены свежие workspace и10status. Бинарники взяты из уже собранного
+и протестированного **93d0b188500c9ac3670c70bf741a40b563787642**, их длины/SHA сверены
+с private prepared manifest. Последовательно обновлены master,2назначенных slave,
+6прочих slave, затем remote. Каждый POST `/update` вернул200; после каждого заново
+проверены **MAC+role+version0.7.8+смена token**, то есть новый boot, не только upload.
+
+| Роль | MAC | IP после OTA | Версия до |
+|---|---|---|---|
+| master | A0:85:E3:E2:BC:D4 | 192.168.50.119 | 0.7.2-recovery.1 |
+| slave | DC:DA:0C:43:C3:C0 | 192.168.50.41 | 0.7.2 |
+| slave | 30:30:F9:32:02:30 | 192.168.50.65 | 0.7.2 |
+| slave | 74:4D:BD:73:0A:A4 | 192.168.50.20 | 0.7.2 |
+| slave | C0:4E:30:27:69:98 | 192.168.50.33 | 0.7.2 |
+| slave | 30:30:F9:31:19:C4 | 192.168.50.55 | 0.7.2 |
+| slave | 84:FC:E6:57:0F:AC | 192.168.50.58 | 0.7.2 |
+| slave | 30:30:F9:17:8B:14 | 192.168.50.138 | 0.7.2 |
+| slave | EC:DA:3B:56:F2:CC | 192.168.50.197 | 0.7.2 |
+| remote | 30:30:F9:1B:FD:6C | 192.168.50.4 | 0.7.7 |
+
+Записанные приложения (без bootloader/partitions/FS images):
+- master1244272B SHA256 `f344d4b1c49ed44ed37af519aa5172dc89dc42ebd1e0ae1c48e1b25bcd585522`;
+- slave1085104B SHA256 `dc0e3a980e0c0bd7038e335f1d00222ca09412f3a3380e14dad615f91f69723a`;
+- remote968704B SHA256 `aa446babfe2a314b522582c44f230590b6eed7300916f2c2667eb776e59ff199`.
+Helmet-бинарник подготовлен, но плата helmet не обнаруживалась/не записывалась.
+
+Итоговая отдельная10/10инвентаризация после OTA:
+- все8узлов fresh и localScoreSupported=true;
+- **master ready=true/storedDevices2/plannedDevices2**, scoreProtocol7/repeat200мс;
+- назначенные DC:DA…C3:C0 и30:30…02:30 имеют scoreVersion2/sceneStatusready;
+-6неназначенных scoreVersion0/idle — ожидаемо, им проект не назначался;
+- remote перед разблокировкой:76PING/76PONG/0timeouts,p50≈9,8мс,p95≈15,5мс;
+- workspace после master OTA и после всего rollout **JSON-equivalent исходному**:
+  «И будет ласковый дождь»,9шагов/2прибора/v2/fingerprint93081004;
+- до/после unlock master stepnull/runningfalse/livePreviewfalse/transition0:
+  ни одной новой сцены при проверке не запущено;
+- оба входа пульта отпущены, masterReadytrue. Только после2/2готовности выполнен
+  авторизованный POST buttons-test enabled=0: **buttonTestfalse/buttonsEnabledtrue**,
+  настройка записана в NVS. Remote новый boot/app1 подтверждён;
+- реальный gzip HTML/JS получен GET и распакован: `/assets/index-BN6bzoxh.js`
+  содержит «Предпросмотр» и preview-mode/draft-go/navigate API. Браузерную сессию,
+  которая могла бы включить LIVE, для проверки не открывали.
+
+Private backup/evidence (не Git):
+`~/Theatre-console-backups/ota-all-078-20261106-182002/`:
+`score-backup-before.json`, `score-backup-after-master.json`, `score-backup-after-all.json`,
+индивидуальные before/after/final snapshots, HTTP200responses, `deployment-result.json`.
+Прежние full16MB recovery/remote backups и prepared SHA-образы сохранены.
+Временный rollout-client `/tmp/theatre-deploy-078.py` выполнял только individual
+OTA/GET и отдельное снятие diagnostic lock; это не встроенный master-driven fleet OTA.
+
+Оператору: закрыть старую вкладку и обновить `http://192.168.50.119` с очисткой кеша
+(⌘⇧R). Предпросмотр ON явно включает выбранную сцену/правки. Проверять реальные
+кнопки/3с double-ACK/веб-follow и нагрузки на безопасном стенде; сам этот rollout
+не доказывает физический свет/аудио/реле или видимость нового long-ACK.

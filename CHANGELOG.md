@@ -1,6 +1,11 @@
 # Изменения Theatre console
 
-## 0.7.8 — LIVE-предпросмотр, master-owned draft counter и long ACK (не записана)
+## 0.7.8 — LIVE-предпросмотр, master-owned draft counter и long ACK (OTA10плат)
+
+После разработки/тестов отдельно разрешён и выполнен OTA-rollout **master+8slave+
+remote**,10MAC/role/version/new boot проверены. План2/2готов, workspacev2 без изменений,
+пульт diagnostic lock явно снят. Нет сценовых GO/preview-тестов на реальных нагрузках.
+Фактический журнал/backup/хеши — [DEPLOYMENTS.md](docs/DEPLOYMENTS.md).
 
 - Один переключатель: ON явно исполняет текущую сцену/правки; OFF останавливает
   live-reconciliation до валидации, автоматически публикует/синхронизирует flash,
@@ -18,9 +23,9 @@
   NVS диагностического режима сохраняется, OTA сама не разрешает навигацию.
 - ASan/UBSan actual store/dispatch/scheduler/remote,30domain tests, browser local
   +production ESP/MOCK/mobile. Все4бинарника собираются. Это не физическая проверка
-  нового режима/нагрузок; обновление реальных плат в этом этапе не выполнялось.
+  нового режима/нагрузок; на этапе разработки платы не менялись, OTA выполнена позднее.
 - Сохранён/readonly-скомпилирован актуальный JSON9шагов/2прибора/v2, fp93081004.
-  Реально установлен master0.7.2-recovery.1/8slave0.7.2/remote0.7.7(test lock).
+  До OTA был установлен master0.7.2-recovery.1/8slave0.7.2/remote0.7.7(test lock).
   На remote после исправления проводки GPIO13 press5, diagnostic4/4; GPIO14 ещё0.
   План/ограничения/согласованная установка: [PREVIEW_MODE.md](docs/PREVIEW_MODE.md).
 
