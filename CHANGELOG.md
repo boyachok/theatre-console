@@ -1,6 +1,6 @@
 # Изменения Theatre console
 
-## 0.7.9 — новая разводка slave и YX6300 (подготовлена, НЕ прошита)
+## 0.7.9 — новая разводка slave и YX6300 (master+8slave установлены OTA)
 
 - По карте оператора: ESP RX1←playerTX, ESP TX2→playerRX; REL1/2=39/38,
   DIM1–12=5,6,7,15,16,17,18,8,9,10,11,12; WS2811DATA47/status48 без изменений.
@@ -20,7 +20,10 @@
   audio STOP отменяет pending start/ramp. ALL_OFF также прекращает LIVE на master.
 - ASan/UBSan настоящий driver/Actors/Runner + UART MOCK UI/mobile, существующие
   тесты и4сборки. Реального звука/уровней6300/частоты новой разводки не проверяли;
-  на платы9не писали, реальный комплект остаётся0.7.8. [Стенд/ограничения](docs/YX6300.md).
+  затем по отдельному разрешению обновлены master+8slave (9/9 MAC/новых boot).
+  Пульт исключён/оставлен0.7.8. Свежий workspace9шагов/2прибора/**v14** сохранён;
+  планы2/2ready, GPIO metadata/видимые presets/inversion/relay polarity проверены.
+  Нагрузки отключены, сцены/аудиотест не запускались. [Стенд/ограничения](docs/YX6300.md).
 
 ## 0.7.8 — LIVE-предпросмотр, master-owned draft counter и long ACK (OTA10плат)
 
