@@ -1,5 +1,6 @@
 import type { Project, Workspace } from './schema.ts';
 import { fingerprint, upgradeDraft } from './project.ts';
+import { dimmerModes } from './dimmer.ts';
 const object = (v: unknown): v is Record<string, any> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 function ensure(ok: unknown, message: string): asserts ok {
@@ -136,6 +137,23 @@ export function validateProject(value: unknown): asserts value is Project {
           object(c) && number(c.value, 100) && optional(c.fadeIn) && optional(c.fadeOut),
           'Неверная яркость/фейд',
         );
+        if (c.animation !== undefined) {
+          const a = c.animation;
+          ensure(
+            object(a) &&
+              typeof a.enabled === 'boolean' &&
+              dimmerModes.includes(a.mode) &&
+              number(a.period) &&
+              a.period >= 0.02 &&
+              number(a.phase, 360) &&
+              Number.isInteger(a.seed) &&
+              number(a.seed, 0xffffffff) &&
+              number(a.floor, 100) &&
+              number(a.duty, 100) &&
+              number(a.smooth, 100),
+            'Неверная анимация диммера (период 0.02–3600с, seed uint32)',
+          );
+        }
       }
       for (const p of device.relays) {
         const c = cue.relays[p.id];

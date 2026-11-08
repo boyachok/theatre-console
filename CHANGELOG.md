@@ -1,5 +1,27 @@
 # Изменения Theatre console
 
+## 0.7.10 — независимая DIM-анимация (подготовлено, НЕ прошито)
+
+- На каждый DIM каждого шага прибора: включение, статика/синус/квадрат/рамп/random,
+  период20мс–1час, фаза либо uint32 seed, существующая яркость=верхняя амплитуда.
+  Добавлены нижний уровень (%отамплитуды), duty/apex, плавность random.
+- Локальный12-channel runtime, carrier25кГц прежний, расчётный tick1мс (не realtime
+  гарантия). LIVE-период сохраняет позицию, другие каналы не трогают фазу/фейд;
+  новый шаг/back/recovery перезапускает. Фейд из достигнутого в динамический сигнал,
+  повтор200мс не сбрасывает цикл, STOP не отменяется повтором. Random stateless,
+  воспроизводим по seed/cycle и независим от очередности tick/других каналов.
+- Inspector: enable/function, логарифмический фейдер периода, фаза/seed/floor/duty/
+  smoothing, график, wave icon; новые числовые поля без spinner/wheel adjustment.
+  Предупреждение о фотосенситивности строба. OFF не STOP/не скрытый GO.
+- JSON schema1, optional animation: старые сцены статические, неизменяемый published
+  fingerprint не переписывается. Backend атомарно валидирует d3/d9; score8 Cue314/
+  STORE358, RUN44 неизменён; LAN512. Исправлена whitelist116B UART extension.
+- CapabilityP/8,P/9, старые score7 не объявляются ready. Legacy170B cache проверяется
+  и мигрирует только в RAM, новые планы сохраняются с format8/CRC/atomic rename.
+- ASan/UBSan actual Runner/storage/codec,36domain, MOCK production/mobile/preview
+  проверены; все4роли собраны. GPIO/player/пульт/WS2811 не переназначены. Новую фичу
+  на реальных устройствах не запускали/не прошивали. [Описание](docs/DIMMER_ANIMATION.md).
+
 ## 0.7.9 — новая разводка slave и YX6300 (master+8slave установлены OTA)
 
 - По карте оператора: ESP RX1←playerTX, ESP TX2→playerRX; REL1/2=39/38,

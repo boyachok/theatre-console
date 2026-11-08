@@ -10,7 +10,7 @@ bool asMaster=false;
 #include "../console/protocol.h"
 #include "../console/score_runtime.h"
 #include "../console/lan_wire.h"
-struct LanMessage {uint8_t mac[6]{},payload[256]{};uint16_t length=0;int8_t rssi=-50;};
+struct LanMessage {uint8_t mac[6]{},payload[LAN_MAX_PAYLOAD]{};uint16_t length=0;int8_t rssi=-50;};
 struct Node {
  bool used=false,localScoreSupported=false,hasReply=false;uint8_t mac[6]{};
  uint32_t deviceBoot=0,scoreLoaded=0,scoreChecksum=0,scoreStoredUptime=0,scoreNext=0,scoreAt=0,scoreSeq=0,scoreFeedbackAt=0,scoreFeedbackUptime=0,scoreSent=0,scoreReceived=0,nextScore=0,nextStore=0,lastReply=0,reportAt=0,reportUptime=0;
@@ -44,7 +44,7 @@ struct Metrics {Health health=GOOD;};Metrics metrics(const Node&){return {};}
 template<class T>bool receive(const T &p){LanMessage m;memcpy(m.mac,masterMAC,6);m.length=sizeof(p);memcpy(m.payload,&p,sizeof(p));return handleShowMessage(m);}
 Show::Packet base(uint8_t type){Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.type=type;p.size=sizeof(p);p.session=77;p.deviceBoot=700;p.run=100;p.transition=1;p.reserved=Show::ACTIVE;p.version=12;p.total=2;return p;}
 int main(){
- assert(Show::REPEAT_MS==200&&sizeof(Show::RunPacket)==44&&Show::PROTOCOL==7);
+ assert(Show::REPEAT_MS==200&&sizeof(Show::RunPacket)==44&&Show::PROTOCOL==8);
  actors.begin();showRunner.begin();mockNow=100;
  Show::Cue cues[2]{};for(int i=0;i<2;i++){cues[i].dimmerMask=1;cues[i].dimmers[0]={(uint8_t)(60+i*120),1000,0};}
  auto crc=Show::crc32(cues,sizeof(cues));auto ref=Show::reference(base(Show::RUN));ref.checksum=crc;ref.step=1;
@@ -84,13 +84,13 @@ int main(){
  ack.p.result=NOT_READY;ack.p.reserved|=Show::MISSING_PLAN;handleShowAck(ack);assert(publishedReady()); // Stale negative ACK cannot invalidate a newer GO.
  ack.p.seq=2;handleShowAck(ack);assert(!publishedReady()&&nodes[0].scoreLoaded==0&&!strcmp(sceneStatus(nodes[0]),"loading"));
  nodes[0].scoreNext=1;nodes[0].nextStore=mockNow+100;ack.p.uptime++;handleShowAck(ack);assert(nodes[0].scoreNext==1&&nodes[0].nextStore==mockNow+100); // Repeated misses cannot starve recovery.
- network.sent.clear();for(;mockNow<10600;mockNow++)showMasterTick();bool advanced=false;for(const auto &f:network.sent)if(f.bytes.size()==214){Show::Packet s;memcpy(&s,f.bytes.data(),sizeof(s));if(s.type==Show::STORE&&f.mac[5]==1){assert(s.step==1);advanced=true;}}assert(advanced);
+ network.sent.clear();for(;mockNow<10600;mockNow++)showMasterTick();bool advanced=false;for(const auto &f:network.sent)if(f.bytes.size()==sizeof(Show::Packet)){Show::Packet s;memcpy(&s,f.bytes.data(),sizeof(s));if(s.type==Show::STORE&&f.mac[5]==1){assert(s.step==1);advanced=true;}}assert(advanced);
  stored(0,true);assert(publishedReady());ack.p.result=APPLIED;ack.p.reserved=Show::ACTIVE;ack.p.value=1;handleShowAck(ack);assert(currentSceneConfirmed(nodes[0]));
  auto late=ack;late.p.result=NOT_READY;late.p.reserved|=Show::MISSING_PLAN;late.p.uptime--;handleShowAck(late);assert(publishedReady()&&currentSceneConfirmed(nodes[0])); // Older same-transition failure cannot undo a success.
  mockNow+=OFFLINE_MS;assert(!currentSceneConfirmed(nodes[0]));
  // Explicit preview is still full-size and cannot alter the stored publication.
  showMaster.preview=showMaster.plans;showMaster.isPreview=true;showMaster.previewTotal=2;showMaster.sequence++;for(auto &n:nodes)n.nextScore=0;
- mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1&&network.sent[0].bytes.size()==214);Show::Packet draft;memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.version==0);
+ mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1&&network.sent[0].bytes.size()==sizeof(Show::Packet));Show::Packet draft;memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.version==0);
  showMaster.programPreview=true;showMaster.step=1;showMaster.sequence++;for(auto &n:nodes)n.nextScore=0;mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1);memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.step==1&&draft.cue.dimmers[0].value==180&&showMaster.version==12); // Full RAM bank follows the master's selected index, not cue0.
  puts("Actual scene delivery: 44B indexed RUN from CRC-bound flash plans, no legacy full-cue fallback; explicit draft PREVIEW, preload barrier, 200ms/10-node scheduler, stale/negative ACK isolation, current-scene confirmation and STOP latch passed");
 }

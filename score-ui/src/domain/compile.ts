@@ -1,6 +1,7 @@
 import type { Project, Step } from './schema.ts';
 import { percentToDuty, effectiveStrip } from './project.ts';
 import { validateProject } from './validation.ts';
+import { dimmerAnimationWire } from './dimmer.ts';
 export interface WireCue {
   dimMask: number;
   relayMask: number;
@@ -68,6 +69,7 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
                 percentToDuty(c.dimmers[p.id].value),
                 ms(c.dimmers[p.id].fadeIn ?? step.timings.lightIn),
                 ms(c.dimmers[p.id].fadeOut ?? step.timings.lightOut),
+                ...dimmerAnimationWire(c.dimmers[p.id]),
               ]
             : [0, 0, 0];
         }),

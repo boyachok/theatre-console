@@ -4,6 +4,7 @@ import type { CellSelection, Project, Step, Timings } from '../domain/schema.ts'
 import type { PreviewEngine } from '../domain/playback.ts';
 import { FieldPair, NumberField, Section } from './Fields.tsx';
 import { DevicePreview } from './DevicePreview.tsx';
+import { DimmerAnimationEditor } from './DimmerAnimationEditor.tsx';
 interface Props {
   project: Project;
   stepId: string;
@@ -162,6 +163,11 @@ export function Inspector({
                 max="100"
                 value={cue.dimmers[selection.parameterId].value}
                 onChange={(e) => change({ value: Number(e.target.value) })}
+              />
+              <DimmerAnimationEditor
+                key={`${step.id}/${device.id}/${selection.parameterId}`}
+                cue={cue.dimmers[selection.parameterId]}
+                onChange={change}
               />
               {fadeFields('light')}
             </>

@@ -294,6 +294,33 @@ try {
   assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications); // Live editing never publishes.
   assert(calls.some((c) => c.path.endsWith('/draft') && JSON.parse(c.raw).patches));
   assert.equal(draft.devices[0].cues[0].d[0][0], 153);
+  // New DIM controls operate per-channel in LIVE, never publishing or echoing GO.
+  await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).check();
+  await page.getByLabel('Период анимации', { exact: true }).fill('0.02');
+  await page.getByLabel('Фаза', { exact: true }).fill('180');
+  await page.getByLabel('Нижний уровень', { exact: true }).fill('25');
+  await page.waitForTimeout(600);
+  assert.deepEqual(draft.devices[0].cues[0].d[0], [153, 200, 0, 1, 20, 1800, 25, 50, 0]);
+  assert.deepEqual(draft.devices[0].cues[0].d[1], [0, 0, 0]);
+  for (const [mode, code] of [
+    ['square', 2],
+    ['ramp', 3],
+    ['random', 4],
+    ['static', 0],
+  ]) {
+    await page.getByLabel('Функция DIM', { exact: true }).selectOption(mode);
+    await page.waitForTimeout(450);
+    assert.equal(draft.devices[0].cues[0].d[0].length, code ? 9 : 3);
+    if (code) assert.equal(draft.devices[0].cues[0].d[0][3], code);
+  }
+  await page.getByLabel('Функция DIM', { exact: true }).selectOption('random');
+  await page.getByLabel('Seed рандома', { exact: true }).fill('4294967295');
+  await page.getByLabel('Плавность рандома', { exact: true }).fill('100');
+  await page.waitForTimeout(500);
+  assert.equal(draft.devices[0].cues[0].d[0][5], 0xffffffff);
+  assert.equal(draft.devices[0].cues[0].d[0][8], 100);
+  assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications);
+  await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).uncheck();
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
@@ -408,15 +435,51 @@ try {
     goes,
   );
   assert.equal(status.console.running, false);
+  const beforeAnimationSync = status.console.version;
+  await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).check();
+  await page.getByLabel('Период анимации', { exact: true }).fill('2');
+  await page.waitForTimeout(1100);
+  assert(status.console.version > beforeAnimationSync);
+  assert.equal(status.console.running, false);
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
+    goes,
+  );
+  assert.equal(
+    workspace.draft.steps[0].devices[project.devices[0].id].dimmers['pwm-1'].animation.period,
+    2,
+  );
   for (const width of [390, 375, 320]) {
     await page.setViewportSize({ width, height: 844 });
+    await page.waitForTimeout(100);
+    const openSheet = page.getByRole('dialog', { name: 'Параметры', exact: true });
+    if (await openSheet.count())
+      await openSheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
     for (const name of ['Следующий шаг', 'Сеть']) {
       const b = await page.getByRole('button', { name, exact: true }).boundingBox();
       assert(b.x >= 0 && b.x + b.width <= width, `${width}: ${name} overflow`);
     }
     const b = await page.getByRole('switch', { name: 'Предпросмотр', exact: true }).boundingBox();
     assert(b.x >= 0 && b.x + b.width <= width);
+    await page.waitForTimeout(120);
+    let sheet = page.getByRole('dialog', { name: 'Параметры', exact: true });
+    if (!(await sheet.count())) await cell.locator('button').click();
+    await sheet.getByLabel('Период анимации', { exact: true }).waitFor();
+    const input = sheet.getByLabel('Период анимации', { exact: true });
+    assert.equal(await input.getAttribute('type'), 'text');
+    await sheet.getByLabel('Ползунок: Период анимации', { exact: true }).hover();
+    const value = await input.inputValue();
+    await page.mouse.wheel(0, 90);
+    await page.waitForTimeout(80);
+    assert.equal(await input.inputValue(), value);
+    assert(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth));
+    if (width === 390) await page.screenshot({ path: '/tmp/theatre-dimmer-0710-390.png' });
+    await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
   }
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
+    goes,
+  );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   await page.getByRole('button', { name: 'Сбросить сеть', exact: true }).click();
@@ -429,7 +492,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'MOCK ESP production UI: preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
+    'MOCK ESP production UI: five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

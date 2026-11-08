@@ -2,7 +2,7 @@
 #include <cstdio>
 #include "../helmet/helmet.ino"
 const uint8_t MASTER[6]={0xa0,0x85,0xe3,0xe2,0xbc,0xd4};
-template<class T>void inject(const T &p){uint8_t wire[300];auto n=encodeLAN(MASTER,network.mac,(const uint8_t*)&p,sizeof(p),wire);assert(n);mockUDPIn.push_back({IPAddress(192,168,50,119),LAN_PORT,std::vector<uint8_t>(wire,wire+n)});}
+template<class T>void inject(const T &p){uint8_t wire[sizeof(LanHeader)+LAN_MAX_PAYLOAD];auto n=encodeLAN(MASTER,network.mac,(const uint8_t*)&p,sizeof(p),wire);assert(n);mockUDPIn.push_back({IPAddress(192,168,50,119),LAN_PORT,std::vector<uint8_t>(wire,wire+n)});}
 void tick(uint32_t at){mockNow=at;loop();}
 Packet last(Type type){for(auto i=mockUDPOut.rbegin();i!=mockUDPOut.rend();++i){if(i->data.size()!=sizeof(Packet)+sizeof(LanHeader))continue;Packet p;memcpy(&p,i->data.data()+sizeof(LanHeader),sizeof(p));if(p.type==type)return p;}assert(false);return {};}
 Show::Packet scene(uint32_t sequence){Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.size=sizeof(p);p.type=Show::PREVIEW;p.session=77;p.deviceBoot=selfBoot;p.run=200;p.transition=sequence;p.reserved=1;p.step=sequence-1;p.cue.strip={1,2,0,255,0,0,0,0,0,20,20,0,0,0,60,1000,1};return p;}

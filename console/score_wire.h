@@ -5,7 +5,7 @@
 #include <algorithm>
 namespace Show {
 constexpr uint32_t MAGIC=0x32574f48;
-constexpr uint8_t PROTOCOL=7,STORE=12,RUN=13,ACK=14,PREVIEW=15;
+constexpr uint8_t PROTOCOL=8,STORE=12,RUN=13,ACK=14,PREVIEW=15;
 constexpr uint32_t REPEAT_MS=200,IDLE_MS=500;
 constexpr uint8_t ACTIVE=1,LOADED=2,MISSING_PLAN=4;
 // Compact published-scene reference. No output values travel in RUN.
@@ -19,14 +19,19 @@ struct __attribute__((packed)) Dimmer {uint8_t value;uint32_t inMs,outMs;};
 struct __attribute__((packed)) Relay {uint8_t on,mode;uint32_t onMs,offMs;};
 struct __attribute__((packed)) Audio {uint16_t track;uint8_t volume,enabled;uint32_t inMs,outMs;};
 struct __attribute__((packed)) Strip {uint8_t enabled,action,mode,r,g,b,br,bg,bb,brightness,width,direction,order,slow;uint16_t count;uint32_t duration,program;};
-struct __attribute__((packed)) Cue {uint16_t dimmerMask;uint8_t relayMask;Dimmer dimmers[12];Relay relays[2];Audio audio;Strip strip;uint8_t reserved[3];};
+enum DimmerMode:uint8_t { STATIC=0,SINE=1,SQUARE=2,RAMP=3,RANDOM=4 };
+struct __attribute__((packed)) DimmerAnimation {uint8_t mode;uint32_t periodMs,phaseSeed;uint8_t floor,duty,smooth;};
+// Preserve the exact score7 static prefix for non-destructive local-cache migration.
+struct __attribute__((packed)) LegacyCue {uint16_t dimmerMask;uint8_t relayMask;Dimmer dimmers[12];Relay relays[2];Audio audio;Strip strip;uint8_t reserved[3];};
+struct __attribute__((packed)) Cue {uint16_t dimmerMask;uint8_t relayMask;Dimmer dimmers[12];Relay relays[2];Audio audio;Strip strip;uint8_t reserved[3];DimmerAnimation animations[12];};
 struct __attribute__((packed)) Packet {
  uint32_t magic;uint8_t protocol,type;uint16_t size;
  uint32_t session,deviceBoot,run,transition,version,checksum;
  uint16_t step,total;uint8_t reason,health;int8_t rssi;uint8_t reserved;uint32_t sentAt;Cue cue;
 };
 struct __attribute__((packed)) FileHeader {uint32_t magic,version,checksum;uint16_t total,reserved;};
-static_assert(sizeof(Cue)==170&&sizeof(Packet)==214&&sizeof(RunPacket)==44&&sizeof(FileHeader)==16,"Show wire sizes");
+static_assert(sizeof(LegacyCue)==170&&sizeof(DimmerAnimation)==12&&offsetof(Cue,animations)==170,"Animation extension layout");
+static_assert(sizeof(Cue)==314&&sizeof(Packet)==358&&sizeof(RunPacket)==44&&sizeof(FileHeader)==16,"Show wire sizes");
 static_assert(offsetof(Packet,cue)==sizeof(RunPacket),"Shared scene header prefix");
 inline RunPacket reference(const Packet &p){RunPacket r{};std::memcpy(&r,&p,sizeof(r));r.size=sizeof(r);return r;}
 inline Packet expand(const RunPacket &r){Packet p{};std::memcpy(&p,&r,sizeof(r));return p;}
@@ -36,7 +41,12 @@ inline uint32_t crc32(const void *source,size_t count){
 }
 inline bool valid(const Cue &c){
  if(c.relayMask&~3||c.dimmerMask&~4095)return false;
- for(int i=0;i<12;i++)if(c.dimmers[i].inMs>3600000||c.dimmers[i].outMs>3600000)return false;
+ for(int i=0;i<12;i++){
+  if(c.dimmers[i].inMs>3600000||c.dimmers[i].outMs>3600000)return false;
+  const auto &a=c.animations[i];if(a.mode>RANDOM||a.floor>100||a.duty>100||a.smooth>100)return false;
+  if(a.mode==STATIC){if(a.periodMs||a.phaseSeed||a.floor||a.duty||a.smooth)return false;}
+  else if(a.periodMs<20||a.periodMs>3600000||(a.mode!=RANDOM&&a.phaseSeed>=3600))return false;
+ }
  for(int i=0;i<2;i++)if(c.relays[i].on>1||c.relays[i].mode>2||c.relays[i].onMs>3600000||c.relays[i].offMs>3600000)return false;
  return c.audio.volume<=30&&c.audio.enabled<=1&&c.audio.inMs<=3600000&&c.audio.outMs<=3600000&&c.strip.enabled<=1&&c.strip.action<=2&&c.strip.mode<=2&&c.strip.order<=1&&c.strip.slow<=1&&c.strip.count<=1024&&c.strip.brightness<=100&&c.strip.width<=100&&c.strip.direction<=1&&c.strip.duration<=3600000&&(!(c.strip.enabled&&c.strip.action==2)||(c.strip.count>0&&c.strip.duration>0&&c.strip.width>0));
 }

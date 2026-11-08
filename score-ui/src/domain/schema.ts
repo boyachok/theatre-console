@@ -29,7 +29,19 @@ export interface Timings {
   relayOn: number;
   relayOff: number;
 }
+export type DimmerMode = 'static' | 'sine' | 'square' | 'ramp' | 'random';
+export interface DimmerAnimation {
+  enabled: boolean;
+  mode: DimmerMode;
+  period: number; // seconds; 0.02–3600
+  phase: number; // degrees; random uses seed instead
+  seed: number;
+  floor: number; // percent of peak brightness, not absolute output
+  duty: number; // square on-time / ramp apex, percent
+  smooth: number; // random transition fraction, percent
+}
 export interface DimmerCue {
+  animation?: DimmerAnimation;
   value: number;
   fadeIn: number | null;
   fadeOut: number | null;

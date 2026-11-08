@@ -4,11 +4,12 @@
 #include <vector>
 #include "actors.h"
 #include "score_wire.h"
+#include "dimmer_animation.h"
 #include "slave_score_store.h"
 #include "ws2811.h"
 namespace Show {
 class Runner {
- Actors &actors;Preferences relayConfig;Ramp lights[12],volume;Ws2811 strip;
+ Actors &actors;Preferences relayConfig;DimmerChannel lights[12];Ramp volume;Ws2811 strip;
  uint8_t written[12]{},relayMode2=0,lastVolume=255;bool relay2=false,relayTarget[2]{},relayPending[2]{};
  uint32_t relayDue[2]{},lastTick=0,lastVolumeAt=0,stopAt=0;
  uint16_t targetTrack=0;bool audioPending=false,audioStarting=false,stopPending=false;uint32_t expectedPlay=0;uint8_t targetVolume=0;uint32_t audioFadeIn=0;
@@ -29,8 +30,8 @@ public:
   const auto &c=p.cue;bool restart=p.reason!=0||recovering;
   if(!strip.apply(c.strip,now,restart))return false;
   for(int i=0;i<12;i++){
-   if(!active)lights[i]=Ramp{(float)actors.dimmerValue(i),(float)actors.dimmerValue(i),now,0};
-   lights[i].target(c.dimmerMask&(1<<i)?c.dimmers[i].value:0,c.dimmers[i].inMs,c.dimmers[i].outMs,now);
+   if(!active)lights[i].reset(actors.dimmerValue(i),now);
+   lights[i].apply(c.dimmers[i],c.animations[i],c.dimmerMask&(1<<i),now,!active||restart||p.run!=run||p.step!=step);
    written[i]=actors.dimmerValue(i);
   }
   for(int i=0;i<2;i++){
@@ -46,7 +47,7 @@ public:
   targetTrack=track;run=p.run;sequence=p.transition;step=p.step;active=true;tick(now);return true;
  }
  void tick(uint32_t now){
-  strip.tick(now);if(!active||now-lastTick<10)return;lastTick=now;
+  strip.tick(now);if(!active||now-lastTick<1)return;lastTick=now;
   for(int i=0;i<12;i++){uint8_t v=(uint8_t)std::max(0.f,std::min(255.f,lights[i].value(now)));if(v!=written[i]){if(actors.setDimmer(i,v))written[i]=v;}}
   for(int i=0;i<2;i++)if(relayPending[i]&&(int32_t)(now-relayDue[i])>=0){writeRelay(i,relayTarget[i]);relayPending[i]=false;}
   if(audioPending&&actors.player.bootSettled()&&actors.player.freeSlots()>=3){

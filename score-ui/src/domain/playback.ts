@@ -1,5 +1,7 @@
 import type { Project, Step, StripEffect } from './schema.ts';
 import { clone, effectiveStrip } from './project.ts';
+import { retargetDimmer, sampleDimmer } from './dimmer.ts';
+import type { LightRuntime } from './dimmer.ts';
 export interface Envelope {
   from: number;
   to: number;
@@ -21,7 +23,7 @@ export interface AudioRuntime {
   generation: number;
 }
 export interface DeviceRuntime {
-  dimmers: Record<string, { value: number; envelope: Envelope }>;
+  dimmers: Record<string, LightRuntime>;
   relays: Record<string, RelayRuntime>;
   audio: AudioRuntime;
   strip: { effect: StripEffect; startedAt: number } | null;
@@ -111,15 +113,18 @@ export class PreviewEngine {
       const runtime = state.devices[device.id],
         cue = step.devices[device.id];
       if (!runtime || !cue) continue;
-      for (const p of device.dimmers.filter((p) => p.enabled)) {
+      for (const p of device.dimmers) {
         const light = runtime.dimmers[p.id],
           target = cue.dimmers[p.id];
-        const duration =
-          target.value >= light.value
-            ? (target.fadeIn ?? step.timings.lightIn)
-            : (target.fadeOut ?? step.timings.lightOut);
-        light.envelope = envelope(light.value, target.value, duration, now);
-        light.value = sample(light.envelope, now);
+        runtime.dimmers[p.id] = retargetDimmer(
+          light,
+          target,
+          p.enabled,
+          target.fadeIn ?? step.timings.lightIn,
+          target.fadeOut ?? step.timings.lightOut,
+          now,
+          restart || state.stepId !== step.id,
+        );
       }
       for (const p of device.relays.filter((p) => p.enabled)) {
         const relay = runtime.relays[p.id],
@@ -211,10 +216,10 @@ export class PreviewEngine {
           audio: { ...previous.audio },
         };
         for (const [key, light] of Object.entries(previous.dimmers)) {
-          const value = sample(light.envelope, now);
-          if (value !== light.value) {
+          const next = sampleDimmer(light, now);
+          if (next.value !== light.value || next.clock) {
             changed = true;
-            d.dimmers[key] = { ...light, value };
+            d.dimmers[key] = next;
           }
         }
         for (const [key, relay] of Object.entries(previous.relays))

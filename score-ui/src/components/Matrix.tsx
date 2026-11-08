@@ -89,6 +89,10 @@ const ScoreCell = memo(function ScoreCell({
           onSelectCell(cell);
         }}
       >
+        {cue.dimmers[parameter.id].animation?.enabled &&
+          cue.dimmers[parameter.id].animation?.mode !== 'static' && (
+            <Waves size={11} aria-label="Анимация DIM" />
+          )}
         <span>{value}</span>
         <small>%</small>
       </button>

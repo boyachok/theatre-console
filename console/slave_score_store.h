@@ -21,9 +21,14 @@ public:
   version=checksum=0;cues.clear();
   auto f=LittleFS.open("/slave-score.bin","r");if(!f)return;FileHeader h{};
   if(f.read((uint8_t*)&h,sizeof(h))!=sizeof(h)||h.magic!=MAGIC||!h.version||!h.total||h.total>MAX_STEPS)return;
-  cues.resize(h.total);if(f.read((uint8_t*)cues.data(),cues.size()*sizeof(Cue))!=cues.size()*sizeof(Cue)||crc32(cues.data(),cues.size()*sizeof(Cue))!=h.checksum){cues.clear();return;}
+  if(h.reserved!=0&&h.reserved!=PROTOCOL)return;
+  size_t stride=h.reserved?sizeof(Cue):sizeof(LegacyCue);if(f.size()!=sizeof(h)+h.total*stride)return;
+  if(!h.reserved){
+   std::vector<LegacyCue> old(h.total);if(f.read((uint8_t*)old.data(),old.size()*sizeof(LegacyCue))!=old.size()*sizeof(LegacyCue)||crc32(old.data(),old.size()*sizeof(LegacyCue))!=h.checksum)return;
+   cues.assign(h.total,Cue{});for(size_t i=0;i<old.size();i++)memcpy(&cues[i],&old[i],sizeof(LegacyCue));
+  }else{cues.resize(h.total);if(f.read((uint8_t*)cues.data(),cues.size()*sizeof(Cue))!=cues.size()*sizeof(Cue)||crc32(cues.data(),cues.size()*sizeof(Cue))!=h.checksum){cues.clear();return;}}
   for(const auto &cue:cues)if(!valid(cue)){cues.clear();return;}
-  version=h.version;checksum=h.checksum;
+  version=h.version;checksum=crc32(cues.data(),cues.size()*sizeof(Cue)); // Legacy static cache converted in RAM; never erase it on boot.
  }
  uint16_t nextMissing()const{for(uint16_t i=0;i<expected;i++)if(!(present[i/8]&(1<<(i%8))))return i;return expected;}
  bool accept(const Packet &p){
@@ -35,7 +40,7 @@ public:
   if(nextMissing()!=expected)return true;
   if(crc32(pending.data(),pending.size()*sizeof(Cue))!=expectedCRC){memset(present,0,sizeof(present));return false;}
   auto file=LittleFS.open("/slave-score.tmp","w");if(!file)return false;
-  FileHeader h{MAGIC,stagingVersion,expectedCRC,expected,0};
+  FileHeader h{MAGIC,stagingVersion,expectedCRC,expected,PROTOCOL};
   bool ok=file.write((uint8_t*)&h,sizeof(h))==sizeof(h)&&file.write((uint8_t*)pending.data(),pending.size()*sizeof(Cue))==pending.size()*sizeof(Cue);file.close();
   if(!ok||!LittleFS.rename("/slave-score.tmp","/slave-score.bin"))return false;
   cues=std::move(pending);version=stagingVersion;checksum=expectedCRC;return true;

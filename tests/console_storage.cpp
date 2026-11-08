@@ -4,14 +4,17 @@
 #include <cstdio>
 using String=std::string;
 #include "../console/score_store.h"
-String payload(uint32_t version){
+String payload(uint32_t version,bool animate=false){
  JsonDocument doc,cue;deserializeJson(cue,R"({"dimMask":255,"relayMask":3,"d":[[0,200,400],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0]],"r":[[0,0,0,0],[0,0,0,0]],"a":[0,30,1,0,0],"stripAction":0})");
  auto dims=cue["d"].as<JsonArray>();while(dims.size()<12){auto extra=dims.add<JsonArray>();extra.add(0);extra.add(0);extra.add(0);}cue["dimMask"]=4095;
+ if(animate)for(auto d:dims){auto a=d.as<JsonArray>();a.add(4);a.add(1000);a.add(0xffffffffu);a.add(25);a.add(50);a.add(100);}
  doc["version"]=version;String fp="p"+std::to_string(version);doc["fingerprint"]=fp;auto steps=doc["steps"].to<JsonArray>();for(int i=0;i<100;i++)steps.add("s"+std::to_string(i));
  auto devices=doc["devices"].to<JsonArray>();for(int d=0;d<10;d++){auto device=devices.add<JsonObject>();char mac[18];snprintf(mac,sizeof(mac),"A0:00:00:00:00:%02X",d+1);device["id"]="device"+std::to_string(d);device["mac"]=mac;auto cues=device["cues"].to<JsonArray>();for(int s=0;s<100;s++)cues.add(cue.as<JsonObject>());}
  String workspace="{\"format\":\"theatre-score\",\"schemaVersion\":1,\"published\":{\"version\":"+std::to_string(version)+",\"fingerprint\":\""+fp+"\"},\"padding\":\""+String(1789000,'x')+"\"}";doc["workspaceJson"]=workspace;String text;serializeJson(doc,text);return text;
 }
 int main(){
+ JsonDocument encoded;deserializeJson(encoded,payload(1,true));auto raw=encoded["devices"][0]["cues"][0];Show::Cue decoded{};assert(Show::decodeCue(raw,decoded)&&decoded.animations[0].mode==Show::RANDOM&&decoded.animations[0].phaseSeed==0xffffffffu);
+ raw["d"][0][4]=19;assert(!Show::decodeCue(raw,decoded));raw["d"][0][4]=1000;raw["d"][0][3]=1;assert(!Show::decodeCue(raw,decoded));raw["d"][0][5]=1800;assert(Show::decodeCue(raw,decoded));raw["d"][0][6]=101;assert(!Show::decodeCue(raw,decoded));
  Show::MasterStore store;String error,one=payload(1);bool ok=store.loadPayload(one,true,error);if(!ok)fprintf(stderr,"Publish failed: %s\n",error.c_str());assert(ok);assert(store.version==1&&store.plans.size()==10&&store.plans[0].cues.size()==100);
  String two=payload(2);assert(store.loadPayload(two,true,error));assert(store.version==2&&LittleFS.peakBytes<0x3f0000);
  Show::MasterStore restored;restored.begin();assert(restored.version==2&&restored.stepIds.size()==100);
@@ -41,6 +44,7 @@ int main(){
  assert(store.draftPayload(text(expanded),error)&&store.goDraft(100,0)&&store.cursorId()=="new-step");
  assert(store.queueShow("p6")&&store.cursorId()=="new-step"&&store.step==100); // Newly added scene need not exist in the OLD publication.
  assert(store.loadPayload(publishExpanded,true,error)&&store.cursorId()=="new-step"&&store.step==100&&!store.active&&!store.draftUnsaved());
+ assert(store.loadPayload(payload(7,true),true,error));Show::MasterStore animated;animated.begin();assert(animated.version==7&&animated.plans.size()==10&&animated.plans[0].cues.size()==100&&animated.plans[9].cues[99].animations[11].phaseSeed==0xffffffffu&&LittleFS.peakBytes<0x3f0000);
  printf("Master programming: full RAM draft + atomic patches/revision/replay, immediate active-cue edits only in preview, no movement on nonselected edits, stable-ID cursor reorder, show sync without delayed execution passed\n");
  printf("Master persistence: repeated 100-step/10-device publications, flash peak %zu < 4128768; restart/journal recovery and uncommitted/invalid rejection passed\n",LittleFS.peakBytes);
 }
