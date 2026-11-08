@@ -92,6 +92,7 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
                 Number(device.audio.enabled),
                 ms(c.audio.fadeIn ?? step.timings.audioIn),
                 ms(c.audio.fadeOut ?? step.timings.audioOut),
+                ...(ms(c.audio.startDelay ?? 0) ? [ms(c.audio.startDelay ?? 0)] : []),
               ],
         stripAction: action,
         s: [

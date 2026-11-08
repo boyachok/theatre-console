@@ -64,13 +64,21 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
       {device.audio.enabled && device.profile !== 'helmet' && (
         <div className="preview-audio">
           <span>{device.audio.name}</span>
-          <b>{runtime.audio.track === null ? '—' : `№ ${runtime.audio.track}`}</b>
+          <b>
+            {runtime.audio.status === 'waiting'
+              ? `№ ${runtime.audio.targetTrack} · ожидание`
+              : runtime.audio.track === null
+                ? '—'
+                : `№ ${runtime.audio.track}`}
+          </b>
           <span className="muted">
-            {runtime.audio.status === 'playing'
-              ? '▶'
-              : runtime.audio.status === 'paused'
-                ? 'Ⅱ'
-                : '■'}
+            {runtime.audio.status === 'waiting'
+              ? '◷'
+              : runtime.audio.status === 'playing'
+                ? '▶'
+                : runtime.audio.status === 'paused'
+                  ? 'Ⅱ'
+                  : '■'}
           </span>
           <span>{Math.round(runtime.audio.volume)}%</span>
         </div>

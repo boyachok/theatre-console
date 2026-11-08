@@ -23,7 +23,7 @@ inline bool decodeCue(JsonVariantConst source,Cue &cue){
  if(!source.is<JsonObjectConst>()||!bounded(source["dimMask"],4095)||!bounded(source["relayMask"],3))return false;
  cue={};cue.dimmerMask=source["dimMask"];cue.relayMask=source["relayMask"];
  auto dim=source["d"].as<JsonArrayConst>(),rel=source["r"].as<JsonArrayConst>(),audio=source["a"].as<JsonArrayConst>();
- if((dim.size()!=8&&dim.size()!=12)||rel.size()!=2||audio.size()!=5)return false;
+ if((dim.size()!=8&&dim.size()!=12)||rel.size()!=2||(audio.size()!=5&&audio.size()!=6))return false;
  for(unsigned i=0;i<dim.size();i++){
   if((dim[i].size()!=3&&dim[i].size()!=9)||!bounded(dim[i][0],255)||!bounded(dim[i][1],3600000)||!bounded(dim[i][2],3600000))return false;
   cue.dimmers[i]={dim[i][0],dim[i][1],dim[i][2]};
@@ -32,6 +32,7 @@ inline bool decodeCue(JsonVariantConst source,Cue &cue){
  for(int i=0;i<2;i++){if(rel[i].size()!=4||!bounded(rel[i][0],1)||!bounded(rel[i][1],2)||!bounded(rel[i][2],3600000)||!bounded(rel[i][3],3600000))return false;cue.relays[i]={rel[i][0],rel[i][1],rel[i][2],rel[i][3]};}
  if(!bounded(audio[0],65535)||!bounded(audio[1],30)||!bounded(audio[2],1)||!bounded(audio[3],3600000)||!bounded(audio[4],3600000))return false;
  cue.audio={audio[0],audio[1],audio[2],audio[3],audio[4]};
+ if(audio.size()==6){if(!bounded(audio[5],3600000))return false;setAudioDelay(cue,audio[5]);}
  auto s=source["s"].as<JsonArrayConst>();
  if(s.size()){
   const uint32_t max[17]={1,2,2,1024,255,255,255,255,255,255,100,100,1,3600000,0xffffffffUL,1,1};

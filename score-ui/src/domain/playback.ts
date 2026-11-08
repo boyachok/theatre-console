@@ -2,6 +2,9 @@ import type { Project, Step, StripEffect } from './schema.ts';
 import { clone, effectiveStrip } from './project.ts';
 import { retargetDimmer, sampleDimmer } from './dimmer.ts';
 import type { LightRuntime } from './dimmer.ts';
+import { initialAudio, retargetAudio, sampleAudio } from './audio.ts';
+import type { AudioRuntime } from './audio.ts';
+export type { AudioRuntime } from './audio.ts';
 export interface Envelope {
   from: number;
   to: number;
@@ -12,15 +15,6 @@ export interface RelayRuntime {
   on: boolean;
   target: boolean;
   due: number | null;
-}
-export interface AudioRuntime {
-  track: number | null;
-  targetTrack: number | null;
-  status: 'playing' | 'paused' | 'stopped';
-  volume: number;
-  envelope: Envelope;
-  stopAt: number | null;
-  generation: number;
 }
 export interface DeviceRuntime {
   dimmers: Record<string, LightRuntime>;
@@ -59,15 +53,7 @@ function initial(project: Project): PlaybackSnapshot {
           relays: Object.fromEntries(
             d.relays.map((p) => [p.id, { on: false, target: false, due: null }]),
           ),
-          audio: {
-            track: null,
-            targetTrack: null,
-            status: 'stopped' as const,
-            volume: 0,
-            envelope: envelope(0, 0, 0, 0),
-            stopAt: null,
-            generation: 0,
-          },
+          audio: initialAudio(),
           strip: null,
         },
       ]),
@@ -139,36 +125,17 @@ export class PreviewEngine {
           relay.due = null;
         }
       }
-      if (device.audio.enabled && device.profile !== 'helmet') {
-        const audio = runtime.audio,
-          target = cue.audio;
-        const fadeIn = target.fadeIn ?? step.timings.audioIn,
-          fadeOut = target.fadeOut ?? step.timings.audioOut;
-        const continues = !restart && target.track !== null && target.track === audio.targetTrack;
-        audio.targetTrack = target.track;
-        audio.stopAt = null;
-        if (target.track === null) {
-          audio.envelope = envelope(audio.volume, 0, fadeOut, now);
-          audio.stopAt = now + fadeOut * 1000;
-        } else if (continues) {
-          audio.envelope = envelope(
-            audio.volume,
-            target.volume,
-            target.volume >= audio.volume ? fadeIn : fadeOut,
-            now,
-          );
-        } else {
-          audio.track = target.track;
-          audio.status = 'playing';
-          audio.generation++;
-          audio.envelope = envelope(0, target.volume, fadeIn, now);
-        }
-        audio.volume = sample(audio.envelope, now);
-        if (audio.stopAt !== null && audio.stopAt <= now) {
-          audio.track = null;
-          audio.status = 'stopped';
-          audio.stopAt = null;
-        }
+      if (device.profile !== 'helmet') {
+        runtime.audio = retargetAudio(
+          runtime.audio,
+          cue.audio,
+          device.audio.enabled,
+          cue.audio.fadeIn ?? step.timings.audioIn,
+          cue.audio.fadeOut ?? step.timings.audioOut,
+          restart,
+          state.stepId !== step.id,
+          now,
+        );
       }
       if (device.strip.enabled) {
         const strip = effectiveStrip(project, step, device.id);
@@ -227,16 +194,10 @@ export class PreviewEngine {
             changed = true;
             d.relays[key] = { ...relay, on: relay.target, due: null };
           }
-        const volume = sample(d.audio.envelope, now);
-        if (volume !== d.audio.volume) {
+        const audio = sampleAudio(previous.audio, now);
+        if (audio !== previous.audio) {
           changed = true;
-          d.audio.volume = volume;
-        }
-        if (d.audio.stopAt !== null && now >= d.audio.stopAt) {
-          changed = true;
-          d.audio.track = null;
-          d.audio.status = 'stopped';
-          d.audio.stopAt = null;
+          d.audio = audio;
         }
         return [id, d];
       }),
@@ -253,7 +214,7 @@ export class PreviewEngine {
       ...this.state,
       devices: {
         ...this.state.devices,
-        [deviceId]: { ...device, audio: { ...device.audio, status: 'paused' } },
+        [deviceId]: { ...device, audio: { ...device.audio, status: 'paused', startAt: null } },
       },
     };
     this.emit();

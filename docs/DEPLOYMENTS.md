@@ -550,3 +550,21 @@ GET root + production JS с распаковкой gzip подтвердил act
 GET не исполнял JS/не запускал авто-sync браузера. Новые GO/PREVIEW/навигация/аудиотест
 **не отправлялись**, физическая новая динамика пока не проверена; старый LIVE не
 восстанавливался. Открыть http://192.168.50.119 с⌘⇧R; ячейкаDIM→«АнимацияDIM».
+
+## Подготовка audio start delay0.7.11 —без новой прошивки
+
+Оператор попросил добавить в звук каждого шага задержку старта трека в секундах.
+Подготовлено поле0–3600с (optional JSON startDelay, default0), UI text+zero-safe
+slider, локальный deadline/cancel/actualTX fade, preview waiting. При STOP/новой
+сцене pending/queued PLAY не всплывает; уже играющий same-file forward продолжается.
+[Семантика/совместимость](AUDIO_START_DELAY.md). Код score9/P10,P11, размеры314/358/44
+прежние; старые cache7/8 переходят в RAM с delay0 без стирания/потери DIM-анимации.
+
+Для сохранности сделаны только GETstatus/workspace проверенного мастера:
+`~/Theatre-console-backups/before-audio-delay-20261108-232136/`, **master0.7.10,
+12шагов/3прибора/публикация68**. Это не backup46, плейлист/сцены не редактировались.
+На реальные ESP не отправляли ни OTA, ни STOP/GO/PREVIEW/audio/navigation/config.
+Установленная тестовая пара остаётся0.7.10, другие7slave0.7.9/remote0.7.8 неизменны.
+41domain, ASan/UBSan actual Runner/Player/storage/wrap/cancellation, MOCK ESPUI,
+четыре Arduino-сборки проверены. Физического теста задержки ещё нет. Перед будущей
+отдельно согласованной записью снова проверить MAC/роль и сохранить свежую партитуру.

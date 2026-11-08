@@ -31,7 +31,11 @@ function Slider({
       onChange(next);
     } else setText(String(value));
   };
-  const position = logarithmic ? (Math.log(value / min) / Math.log(max / min)) * 1000 : value;
+  const position = logarithmic
+    ? (min > 0
+        ? Math.log(value / min) / Math.log(max / min)
+        : Math.log1p(value) / Math.log1p(max)) * 1000
+    : value;
   return (
     <div className="animation-slider">
       <label className="field">
@@ -68,7 +72,11 @@ function Slider({
         onChange={(e) =>
           onChange(
             logarithmic
-              ? Math.round(min * Math.pow(max / min, Number(e.target.value) / 1000) * 1000) / 1000
+              ? Math.round(
+                  (min > 0
+                    ? min * Math.pow(max / min, Number(e.target.value) / 1000)
+                    : Math.expm1((Number(e.target.value) / 1000) * Math.log1p(max))) * 1000,
+                ) / 1000
               : Number(e.target.value),
           )
         }
@@ -76,6 +84,7 @@ function Slider({
     </div>
   );
 }
+export { Slider as SliderField };
 export function DimmerAnimationEditor({
   cue,
   onChange,

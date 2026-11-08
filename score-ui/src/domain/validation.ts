@@ -164,7 +164,8 @@ export function validateProject(value: unknown): asserts value is Project {
       }
       const a = cue.audio;
       ensure(
-        (a.voiceOn === undefined || typeof a.voiceOn === 'boolean') &&
+        (a.startDelay === undefined || number(a.startDelay)) &&
+          (a.voiceOn === undefined || typeof a.voiceOn === 'boolean') &&
           (a.track === null || (Number.isInteger(a.track) && a.track > 0 && a.track <= 65535)) &&
           (a.lastTrack === undefined ||
             (Number.isInteger(a.lastTrack) && a.lastTrack > 0 && a.lastTrack <= 65535)) &&

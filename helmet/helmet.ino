@@ -17,8 +17,8 @@ uint32_t randomId(){uint32_t n=esp_random();return n?n:1;}
 bool linkFresh(){return network.ready()&&hasHeartbeat&&millis()-lastHeartbeat<OFFLINE_MS;}
 Packet message(Type type,uint32_t seq=0){
  Packet p=packet(type,masterSession,seq);p.deviceBoot=selfBoot;p.nodeId=assignedId;p.rssi=(int8_t)WiFi.RSSI();p.state=runner.snapshot(linkFresh());
- // P/9: score8 indexed helmet, no PWM. Same 72-byte HELLO/ECHO envelope.
- if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=9;}
+ // P/11: score9 indexed helmet, no PWM. Same 72-byte HELLO/ECHO envelope.
+ if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=11;}
  return p;
 }
 void resetLink(bool forget){

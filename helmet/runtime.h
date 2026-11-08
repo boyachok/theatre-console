@@ -13,7 +13,7 @@ public:
  bool available()const{return false;}
 };
 inline bool supported(const Show::Cue &c){
- if(!Show::valid(c)||c.dimmerMask||c.relayMask||c.audio.track)return false;
+ if(!Show::valid(c)||c.dimmerMask||c.relayMask||c.audio.track||Show::audioDelay(c))return false;
  for(int i=0;i<12;i++)if(c.dimmers[i].value||c.animations[i].mode)return false;
  for(int i=0;i<2;i++)if(c.relays[i].on||c.relays[i].mode)return false;
  return true;

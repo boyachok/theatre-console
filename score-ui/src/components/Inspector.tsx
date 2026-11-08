@@ -4,7 +4,7 @@ import type { CellSelection, Project, Step, Timings } from '../domain/schema.ts'
 import type { PreviewEngine } from '../domain/playback.ts';
 import { FieldPair, NumberField, Section } from './Fields.tsx';
 import { DevicePreview } from './DevicePreview.tsx';
-import { DimmerAnimationEditor } from './DimmerAnimationEditor.tsx';
+import { DimmerAnimationEditor, SliderField } from './DimmerAnimationEditor.tsx';
 interface Props {
   project: Project;
   stepId: string;
@@ -215,6 +215,19 @@ export function Inspector({
                 step={1}
                 onChange={(n) => change({ volume: n ?? 0 })}
               />
+              <SliderField
+                label="Задержка старта трека"
+                value={cue.audio.startDelay ?? 0}
+                min={0}
+                max={3600}
+                logarithmic
+                suffix="с"
+                onChange={(startDelay) => change({ startDelay })}
+              />
+              <p className="muted">
+                От начала сцены до команды запуска. Фейд начинается с PLAY; уже играющий тот же трек
+                продолжает звучать без новой задержки.
+              </p>
               {fadeFields('audio')}
             </>
           )}

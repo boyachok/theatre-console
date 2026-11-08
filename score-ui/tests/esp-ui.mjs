@@ -321,6 +321,23 @@ try {
   assert.equal(draft.devices[0].cues[0].d[0][8], 100);
   assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications);
   await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).uncheck();
+  const audioCell = page
+    .locator('.parameter-row[data-parameter="audio"]')
+    .first()
+    .locator('td')
+    .first();
+  await audioCell.locator('button').click();
+  assert.equal(await page.getByLabel('Задержка старта трека', { exact: true }).inputValue(), '0');
+  assert.equal(
+    await page.getByLabel('Ползунок: Задержка старта трека', { exact: true }).inputValue(),
+    '0',
+  );
+  await page.getByLabel('Задержка старта трека', { exact: true }).fill('1.25');
+  await page.waitForTimeout(600);
+  assert.equal(draft.devices[0].cues[0].a[5], 1250);
+  assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications);
+  await cell.locator('button').click();
+  await page.getByLabel('Яркость', { exact: true }).fill('60');
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
@@ -435,6 +452,15 @@ try {
     goes,
   );
   assert.equal(status.console.running, false);
+  await audioCell.locator('button').click();
+  await page.getByLabel('Задержка старта трека', { exact: true }).fill('3');
+  await page.waitForTimeout(1000);
+  assert.equal(workspace.draft.steps[0].devices[project.devices[0].id].audio.startDelay, 3);
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
+    goes,
+  );
+  await cell.locator('button').click();
   const beforeAnimationSync = status.console.version;
   await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).check();
   await page.getByLabel('Период анимации', { exact: true }).fill('2');
@@ -492,7 +518,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'MOCK ESP production UI: five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
+    'MOCK ESP production UI: audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

@@ -52,6 +52,7 @@ export interface RelayCue {
   delayOff: number | null;
 }
 export interface AudioCue {
+  startDelay?: number; // seconds, per device/step; absent means zero
   voiceOn?: boolean;
   lastTrack?: number;
   track: number | null;

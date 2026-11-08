@@ -5,7 +5,7 @@
 #include <algorithm>
 namespace Show {
 constexpr uint32_t MAGIC=0x32574f48;
-constexpr uint8_t PROTOCOL=8,STORE=12,RUN=13,ACK=14,PREVIEW=15;
+constexpr uint8_t PROTOCOL=9,STORE=12,RUN=13,ACK=14,PREVIEW=15;
 constexpr uint32_t REPEAT_MS=200,IDLE_MS=500;
 constexpr uint8_t ACTIVE=1,LOADED=2,MISSING_PLAN=4;
 // Compact published-scene reference. No output values travel in RUN.
@@ -39,7 +39,11 @@ inline uint32_t crc32(const void *source,size_t count){
  const uint8_t *bytes=(const uint8_t*)source;uint32_t crc=0xffffffff;
  while(count--){crc^=*bytes++;for(int b=0;b<8;b++)crc=(crc>>1)^((crc&1)?0xedb88320:0);}return ~crc;
 }
+// Reserved 24-bit little-endian field becomes delayMs in score9. No packet growth.
+inline uint32_t audioDelay(const Cue &c){return c.reserved[0]|((uint32_t)c.reserved[1]<<8)|((uint32_t)c.reserved[2]<<16);}
+inline void setAudioDelay(Cue &c,uint32_t ms){c.reserved[0]=ms&255;c.reserved[1]=(ms>>8)&255;c.reserved[2]=(ms>>16)&255;}
 inline bool valid(const Cue &c){
+ if(audioDelay(c)>3600000)return false;
  if(c.relayMask&~3||c.dimmerMask&~4095)return false;
  for(int i=0;i<12;i++){
   if(c.dimmers[i].inMs>3600000||c.dimmers[i].outMs>3600000)return false;

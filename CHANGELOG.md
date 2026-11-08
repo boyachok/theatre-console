@@ -1,5 +1,24 @@
 # Изменения Theatre console
 
+## 0.7.11 — задержка старта трека (подготовлено, НЕ прошито)
+
+- Опциональный `audio.startDelay` в секундах0–3600 отдельно на прибор/шаг, текст+
+  zero-safe logarithmic slider без spinner/wheel. В preview состояние waiting,
+  не фиктивное playing. Старые сцены остаются без поля/delay0, published snapshot
+  и fingerprint не нормализуются задним числом.
+- Настоящий local Runner откладывает admission PLAY; actualTX остаётся якорем
+  fade-in. Повторы/несвязанные LIVE-правки не продлевают таймер; LIVE delay edit
+  от исходного request. Уже играющий same-file forward не останавливается ради delay.
+- Новый/пустой/disabled cue, STOP/ALL_OFF отменяют ожидающий/queued PLAY. Исправлена
+  и отмена уже поставленного PLAY при blank cue с ненулевым fade-out; подтверждение
+  actualTX до ретаргета не позволяет перепутать только что начатый трек с ожиданием.
+- Score9/P10,P11, audio array5/6. Delay использует3reserved байта: размеры Cue314/
+  STORE358/RUN44 сохранены. Старые7/8кэши проверяются и конвертируются в RAM с delay0,
+  dim animations не теряются; старый score8 не объявляется delay-ready.
+- ASan/UBSan actual Runner/Player/storage/wrap/cancellation/CRC,41domain, MOCK ESP
+  browser LIVE/OFF/ms conversion/zero slider/mobile, все4роли собраны. GPIO/плеер/
+  пульт не менялись. Физического теста/новой OTA/команд сцен при подготовке не было.
+
 ## 0.7.10 — независимая DIM-анимация (установлены master+один test slave)
 
 - На каждый DIM каждого шага прибора: включение, статика/синус/квадрат/рамп/random,
