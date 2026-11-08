@@ -1,8 +1,9 @@
 # Проверенные записи на платы
 
-**Текущий комплект:0.7.9 на master+8slave (9/9 OTA); remote оставлен0.7.8 без записи.**
-История ниже хронологическая; последняя реальная запись — «OTA0.7.9 master+8slave, пульт исключён».
-Ниже неё — подготовка0.7.10 без записи на устройства.
+**Текущий комплект:master+test slave74:4D:BD:73:0A:A4 на0.7.10; остальные7slave0.7.9;
+remote0.7.8 не трогали.** История хронологическая; последняя реальная запись —
+«OTA0.7.10 master+один test slave». Общий show1/3 по текущей публикации46, не готов
+за два недоступных/не обновлённых назначения. Новую динамику физически не запускали.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -496,4 +497,56 @@ slave0.7.10, а для полного опубликованного испол�
 Программно: ASan/UBSan actual12-channel runtime/codec/cache migration/storage,
 36domain, MOCK ESP production/mobile UI (все формы/LIVE и OFF без скрытого GO),
 все4роли Arduino ESP32собраны. Источник/binaries сохранены отдельно; физического
-теста новой динамики ещё нет, устройство по-прежнему0.7.9. Пульт не трогали.
+теста новой динамики ещё нет, при подготовке устройства оставались0.7.9. Пульт не трогали.
+
+## OTA0.7.10 master+один test slave —2026-11-08
+
+После подготовки оператор явно ответил **«да, обновляем»** на предложение записать
+master и оставленный slave **74:4D:BD:73:0A:A4**, без пульта/других slave.
+Использованы ранее проверенные образы кода **91c32b6d510a96fbf68df7b1dab4309ebfed1759**,
+CI42440406541 success; до записи размер/ESP header/version/SHA256 совпали с manifest.
+Нового кода до записи не было, исходники/worktree чистые.
+
+Перед OTA GET по текущим адресам подтвердил MAC/роль обеих плат, обе0.7.9.
+Master был **LIVEon/runningtrue,scene4**, publication46/fingerprintcfe5fcde,
+12шагов/3прибора. Сначала сохранён свежий workspace/статусы, затем оператору явно
+сообщено о maintenance остановке без возобновления. POST`/stop-all` дал202;
+master LIVE/runningfalse, test slave COMMAND_ACK accepted и логическиеPWM0/relayoff
+подтверждены. Это software ACK/снимок, не физические датчики. Временноsyncingtrue
+при1/3планов не выдавался за опасный GO; запуски не отправлялись.
+
+| Роль | MAC | IP | Образ/подтверждение |
+|---|---|---|---|
+|master|A0:85:E3:E2:BC:D4|192.168.50.119|1251264B,HTTP200→0.7.10/new boot/token|
+|slave|74:4D:BD:73:0A:A4|192.168.50.20|1096160B,HTTP200→0.7.10/new boot/token|
+
+SHA256 master`f40860be591ac617f53312d879d806b769ca1f2eb3b0c3c82f0ab66e25dd4866`,
+slave`a65863fd5d6102f5e78ed55fa49d5e85d2f2da9877669703c528e0e93dd29153`.
+Образы/ELF: `~/Theatre-console-backups/prepared-0710-DIM-animation-20261108-055354/`.
+Master записан первым, после сохранности JSON — slave; каждый отдельный upload
+проверен по **MAC+role+version+новый token**, не только HTTP200/IP.
+Только OTA-приложение, без erase/новых partitions. Остальные7slave иremote **не
+записывались**; их новые0.7.10 images не использованы.
+
+Свежий отдельный журнал/экспорт/авторизация/responses/before/after/final статусы:
+**`~/Theatre-console-backups/ota-master-slave-0710-20261108-135744/`**, доступ700/600,
+внеGit. `score-backup-before.json`, `score-backup-after-master.json`,
+`score-backup-after-all.json` JSON-эквивалентны; SHA256 до/после одинаков:
+`67c33c2aa7878a9ecc265dab72d786965f11cd051b6c7ab76efe353543bcb60c`.
+Это **публикация46,12шагов/3прибора**, не старый14/2прибора. Видимые presets/inversion
+первых8PWM и relayMode test slave совпадают, GPIO RX1/TX2,DIM/REL/strip47 прежние.
+
+Финальный master:`version46/fingerprintcfe5fcde/stepnull/LIVEoff/runningfalse/
+navigation0/transition0/scoreProtocol8/repeat200`. Test slave:
+**localScoreSupported=true,scoreVersion46,sceneStatusready**, reportAge207мс.
+Это подтверждает старый статический план после score8 RAM conversion/согласованияCRC.
+Общий **stored1/planned3/readyfalse** ожидаем: два других назначения не в сети и не
+входили в разрешение этой OTA. Никаких переназначений ради ложной готовности не было;
+для полного «Показа» нужны все назначенные совместимые score8-узлы. Для текущего
+стенда одного прибора использовать явный LIVE после проверки безопасной нагрузки.
+
+GET root + production JS с распаковкой gzip подтвердил actual0.7.10,
+`/assets/index-3zUbVBtS.js` с «Включить анимацию»/period/floor/random-smooth controls.
+GET не исполнял JS/не запускал авто-sync браузера. Новые GO/PREVIEW/навигация/аудиотест
+**не отправлялись**, физическая новая динамика пока не проверена; старый LIVE не
+восстанавливался. Открыть http://192.168.50.119 с⌘⇧R; ячейкаDIM→«АнимацияDIM».
