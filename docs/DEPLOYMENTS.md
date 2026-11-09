@@ -1,11 +1,11 @@
 # Проверенные записи на платы
 
-**Текущий комплект:master,DC:DA:0C:43:C3:C0 и30:30:F9:31:19:C4 на0.7.11;
-test slave740.7.10; остальные5slave0.7.9; remote0.7.8.** Последняя запись —
-«OTA ещё одного видимого30-slave». Fresh draft2шага/1прибор сохранён, maintenance
-LIVEoff вызвал штатный editor auto-sync v80→81 того же draft, без GO/смены привязок.
-Сейчас прибор«3»→DC(.41)offline, новая30(.55)не назначена, ready0/1. Прошивки master/
-remote в этой последней операции не менялись; оператор настраивает партитуру сам.
+**Текущий комплект:master,DC:DA:0C:43:C3:C0,30:30:F9:31:19:C4,
+84:FC:E6:57:0F:AC на0.7.11; test slave740.7.10; другие4slave0.7.9; remote0.7.8.**
+Последняя запись — «OTA видимого84-slave». Fresh draft2шага/2прибора сохранён,
+maintenance LIVEoff вызвал штатный editor auto-sync89→90, без GO/смены привязок.
+Приборы«3»→DC и«5»→30, обаoffline; новый84не назначен. Firmware master/remote/
+другихslave не менялись, настройки партитуры оператор делает сам.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -682,3 +682,42 @@ navigation101/transition151/stored0/planned1/readyfalse/score9`. Новый30-sl
 оператора до этой команды, мы их не заменяли и не переносили на новую30плату.
 Новую сцену/аудиотест не запускали, физической проверки новой платы не было.
 LIVE не возобновляли; дальнейшие назначения/тест оператор делает самостоятельно.
+
+## OTA видимого84-slave —2026-11-09
+
+На повторную команду **«перепрошей ещё одну»** GET master выявил единственный
+свежий peer **84:FC:E6:57:0F:AC /192.168.50.58**, direct GET подтвердилslave0.7.9,
+YX map инулевые логические выходы. Других свежих slave не было. Master0.7.11
+работал вLIVE наstep1,publication89/0d3830d7, RAMdrafta66ea238.
+
+Перед изменением сохранён **актуальный draft2шага/2прибора**, fingerprint приватного
+экспорта совпал сRAMa66ea238, то есть сохранены и неопубликованные LIVE-правки.
+Оператору сообщена maintenance остановка; `/stop-all` дал accepted software ACK,
+master LIVE/runningfalse. Затем только84-slave записан OTA0.7.11,1096352B,
+код5eba22ebdd76d85a67fed4171670e66d87ba2d9d, CI42520729447success,
+SHA256`5c0878e6667806430b32f1b7584b0ae18c94818e4b44f3764432c5e7fd968972`.
+HTTP200→direct GETтотжеMAC/role/version0.7.11/новыйtoken. GPIO/preset levels/
+inversion/relayMode сохранены. Partition/NVS erase не выполнялись.
+
+Первый postupload gate ожидал ровно один fresh peer и попал в короткий reconnect
+промежуток **до fresh-report у master**. Direct status уже был0.7.11/new boot.
+**Повторной записи не было.** Read-only повторная проверка подтвердила84(.58),
+localScoreSupportedtrue и свежий master report. В helper уточнена только postupload
+проверка: допускать временно отсутствиеfresh target до его появления; preflight
+MAC/role/единственныйfresh target остались строгими. Это не failure OTA.
+
+Evidence: **`~/Theatre-console-backups/ota-slave-84fc-0711-20261109-213924/`**,700/600,
+внеGit. Сохранены before/after/after-stop exports,statuses,response,authorization,
+deployment-result. Как при предыдущейOTA, **весь JSON до/после различается**:
+существующий editor приLIVEoff штатно опубликовал тот же draft **89→90**.
+Проверено `before.draft == after.draft == after.published.project`; привязки нетронуты.
+Не заменять90старой89. Инструмент не отправлял publish/import/GO/настройки.
+Before SHA256`26023ba87f62c705be684af0effa80cef78a77bb68ad404a268fd2add93213ae`,
+after SHA256`c48f0c14fb6f52265bb6c4e7f0de9989d1708ee11f18bcb9146dda0282db75b7`.
+
+Master token/version0.7.11 не менялись; firmware master/remote/другихslave не писали.
+Новый84score9-совместим, ноidle/score0 — не назначен прибору. Неизменённые назначения:
+«3»→DC:DA:0C:43:C3:C0, «5»→30:30:F9:31:19:C4, оба ужеoffline. Masterv90/score9,
+LIVEoff/runningfalse, публиковался a66ea238; общий show ждёт назначения, не объявлен
+ложно готовым. GO/аудио/физические тесты не делали, LIVE не возобновляли. Оператор
+настраивает привязки/партитуру самостоятельно.

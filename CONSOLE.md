@@ -1,4 +1,9 @@
-# Theatre console —master+DC+30:30:F9:31:19:C4 на0.7.11; slave740.7.10; другие5slave0.7.9; remote0.7.8
+# Theatre console —master+DC+30+84 на0.7.11; slave740.7.10; другие4slave0.7.9; remote0.7.8
+
+Последним обновлён84:FC:E6:57:0F:AC (.58),0.7.9→0.7.11. Новый boot/MAC/role/
+score9 подтверждены; новая загрузка кратко ещё не была в master fresh-peers, поэтому
+проверка завершена read-only после reconnect без повторного upload. Draft2шага/
+2прибора сохранён, editor maintenance LIVEoff auto-sync89→90, без GO/перепривязок.
 
 Последнее добавление: только видимый30:30:F9:31:19:C4 (.55) обновлён0.7.9→0.7.11.
 Свежий draft2шага/1прибор сохранён; maintenance LIVEoff вызвал штатный editor auto-sync
