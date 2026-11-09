@@ -1,6 +1,6 @@
 # Изменения Theatre console
 
-## 0.7.11 — задержка старта трека (подготовлено, НЕ прошито)
+## 0.7.11 — задержка старта трека (записан только видимый slaveDC)
 
 - Опциональный `audio.startDelay` в секундах0–3600 отдельно на прибор/шаг, текст+
   zero-safe logarithmic slider без spinner/wheel. В preview состояние waiting,
@@ -18,6 +18,9 @@
 - ASan/UBSan actual Runner/Player/storage/wrap/cancellation/CRC,41domain, MOCK ESP
   browser LIVE/OFF/ms conversion/zero slider/mobile, все4роли собраны. GPIO/плеер/
   пульт не менялись. Физического теста/новой OTA/команд сцен при подготовке не было.
+  Затем по отдельному разрешению обновлён толькоDC:DA:0C:43:C3:C0 (0.7.9→0.7.11),
+  MAC/роль/new boot/настройки проверены. Master0.7.10 не трогали: score8/9 несовместимы,
+  до его отдельного обновления сценам нет readiness. Fresh workspacev69 сохранён.
 
 ## 0.7.10 — независимая DIM-анимация (установлены master+один test slave)
 

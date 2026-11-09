@@ -1,9 +1,10 @@
 # Проверенные записи на платы
 
-**Текущий комплект:master+test slave74:4D:BD:73:0A:A4 на0.7.10; остальные7slave0.7.9;
-remote0.7.8 не трогали.** История хронологическая; последняя реальная запись —
-«OTA0.7.10 master+один test slave». Общий show1/3 по текущей публикации46, не готов
-за два недоступных/не обновлённых назначения. Новую динамику физически не запускали.
+**Текущий комплект:master0.7.10; DC:DA:0C:43:C3:C0 обновлён0.7.11; прежний test
+slave740.7.10; остальные6slave0.7.9; remote0.7.8 не трогали.** Последняя реальная
+запись — «OTA0.7.11 только сейчас видимого DC-slave». Master score8/новый slave
+score9 несовместимы; master отдельно пока не разрешён/не обновлён. Fresh workspacev69,
+master idle,readiness0/3; новой акустической проверки нет.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -568,3 +569,36 @@ slider, локальный deadline/cancel/actualTX fade, preview waiting. Пр�
 41domain, ASan/UBSan actual Runner/Player/storage/wrap/cancellation, MOCK ESPUI,
 четыре Arduino-сборки проверены. Физического теста задержки ещё нет. Перед будущей
 отдельно согласованной записью снова проверить MAC/роль и сохранить свежую партитуру.
+
+## OTA0.7.11 только сейчас видимого DC-slave —2026-11-09
+
+Команда оператора: **«перепрошей сейчас видимого слейва»**. По GET master status
+единственный свежий peer оказался **DC:DA:0C:43:C3:C0 /192.168.50.41**, не прежний
+74:4D:BD:73:0A:A4. Direct GET подтвердил **role=slave,version0.7.9**, известную
+YX-карту RX1/TX2/12DIM/relay39/38/strip47. MasterA0:85:E3:E2:BC:D4 —0.7.10,
+LIVEoff/runningfalse. Оператору до записи сообщено о конкретномMAC и что master0.7.10
+не совместим со slave0.7.11; master/пульт по этой узкой команде не трогать.
+
+До upload сохранены slave/master status и свежий workspace **12шагов/3прибора/v69**,
+fingerprinta792a6f9. Образ slave из подготовки0.7.11 кода5eba22ebdd76d85a67fed4171670e66d87ba2d9d,
+CI42520729447 success,1096352B,
+SHA256`5c0878e6667806430b32f1b7584b0ae18c94818e4b44f3764432c5e7fd968972`.
+Размер/ESP header/version/hash проверены; POST только `/update` DC-role/mac,
+HTTP200→**новый boot/token и тот же MAC/role/version0.7.11** проверены.
+GPIO/видимые preset levels/inversion/relayMode сохранены. Это OTA приложения,
+не erase/NVS/разделы; конфигурация и назначения приборов не менялись.
+
+Evidence внеGit:
+**`~/Theatre-console-backups/ota-single-slave-0711-20261109-204400/`**, доступ700/600.
+`slave-before/after.json`, `master-before/after.json`, response, authorization,
+`deployment-result.json`, exportbefore/after. Workspace JSON и SHA256 одинаковы:
+`dcdf43c5ff4f4e8622d0abd0dd470da01c68a23ccb1f921f1a6fe72dc4cb31d3`.
+Master **token иversion0.7.10 неизменны**, никакой master OTA/STOP/GO/PREVIEW/audio/
+navigation/config не было; другие slave/remote также не записывались.
+
+Финальный master:`publication69/fingerprinta792a6f9/stepnull/LIVEoff/runningfalse/
+scoreProtocol8/stored0/planned3/readyfalse`. Новый DC-slave обнаружен, но
+**localScoreSupported=false у старого master**, sceneStatusidle (не выдаём за plan ACK).
+Score9 slave не исполняет score8 сцены. Для использования новой прошивки нужно
+отдельно разрешить master0.7.11; его образ подготовлен, не установлен. Физический
+аудио-delay/нагрузки при этой записи не тестировались. Остальные устройства нетронуты.

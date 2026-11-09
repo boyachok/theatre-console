@@ -1,6 +1,11 @@
-# Theatre console — master+тестовый slave0.7.10; остальные7slave0.7.9; remote0.7.8
+# Theatre console —master0.7.10; slaveDC0.7.11; slave740.7.10; остальные6slave0.7.9; remote0.7.8
 
-**0.7.11 подготовлена, не прошита:** [start delay звука](docs/AUDIO_START_DELAY.md)
+**0.7.11 установлена толькоDC:DA:0C:43:C3:C0 по команде «перепрошей видимого слейва»**.
+Master/пульт/другие узлы не обновлялись; master token/version0.7.10 неизменны, fresh
+workspace12шагов/3прибора/v69 сохранён. Score9 slave не объявляется совместимым со
+score8 master: сцены ждут отдельного обновления master. [Журнал](docs/DEPLOYMENTS.md).
+
+**0.7.11, master image пока не установлен:** [start delay звука](docs/AUDIO_START_DELAY.md)
 0–3600с в каждом шаге/приборе. Старые сцены delay0, no early PLAY, actualTX fade,
 STOP/новая сцена отменяют отложенное. Score9/P10/P11, sizes314/358/44 прежние.
 
