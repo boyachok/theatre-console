@@ -1,10 +1,11 @@
 # Проверенные записи на платы
 
-**Текущий комплект:master0.7.10; DC:DA:0C:43:C3:C0 обновлён0.7.11; прежний test
-slave740.7.10; остальные6slave0.7.9; remote0.7.8 не трогали.** Последняя реальная
-запись — «OTA0.7.11 только сейчас видимого DC-slave». Master score8/новый slave
-score9 несовместимы; master отдельно пока не разрешён/не обновлён. Fresh workspacev69,
-master idle,readiness0/3; новой акустической проверки нет.
+**Текущий комплект:master иDC:DA:0C:43:C3:C0 на0.7.11; прежний test slave740.7.10;
+остальные6slave0.7.9; remote0.7.8 не трогали.** Последняя реальная запись —
+«OTA0.7.11 master, пульт не требует обновления». Совместимость score9 подтверждена,
+но DC ещё не привязан к прибору; все3назначения offline, fresh workspacev69/ready0/3.
+Пульт masterReadytrue/buttonsEnabledtrue, его version/token неизменны. GO/акустического
+теста новой задержки не было.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -602,3 +603,43 @@ scoreProtocol8/stored0/planned3/readyfalse`. Новый DC-slave обнаруж�
 Score9 slave не исполняет score8 сцены. Для использования новой прошивки нужно
 отдельно разрешить master0.7.11; его образ подготовлен, не установлен. Физический
 аудио-delay/нагрузки при этой записи не тестировались. Остальные устройства нетронуты.
+
+## OTA0.7.11 master, пульт не требует обновления —2026-11-09
+
+Оператор: **«прошей тогда и мастера и пульт тоже. или пульт не требует обновления?»**.
+Ответ до записи: пульт R/1 совместим, обновлять не требуется, оставляем как есть;
+обновляем только master. Отдельной переназначающей/пускающей команды не было.
+
+GET подтвердил **masterA0:85:E3:E2:BC:D4 /192.168.50.119,version0.7.10**, idle/LIVEoff;
+DC-slave до записи0.7.11, remote-readonly0.7.8. Сохранён свежий workspace **12шагов/
+3прибора/v69** истатусы. Образ master1251792B кода5eba22ebdd76d85a67fed4171670e66d87ba2d9d,
+SHA256`b2b1b0122980afd5795145decd54b629b97861b9ee7a16bf80eefef41b36f291`, CI42520729447
+success; header/size/version/hash совпали. Между исходным build и HEAD изменены только
+документы (git diff code paths пуст). POST только master`/update`, HTTP200→**новый
+token/boot, тот же MAC/role,version0.7.11/score9** проверены. Только OTA-приложение,
+NVS/storage/partition table не стирались. Remote/slave не записывались.
+
+Evidence: **`~/Theatre-console-backups/ota-master-0711-20261109-205430/`** (700/600,
+внеGit): fresh score before/after, master before/after/final, remote/slave read-only
+before/after, upload-response, authorization, deployment-result. Экспорт JSON
+эквивалентен, before/after SHA256 одинаков:
+`dcdf43c5ff4f4e8622d0abd0dd470da01c68a23ccb1f921f1a6fe72dc4cb31d3`.
+DC-token/version0.7.11 неизменны. Remote **version0.7.8/token неизменны**, после
+master update **masterReadytrue/buttonTestfalse/buttonsEnabledtrue**. Это software
+handshake/ping readiness, не тест физических кнопок/навигации; firmwareпульта не меняли.
+
+Новый master обнаружил DC: **localScoreSupportedtrue**, score9-совместим. Но
+**sceneStatusidle**, потому что DC **не назначен ни одному прибору** (не ошибкаOTA).
+Неизменённые draft bindings:
+- «Гардероб+Колыбель» →EC:DA:3B:56:F2:CC (.197).
+- «Зеркало+3Д принтер» →30:30:F9:32:02:30 (.65).
+- «тест1» →**74:4D:BD:73:0A:A4 (.20)**, сейчас offline, не DC(.41).
+Никаких автоматических перепривязок/публикации нового номера не делали. Перед
+сменой MAC «тест1» требуется команда оператора. Для полного показa все назначения
+должны быть доступны/score9-совместимы; сейчас **stored0/planned3/readyfalse**.
+
+Финальный master:`publication69/fingerprinta792a6f9/score9/stepnull/LIVEoff/runningfalse/
+navigation0/transition0`. Actual GET root/JS (gzip) подтвердил0.7.11 и «Задержка
+старта трека». **GO/PREVIEW/STOP/navigation/audio tests не отправлялись**, исполнение
+не возобновлялось. Открыть http://192.168.50.119 с⌘⇧R. Проблема несовпадающих protocol
+версий решена; следующая задача — явно согласовать привязку testприбора кDC.

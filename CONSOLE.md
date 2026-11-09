@@ -1,15 +1,17 @@
-# Theatre console —master0.7.10; slaveDC0.7.11; slave740.7.10; остальные6slave0.7.9; remote0.7.8
+# Theatre console —master+DC-slave0.7.11; slave740.7.10; остальные6slave0.7.9; remote0.7.8
 
-**0.7.11 установлена толькоDC:DA:0C:43:C3:C0 по команде «перепрошей видимого слейва»**.
-Master/пульт/другие узлы не обновлялись; master token/version0.7.10 неизменны, fresh
-workspace12шагов/3прибора/v69 сохранён. Score9 slave не объявляется совместимым со
-score8 master: сцены ждут отдельного обновления master. [Журнал](docs/DEPLOYMENTS.md).
+**0.7.11 установлена на DC:DA:0C:43:C3:C0, затем по отдельному разрешению на master**.
+Оба MAC/роли/новые boot проверены, localScoreSupportedtrue/score9 совместимы. Пульт
+обновлять не нужно:0.7.8/R1 оставлен, его token/version не изменились. Fresh
+workspace12шагов/3прибора/v69 сохранён. DC не привязан к прибору, «тест1» всё ещё74
+(offline); поэтому ready0/3, не ложный plan ACK. Назначения/GO/аудиотест не меняли.
+[Журнал](docs/DEPLOYMENTS.md).
 
-**0.7.11, master image пока не установлен:** [start delay звука](docs/AUDIO_START_DELAY.md)
+**0.7.11:** [start delay звука](docs/AUDIO_START_DELAY.md)
 0–3600с в каждом шаге/приборе. Старые сцены delay0, no early PLAY, actualTX fade,
 STOP/новая сцена отменяют отложенное. Score9/P10/P11, sizes314/358/44 прежние.
 
-**0.7.10 установлена OTA на master и74:4D:BD:73:0A:A4 (2/2verified)**. Fresh
+**Исторический этап0.7.10: OTA на master и74:4D:BD:73:0A:A4 (2/2verified)**. Fresh
 workspace12шагов/3прибора/v46/cfe5fcde сохранён; экспорт до/после совпадает.
 Активный LIVE/сцена4 перед обновлением остановлены (ALL_OFF software ACK), после
 перезагрузки не возобновлялись. Свой план slave подтвердил, общий show1/3 — ждёт
