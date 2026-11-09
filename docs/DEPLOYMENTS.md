@@ -1,11 +1,11 @@
 # Проверенные записи на платы
 
-**Текущий комплект:master иDC:DA:0C:43:C3:C0 на0.7.11; прежний test slave740.7.10;
-остальные6slave0.7.9; remote0.7.8 не трогали.** Последняя реальная запись —
-«OTA0.7.11 master, пульт не требует обновления». Совместимость score9 подтверждена,
-но DC ещё не привязан к прибору; все3назначения offline, fresh workspacev69/ready0/3.
-Пульт masterReadytrue/buttonsEnabledtrue, его version/token неизменны. GO/акустического
-теста новой задержки не было.
+**Текущий комплект:master,DC:DA:0C:43:C3:C0 и30:30:F9:31:19:C4 на0.7.11;
+test slave740.7.10; остальные5slave0.7.9; remote0.7.8.** Последняя запись —
+«OTA ещё одного видимого30-slave». Fresh draft2шага/1прибор сохранён, maintenance
+LIVEoff вызвал штатный editor auto-sync v80→81 того же draft, без GO/смены привязок.
+Сейчас прибор«3»→DC(.41)offline, новая30(.55)не назначена, ready0/1. Прошивки master/
+remote в этой последней операции не менялись; оператор настраивает партитуру сам.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -643,3 +643,42 @@ navigation0/transition0`. Actual GET root/JS (gzip) подтвердил0.7.11 �
 старта трека». **GO/PREVIEW/STOP/navigation/audio tests не отправлялись**, исполнение
 не возобновлялось. Открыть http://192.168.50.119 с⌘⇧R. Проблема несовпадающих protocol
 версий решена; следующая задача — явно согласовать привязку testприбора кDC.
+
+## OTA ещё одного видимого30-slave —2026-11-09
+
+Оператор после обсуждения привязок сказал **сам настроит партитуру**, затем
+**«прошей ещё одну»**. Единственный свежий peer в master status:
+**30:30:F9:31:19:C4 /192.168.50.55** (DC уже stale). Direct GET подтвердилslave0.7.9,
+YX hardware map. Оператору до записи сообщены конкретные MAC/IP и maintenance
+остановка LIVE без возобновления. Никаких назначений приборов не менять.
+
+Сохранены master/slave before и workspace: **2шага/1прибор,публикация80**, выбран
+LIVE step1, RAMdraftFingerprint753fcae1 при publishedFingerprint0104199b. Вычисленный
+из приватного экспорта `fingerprint(draft)` совпал с753fcae1 — актуальные LIVE-правки
+тоже сохранены, не только старый опубликованный snapshot.
+
+POST master`/stop-all` подтвердил LIVE/runningfalse + accepted software ACK новой
+платы. Затем только её OTA: образslave1096352B кода5eba22ebdd76d85a67fed4171670e66d87ba2d9d,
+CI42520729447 success,
+SHA256`5c0878e6667806430b32f1b7584b0ae18c94818e4b44f3764432c5e7fd968972`.
+Header/version/size/hash проверены, HTTP200→тот же MAC/role/version0.7.11 и новый
+boot/token. Пресеты/inversion/relayMode/GPIO совпали; приложения толькоOTA, безerase.
+Master firmware/token/version0.7.11 не менялись, remote/другиеslave не писались.
+
+Evidence: **`~/Theatre-console-backups/ota-extra-slave-0711-20261109-211909/`**,
+доступ700/600 внеGit; before/after/after-stop exports, statuses, authorization,
+response иdeployment-result. **Весь JSON до/после не одинаков**: существующий
+редактор после перехода LIVEoff штатно синхронизировал тот же draft **v80→v81**.
+Инструмент не вызывал publish/import/GO/правки настроек. Проверено:
+`before.draft == after.draft == after.published.project`, bindings неизменны.
+Не восстанавливать старую80 поверх актуальной81! Оба snapshot сохранены.
+Before SHA256`5feb8b5844fa1dd25e45260d754bbd3a155bebe7f364e2b91bc4c05898b2a724`,
+after SHA256`74e22c2ddc808ba12a9a82f2b8d0af95ab73da6bc8352966e748a1319cc35031`.
+
+Финальный master:`v81/fingerprint753fcae1/step1/LIVEoff/runningfalse/syncingtrue/
+navigation101/transition151/stored0/planned1/readyfalse/score9`. Новый30-slave:
+**localScoreSupportedtrue,sceneStatusidle,score0** — совместим, но не назначен прибору.
+Текущий прибор«3» привязан **DC:DA:0C:43:C3:C0**, который уже offline. Это изменения
+оператора до этой команды, мы их не заменяли и не переносили на новую30плату.
+Новую сцену/аудиотест не запускали, физической проверки новой платы не было.
+LIVE не возобновляли; дальнейшие назначения/тест оператор делает самостоятельно.
