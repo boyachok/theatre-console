@@ -1,4 +1,8 @@
-# Theatre console —master и6slave0.7.11; slave740.7.10; slave17:8B:140.7.9; remote0.7.8
+# Theatre console —master и7slave0.7.11; slave17:8B:140.7.9; remote0.7.8
+
+Последним обновлён74:4D:BD:73:0A:A4 (.20),0.7.10→0.7.11; видимые32/EC уже0.7.11
+не перешивались. LIVE ужеoff, fresh workspace2шага/5приборов/v104 совпал JSON/файлSHA
+до/после, настройки/привязки не меняли, STOP/GO не отправляли. Ниже предыдущие этапы.
 
 Последними обновлены30:30:F9:32:02:30 (.65)иEC:DA:3B:56:F2:CC (.197),0.7.9→0.7.11.
 Fresh draft2шага/5приборов сохранён, maintenance LIVEoff/editor sync103→104 без

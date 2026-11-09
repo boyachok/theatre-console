@@ -1,10 +1,9 @@
 # Проверенные записи на платы
 
-**Текущий комплект:master и6slave (DC,31:19:C4,84,C0,32:02:30,EC) на0.7.11;
-74:4D:BD:73:0A:A4 на0.7.10;30:30:F9:17:8B:14 на0.7.9;remote0.7.8.**
-Последняя запись — «OTA двух видимых32/EC». Fresh draft2шага/5приборов сохранён,
-maintenance LIVEoff/editor sync103→104 того же draft без GO/перепривязок.
-Master firmware/пульт/другие slave не трогали, оператор настраивает партитуру сам.
+**Текущий комплект:master и7slave (DC,31:19:C4,84,C0,32:02:30,EC,74) на0.7.11;
+30:30:F9:17:8B:14 на0.7.9;remote0.7.8.** Последняя запись — «OTA видимого74-slave».
+Он обновлён с0.7.10, две другие свежие32/EC уже0.7.11 не трогали. LIVE ужеoff,
+workspace2шага/5приборов/v104 совпал JSON/SHA. GO/STOP/перепривязок не было.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -783,3 +782,26 @@ after SHA256`793484b89f7462f6bbe2b605cd193fa87086ffab79dc190f1820194fed76aac6`.
 transition384/score9/stored0/planned4. Оба новых peersidle/score0 — не назначены
 приборам, не выдаём за plan ACK/готовность проекта. GO/аудиотест/перепривязки не
 выполнялись, физического теста этих плат не было. Оператор настраивает сам.
+
+## OTA видимого74-slave —2026-11-09
+
+На команду **«прошей кшк адин»** (ещё один) fresh inventory показал3узла:
+32(.65)/EC(.197) уже0.7.11, **74:4D:BD:73:0A:A4 /192.168.50.20** ещё0.7.10.
+Проверены directMAC/role/version, оператору назван единственный старый target.
+Другие две платы явно исключены из upload. LIVE ужеoff/runningfalse — STOP не нужен.
+
+Fresh backup **2шага/5приборов/v104/fp2184225c**, сохранённый draft совпал сRAMfingerprint.
+Только74 записан OTA0.7.11:1096352B, source5eba22ebdd76d85a67fed4171670e66d87ba2d9d,
+CI42520729447success,
+SHA256`5c0878e6667806430b32f1b7584b0ae18c94818e4b44f3764432c5e7fd968972`.
+HTTP200→тотжеMAC/role/version0.7.11/новыйtoken, fresh peer localScoreSupportedtrue.
+GPIO/preset levels/inversion/relayMode сохранены. Master token/version не менялись,
+master firmware/remote/другиеslave не писались; NVS/разделы не стирали.
+
+Evidence: **`~/Theatre-console-backups/ota-slave-744d-0711-20261109-235734/`**,700/600,
+внеGit. UnlikeпредыдущиеLIVE-обновления, здесь **весь workspaceJSON и SHAфайла
+совпадают**, публикация104 не изменилась:
+`793484b89f7462f6bbe2b605cd193fa87086ffab79dc190f1820194fed76aac6`.
+Draft/привязки не менялись; publish/STOP/GO/PREVIEW/audio/navigation не отправлялись.
+Masterv104/score9/LIVEoff/runningfalse; новый74idle/score0, не назначен прибору,
+readiness за неназначенные/отключённые приборы не выдумана. Физического теста не было.
