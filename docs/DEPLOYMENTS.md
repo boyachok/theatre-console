@@ -1,11 +1,10 @@
 # Проверенные записи на платы
 
-**Текущий комплект:master,DC:DA:0C:43:C3:C0,30:30:F9:31:19:C4,
-84:FC:E6:57:0F:AC,C0:4E:30:27:69:98 на0.7.11; test slave740.7.10;
-другие3slave0.7.9; remote0.7.8.** Последняя запись — «OTA видимогоC0-slave».
-Fresh draft2шага/3прибора сохранён, maintenance LIVEoff вызвал штатный editor
-sync95→96 того же draft без GO/смены привязок. Firmware master/remote/другихslave
-не менялись, настройки партитуры оператор делает сам.
+**Текущий комплект:master и6slave (DC,31:19:C4,84,C0,32:02:30,EC) на0.7.11;
+74:4D:BD:73:0A:A4 на0.7.10;30:30:F9:17:8B:14 на0.7.9;remote0.7.8.**
+Последняя запись — «OTA двух видимых32/EC». Fresh draft2шага/5приборов сохранён,
+maintenance LIVEoff/editor sync103→104 того же draft без GO/перепривязок.
+Master firmware/пульт/другие slave не трогали, оператор настраивает партитуру сам.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -751,3 +750,36 @@ after SHA256`e3787703526c22e96eb4187786bf0a1b694c80e6e6e521fe3bd12c22de8f8b8a`.
 transition320/stored0/planned3/score9. Новую плату совместимой firmwareвидно,
 но readiness за неназначенные/отключённые приборы не выдумывается. Физических
 тестов новой платы/звука не делали, LIVE не возобновляли. Оператор настраивает сам.
+
+## OTA двух видимых32/EC —2026-11-09
+
+Команда оператора **«прошей2»**: в master status ровно два свежих peer, direct GET
+подтвердил **30:30:F9:32:02:30 /192.168.50.65** и **EC:DA:3B:56:F2:CC /192.168.50.197**,
+обаslave0.7.9. Названы оператору до записи, согласованная maintenance остановкаLIVE
+без возобновления, привязки не менять. Master0.7.11 был LIVEon/step1/publication103/
+fpc36ef2ae, RAMdraft2184225c, planned4.
+
+Fresh экспорт **2шага/5приборов/v103** сохранён, fingerprint(draft) совпал с2184225c
+RAM: все неопубликованные LIVE-правки в backup. `/stop-all` дал software acceptedACK
+обоих targets, master LIVE/runningfalse. Затем только эти2slave последовательно
+OTA0.7.11, каждый образ1096352B/source5eba22ebdd76d85a67fed4171670e66d87ba2d9d,
+CI42520729447success,
+SHA256`5c0878e6667806430b32f1b7584b0ae18c94818e4b44f3764432c5e7fd968972`.
+КаждыйHTTP200→тотжеMAC/role/version0.7.11/новыйtoken, потом score9 fresh peer
+localScoreSupportedtrue. Preset levels/inversion/relayMode/GPIO обоих сохранены.
+Только приложениеOTA, безerase/NVS/разделов. Master version/token неизменны,
+master firmware/remote/другиеslave не писались.
+
+Evidence: **`~/Theatre-console-backups/ota-two-slaves-0711-20261109-235007/`**,700/600,
+внеGit. Оба before/after/finalstatuses иresponse, authorization/maintenance ACK,
+master/score before-after-after-stop, deployment-result. Весь JSON различается,
+потому что существующий editor приLIVEoff штатно опубликовал тот же draft **103→104**.
+Проверено `before.draft == after.draft == after.published.project`; bindings неизменны.
+Toolpublish/import/GO не было, старую103 не восстанавливали поверх104.
+Before SHA256`e33f3f17ab9d82125a873e104020d914aa2f59814d4971f723fd9158911efa55`,
+after SHA256`793484b89f7462f6bbe2b605cd193fa87086ffab79dc190f1820194fed76aac6`.
+
+Финал:masterv104/fp2184225c/step1/LIVEoff/runningfalse/syncingtrue/nav318/
+transition384/score9/stored0/planned4. Оба новых peersidle/score0 — не назначены
+приборам, не выдаём за plan ACK/готовность проекта. GO/аудиотест/перепривязки не
+выполнялись, физического теста этих плат не было. Оператор настраивает сам.

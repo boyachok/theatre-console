@@ -1,4 +1,8 @@
-# Theatre console —master+DC+30+84+C0 на0.7.11; slave740.7.10; другие3slave0.7.9; remote0.7.8
+# Theatre console —master и6slave0.7.11; slave740.7.10; slave17:8B:140.7.9; remote0.7.8
+
+Последними обновлены30:30:F9:32:02:30 (.65)иEC:DA:3B:56:F2:CC (.197),0.7.9→0.7.11.
+Fresh draft2шага/5приборов сохранён, maintenance LIVEoff/editor sync103→104 без
+изменения draft/привязок/GO. Master firmware и пульт не менялись. Ниже история.
 
 Последним добавленC0:4E:30:27:69:98 (.33),0.7.9→0.7.11. Новый boot/MAC/role,
 совместимость и сохранность GPIO/presets/inversion/relayMode2 проверены. Fresh
