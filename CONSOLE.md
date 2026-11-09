@@ -1,4 +1,9 @@
-# Theatre console —master+DC+30+84 на0.7.11; slave740.7.10; другие4slave0.7.9; remote0.7.8
+# Theatre console —master+DC+30+84+C0 на0.7.11; slave740.7.10; другие3slave0.7.9; remote0.7.8
+
+Последним добавленC0:4E:30:27:69:98 (.33),0.7.9→0.7.11. Новый boot/MAC/role,
+совместимость и сохранность GPIO/presets/inversion/relayMode2 проверены. Fresh
+draft2шага/3прибора сохранён; editor maintenance LIVEoff sync95→96 без GO/перепривязки.
+Ниже84/30/DC — предыдущие snapshot, не текущее число приборов/версия публикации.
 
 Последним обновлён84:FC:E6:57:0F:AC (.58),0.7.9→0.7.11. Новый boot/MAC/role/
 score9 подтверждены; новая загрузка кратко ещё не была в master fresh-peers, поэтому

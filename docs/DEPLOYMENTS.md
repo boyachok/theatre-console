@@ -1,11 +1,11 @@
 # Проверенные записи на платы
 
 **Текущий комплект:master,DC:DA:0C:43:C3:C0,30:30:F9:31:19:C4,
-84:FC:E6:57:0F:AC на0.7.11; test slave740.7.10; другие4slave0.7.9; remote0.7.8.**
-Последняя запись — «OTA видимого84-slave». Fresh draft2шага/2прибора сохранён,
-maintenance LIVEoff вызвал штатный editor auto-sync89→90, без GO/смены привязок.
-Приборы«3»→DC и«5»→30, обаoffline; новый84не назначен. Firmware master/remote/
-другихslave не менялись, настройки партитуры оператор делает сам.
+84:FC:E6:57:0F:AC,C0:4E:30:27:69:98 на0.7.11; test slave740.7.10;
+другие3slave0.7.9; remote0.7.8.** Последняя запись — «OTA видимогоC0-slave».
+Fresh draft2шага/3прибора сохранён, maintenance LIVEoff вызвал штатный editor
+sync95→96 того же draft без GO/смены привязок. Firmware master/remote/другихslave
+не менялись, настройки партитуры оператор делает сам.
 Helmet не устанавливался; историческая MAC F0:9E:9E:16:18:A4 не найдена и запись не подтверждена.
 
 ## Remote 0.7.2 — MAC 30:30:F9:1B:FD:6C
@@ -721,3 +721,33 @@ Master token/version0.7.11 не менялись; firmware master/remote/дру�
 LIVEoff/runningfalse, публиковался a66ea238; общий show ждёт назначения, не объявлен
 ложно готовым. GO/аудио/физические тесты не делали, LIVE не возобновляли. Оператор
 настраивает привязки/партитуру самостоятельно.
+
+## OTA видимогоC0-slave —2026-11-09
+
+На команду **«ещё один»** единственный fresh peer — **C0:4E:30:27:69:98 /192.168.50.33**;
+direct GET подтвердилslave0.7.9, YX-карту, relayMode2, пресеты/inversion. Master0.7.11
+былLIVEon/runningtrue/step1,publication95/fingerprint1641c174, RAMdraftd4fb5f32.
+Перед записью оператору сообщены MAC/IP и остановка LIVE без возобновления.
+
+Fresh backup **2шага/3прибора/v95**, вычисленныйfingerprint(draft) совпал сd4fb5f32
+RAM. `/stop-all` подтвердил LIVEoff и accepted software ACK. ТолькоC0-slave записан
+OTA0.7.11 (0.7.9→0.7.11), образ1096352B, source5eba22ebdd76d85a67fed4171670e66d87ba2d9d,
+CI42520729447success,
+SHA256`5c0878e6667806430b32f1b7584b0ae18c94818e4b44f3764432c5e7fd968972`.
+HTTP200→тотжеMAC/role/version/новыйtoken подтверждены, localScoreSupportedtrue,
+sceneStatusidle/score0 (не назначен), GPIO/preset levels/inversion/relayMode2 сохранены.
+Master version/token неизменны, firmware другихslave/remote не писались; NVS/разделы
+не стирались, GO/аудиотест/перепривязка не выполнялись.
+
+Evidence: **`~/Theatre-console-backups/ota-slave-c04e-0711-20261109-221207/`**,700/600,
+внеGit. До/после различается номер публикации: существующий editor приLIVEoff
+опубликовал тот же draft **95→96**. Проверено `before.draft == after.draft ==
+after.published.project`; draft/привязки сохранены, tool publish/import не вызывался.
+Сохранены обаsnapshot, старой95 не откатывали новую96.
+Before SHA256`1fbb74b38bafedc91a5810f27f53c1c25b6c4ec679fc2d6ebc1bde3cf7b177fa`,
+after SHA256`e3787703526c22e96eb4187786bf0a1b694c80e6e6e521fe3bd12c22de8f8b8a`.
+
+Финальный masterv96/fpd4fb5f32/step1/LIVEoff/runningfalse/syncingtrue/nav263/
+transition320/stored0/planned3/score9. Новую плату совместимой firmwareвидно,
+но readiness за неназначенные/отключённые приборы не выдумывается. Физических
+тестов новой платы/звука не делали, LIVE не возобновляли. Оператор настраивает сам.
