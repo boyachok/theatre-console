@@ -6,7 +6,9 @@
 hold при link loss, firmware-версии и JSON reminder/нумерация. Score11/P14/P15,
 Cue393/STORE437/RUN44. [Подробности](CONTINUITY_BACKUPS_POLARITY.md).
 Предыдущая0.7.12 тоже не прошивалась: Диммер220 GPIO41/40, audio loop, score10.
-Подготовлена **без прошивки/изменения реального workspace**. Требуются отдельная
+После подготовки отдельно записана новая USB-плата **84:FC:E6:66:F3:8C как master**:
+MAC/роль0.7.13/hash/new boot проверены, YOUR_WIFI_SSID пока offline, score не импортировался.
+Старый master/ведомые/пульт и реальный workspace не изменялись. См.DEPLOYMENTS.md. Требуются отдельная
 авторизация OTA и стенд без220В; R/1 remote0.7.8 совместим без обновления.
 [AC/ограничения](AC_DIMMER.md), [семантика/формат](LIGHT_DELAY_AUDIO_LOOP.md).
 

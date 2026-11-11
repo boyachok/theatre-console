@@ -1,5 +1,30 @@
 # Проверенные записи на платы
 
+## Новая USB-плата → master0.7.13 — 84:FC:E6:66:F3:8C
+
+Пользователь явно разрешил роль master, затем подтвердил новую плату и замену
+старой разметки/данных. Это **дополнительная плата**, не прежний masterA0:85:E3:E2:BC:D4.
+MAC проверена esptool перед записью; ESP32-S3 rev0.2/16MB/PSRAM8MB.
+
+- До изменений сохранён полный16MB flash, SHA256
+  `d73b6dd5a15e469a30629798664fb6e9e5c0ee30ef2679d75858d97a72b6fb15`.
+  Старая сторонняя factory/VFS-разметка, app build2022/IDF4.4.1, не Theatre.
+- Записаны bootloader/console partitions/otadata/master0.7.13, app1267600B SHA256
+  `dd60d490ce1448fe7911dff263c9f0c50454a27604558aefa5ed54ae1033c2bd`.
+  Инициализирован новый NVS0x9000/0x5000, полного erase-flash не было.
+- Esptool write hashes и отдельный verify-flash digest успешны. Дополнительный
+  raw-readback оборвался по USB; вместо повторного upload выполнен verify-flash.
+- Serial подтвердил MAC/role=master/version0.7.13, flash16MB/PSRAM8MB и новую
+  загрузку/token после reset. Host `stage-master-66f38c`; YOUR_WIFI_SSID ещё не подключена,
+  connectedfalse/IP0.0.0.0. HTTP/Wi-Fi доступ пока не подтверждён.
+- Партитура не импортировалась, sceneVersion0/планы0, LIVEoff/runningfalse.
+  GO и команды другим платам не отправлялись; старый master/партитура/привязки
+  не менялись. Native/CI относятся к source c22e4cc.
+- Приватное доказательство700/600:
+  `~/Theatre-console-backups/usb-master-84FCE666F38C-20261112-010911/`.
+
+Ниже — исторические установки основного комплекта, не новая проверка его онлайна.
+
 **Текущий комплект:master и7slave (DC,31:19:C4,84,C0,32:02:30,EC,74) на0.7.11;
 30:30:F9:17:8B:14 на0.7.9;remote0.7.8.** Последняя запись — «OTA видимого74-slave».
 Он обновлён с0.7.10, две другие свежие32/EC уже0.7.11 не трогали. LIVE ужеoff,

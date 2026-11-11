@@ -1,4 +1,9 @@
-# Theatre console — исходники0.7.13, без новой прошивки
+# Theatre console — исходники0.7.13
+
+Новая USB-плата **84:FC:E6:66:F3:8C** записана как master0.7.13 по отдельному
+разрешению; MAC/роль/flash digest/new boot проверены. YOUR_WIFI_SSID пока offline,
+партитура не переносилась. Старый комплект не менялся. [Запись](docs/DEPLOYMENTS.md).
+Ниже — описание подготовки выпуска и исторических установок.
 
 [0.7.13](docs/CONTINUITY_BACKUPS_POLARITY.md): 12PWM inversion/defaultOFF/JSON,
 held-light delay, same-file audio в обе стороны, hold при link loss, реальные
