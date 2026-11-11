@@ -102,7 +102,7 @@ test('DIM sine phase/amplitude/floor and static preserve old fade semantics and 
   engine.apply(p, s, 'forward', 3, 500);
   near(value(), 0);
 });
-test('same-scene LIVE edits and packet repeats keep phase; speed rescales position; scenes/back/recovery restart', () => {
+test('same-scene LIVE edits and packet repeats keep phase; speed rescales position; scenes/back restart, identical recovery holds', () => {
   const { p, d, s, c, engine, value } = fixture();
   engine.apply(p, s, 'forward', 1, 0);
   engine.tick(250);
@@ -129,7 +129,7 @@ test('same-scene LIVE edits and packet repeats keep phase; speed rescales positi
   near(value(), 0);
   engine.tick(2000);
   engine.apply(p, second, 'recover', 6, 2000);
-  near(value(), 0);
+  near(value(), 50);
 });
 test('DIM square strobes, asymmetric ramps, deterministic random and smoothing match firmware math', () => {
   const a = { ...defaultDimmerAnimation(), enabled: true, period: 1 };

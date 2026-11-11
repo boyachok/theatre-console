@@ -9,7 +9,7 @@
 // Dedicated actuator role. No Actors/Player, PWM, relay, HTTP or OTA driver.
 // Published RUN is a 44B local-plan reference; draft PREVIEW remains explicit.
 WifiTransport network;Helmet::Runner runner;Show::SlaveStore scoreStore;
-uint8_t masterMAC[6]{};bool masterKnown=false,hasHeartbeat=false,recovery=false,storageReady=false;
+uint8_t masterMAC[6]{};bool masterKnown=false,hasHeartbeat=false,recovery=false,storageReady=false,masterWantsFirmware=false;
 uint32_t selfBoot=1,masterSession=0,generation=0,masterSeen=0,lastHeartbeat=0,lastProbeSeq=0,helloAt=0,identifyUntil=0;
 uint8_t assignedId=0;Health grade=WARMUP;
 uint32_t lastControlId=0;Result lastControlResult=APPLIED;
@@ -17,10 +17,11 @@ uint32_t randomId(){uint32_t n=esp_random();return n?n:1;}
 bool linkFresh(){return network.ready()&&hasHeartbeat&&millis()-lastHeartbeat<OFFLINE_MS;}
 Packet message(Type type,uint32_t seq=0){
  Packet p=packet(type,masterSession,seq);p.deviceBoot=selfBoot;p.nodeId=assignedId;p.rssi=(int8_t)WiFi.RSSI();p.state=runner.snapshot(linkFresh());
- // P/13: score10 indexed helmet, no PWM. Same 72-byte HELLO/ECHO envelope.
- if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=13;}
+ // P/15: score11 indexed helmet, no PWM. Same 72-byte HELLO/ECHO envelope.
+ if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=15;}
  return p;
 }
+void sendFirmwareReport(){if(masterKnown&&masterWantsFirmware){auto p=firmwareReport(masterSession,selfBoot,FW_HELMET);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}}
 void resetLink(bool forget){
  selfBoot=randomId();hasHeartbeat=false;lastProbeSeq=0;lastControlId=0;lastControlResult=APPLIED;if(runner.active)recovery=true;
  if(forget){masterKnown=false;masterSession=0;helloAt=0;assignedId=0;}
@@ -57,13 +58,13 @@ void receiveHelmet(){
   if(p.type==DISCOVER&&p.session){
    if(masterKnown&&memcmp(masterMAC,wire.mac,6)&&now-masterSeen<15000)continue;
    if(!masterKnown||memcmp(masterMAC,wire.mac,6)||masterSession!=p.session){resetLink(true);memcpy(masterMAC,wire.mac,6);masterKnown=true;masterSession=p.session;grade=WARMUP;}
-   masterSeen=now;helloAt=now+20+esp_random()%350;continue;
+   masterSeen=now;masterWantsFirmware=firmwareRequested(p);helloAt=now+20+esp_random()%350;continue;
   }
   if(!fromMaster(wire,p.session))continue;
   if(p.type==PROBE){
    if(lastProbeSeq&&(int32_t)(p.seq-lastProbeSeq)<=0)continue;
    lastProbeSeq=p.seq;masterSeen=lastHeartbeat=now;hasHeartbeat=true;assignedId=p.nodeId;grade=p.health<=OFFLINE?(Health)p.health:BAD;
-   Packet reply=message(ECHO,p.seq);network.send(masterMAC,(const uint8_t*)&reply,sizeof(reply));
+   Packet reply=message(ECHO,p.seq);network.send(masterMAC,(const uint8_t*)&reply,sizeof(reply));sendFirmwareReport();
   }else if(p.type==IDENTIFY)identifyUntil=now+5000;
   else if(p.type==COMMAND&&p.deviceBoot==selfBoot&&p.commandId){
    Packet ack=message(COMMAND_ACK);ack.commandId=p.commandId;ack.result=STALE;
@@ -91,7 +92,7 @@ void loop(){
  if(generation!=network.generation){generation=network.generation;resetLink(true);}
  if(hasHeartbeat&&now-lastHeartbeat>=OFFLINE_MS)resetLink(false);
  receiveHelmet();now=millis();
- if(network.ready()&&masterKnown&&helloAt&&(int32_t)(now-helloAt)>=0){helloAt=0;Packet p=message(HELLO);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}
+ if(network.ready()&&masterKnown&&helloAt&&(int32_t)(now-helloAt)>=0){helloAt=0;Packet p=message(HELLO);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));sendFirmwareReport();}
  runner.tick(now);
  bool identify=identifyUntil&&(int32_t)(identifyUntil-now)>0;
  uint32_t color=networkLedColor(linkFresh()?grade:OFFLINE,now,identify,false);static uint32_t previous=0xffffffff;

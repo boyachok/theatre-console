@@ -152,7 +152,7 @@ test('light preview independently waits then starts fade/phase; retries and unre
   next.id = 'next';
   p.steps.push(next);
   e.apply(p, next, 'forward', 3, 2200);
-  assert.equal(runtime().dimmers['pwm-1'].value, 0);
+  assert.equal(runtime().dimmers['pwm-1'].value, 100);
   assert.equal(runtime().dimmers['pwm-1'].startAt, 3200);
   e.apply(p, next, 'forward', 3, 2500);
   assert.equal(runtime().dimmers['pwm-1'].startAt, 3200);
@@ -236,7 +236,8 @@ test('loop checkbox preserves playing file/fade and repeats EOF without generati
   assert.equal(runtime().audio.status, 'paused');
   assert.equal(runtime().audio.generation, generation);
   e.apply(p, s, 'back', 4, 4000);
-  assert.equal(runtime().audio.startAt, 5000);
+  assert.equal(runtime().audio.startAt, null);
+  assert.equal(runtime().audio.status, 'paused');
   cue.audio.track = null;
   e.apply(p, s, 'forward', 5, 4500);
   e.tick(10000);

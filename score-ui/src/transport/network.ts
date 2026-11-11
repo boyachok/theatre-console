@@ -4,6 +4,8 @@ export interface NetworkSample {
   rssi: number | null;
 }
 export interface NetworkDeviceStatus {
+  firmwareVersion?: string | null;
+  dimmerInverted?: number;
   role?: 'slave' | 'remote' | 'helmet';
   mac?: string;
   name?: string;
@@ -29,6 +31,7 @@ export interface NetworkSnapshot {
   testEnabled: boolean;
   devices: Record<string, NetworkDeviceStatus>;
   masterMac?: string;
+  masterFirmwareVersion?: string;
   activeStep?: number | null;
   activeStepId?: string;
   livePreview?: boolean;

@@ -2016,6 +2016,76 @@ select:focus {
   font-size: 12px;
   cursor: pointer;
 }
+.pwm-inversion {
+  grid-column: 2 / -1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.parameter-config .pwm-inversion input {
+  min-height: 14px;
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0;
+}
+.backup-series {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.backup-series input {
+  width: 32px;
+  min-width: 0;
+  padding: 4px 2px;
+  font-size: 11px;
+  text-align: right;
+}
+.backup-series small {
+  min-width: 25px;
+}
+.backup-reminder {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 90;
+  width: min(370px, calc(100vw - 24px));
+  padding: 16px;
+  background: #fff;
+  color: #192b3a;
+  border: 1px solid #99b2c4;
+  border-radius: 12px;
+  box-shadow: 0 6px 28px #162a3b33;
+}
+.backup-reminder p {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.backup-reminder > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.backup-reminder button {
+  padding: 8px 10px;
+}
+@media (max-width: 600px) {
+  .pwm-inversion {
+    grid-column: 2/-1;
+  }
+  .backup-series {
+    font-size: 9px;
+  }
+  .backup-series input {
+    width: 25px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .player-button.holding:after {
     animation: none;

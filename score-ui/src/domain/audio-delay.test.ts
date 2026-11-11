@@ -91,9 +91,12 @@ test('LIVE delay edits use original request time and shortening an expired delay
   e.tick(4000);
   assert.equal(audio().generation, 1);
   e.apply(p, s, 'back', 3, 5000);
-  assert.equal(audio().startAt, 9000);
+  assert.equal(audio().startAt, null); // Same-file backward navigation does not restart.
+  a.track = 8;
+  e.apply(p, s, 'forward', 4, 5001);
+  assert.equal(audio().startAt, 9001);
   a.startDelay = 0.5;
-  e.apply(p, s, 'forward', 4, 6000);
+  e.apply(p, s, 'forward', 5, 6000);
   assert.equal(audio().status, 'playing');
   assert.equal(audio().envelope.at, 6000);
   assert.equal(audio().volume, 0);
@@ -113,23 +116,24 @@ test('blank scenes, disabled audio and reset cancel waiting starts, even with a 
     assert.equal(audio().generation, 0);
   }
 });
-test('same pending file in a new scene gets that scene deadline; same playing file never stops to delay again', () => {
+test('same pending file keeps its deadline across navigation; same playing file never stops to delay again', () => {
   const { p, d, s, e, audio } = fixture();
   e.apply(p, s, 'forward', 1, 0);
   const next = clone(s);
   next.id = 'next';
   p.steps.push(next);
   e.apply(p, next, 'forward', 2, 1500);
-  assert.equal(audio().startAt, 3500);
-  e.tick(3000);
+  assert.equal(audio().startAt, 2000);
+  e.tick(1999);
   assert.equal(audio().generation, 0);
-  e.tick(3500);
+  e.tick(2000);
   assert.equal(audio().generation, 1);
   next.devices[d.id].audio.startDelay = 10;
   e.apply(p, next, 'forward', 3, 4000);
   assert.equal(audio().generation, 1);
   assert.equal(audio().startAt, null);
   e.apply(p, next, 'recover', 4, 5000);
-  assert.equal(audio().status, 'waiting');
-  assert.equal(audio().startAt, 15000);
+  assert.equal(audio().status, 'playing');
+  assert.equal(audio().startAt, null);
+  assert.equal(audio().generation, 1);
 });

@@ -116,6 +116,9 @@ export function NetworkDialog({
             />
             <span>Тест</span>
           </label>
+          <span className="muted" data-master-firmware>
+            Мастер · {snapshot.masterFirmwareVersion ?? '—'}
+          </span>
           <span className={`network-connection ${snapshot.connected ? 'connected' : ''}`}>
             {snapshot.connected ? 'Подключено' : 'Нет подключения'}
           </span>
@@ -200,8 +203,9 @@ export function NetworkDialog({
                   'Потери',
                   'RSSI, dBm',
                   'Шаг',
-                  'Версия',
+                  'План',
                   'Сцена',
+                  'Прошивка',
                   '',
                 ].map((label, i) => (
                   <th key={i}>{label}</th>
@@ -246,6 +250,16 @@ export function NetworkDialog({
                             applied: 'Применена',
                             rejected: 'Ошибка / не готов',
                           }[r?.sceneStatus ?? 'idle']}
+                    </td>
+                    <td
+                      data-firmware-version
+                      title={
+                        r?.online === true
+                          ? 'Версия, сообщённая контроллером'
+                          : 'Последняя сообщённая версия; связь не подтверждена'
+                      }
+                    >
+                      {r?.firmwareVersion ?? '—'}
                     </td>
                     <td>
                       <button

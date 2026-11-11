@@ -17,8 +17,8 @@ public:
 #include "../console/protocol.h"
 #include "../console/remote_link.h"
 struct Sample{uint32_t seq=0,atUs=0,rttUs=0;int8_t rssiMaster=0,rssiSlave=0;bool used=false,received=false,expired=false,late=false;};
-struct Node{bool used=false,hasReply=false;uint8_t mac[6]{};String name;Sample samples[WINDOW];uint32_t deviceBoot=0,seq=0,sent=0,received=0,deadlineReceived=0,timeouts=0,late=0,duplicates=0,streak=0,maxStreak=0,lastReply=0,nextScore=0;int8_t lastMasterRssi=0,lastSlaveRssi=0;};
-Node nodes[MAX_NODES];struct Rx{uint8_t mac[6]{};Packet p{};int8_t rssi=-50;uint32_t atUs=0;};
+struct Node{bool used=false,hasReply=false;uint8_t mac[6]{};String name,firmwareVersion;Sample samples[WINDOW];uint32_t deviceBoot=0,seq=0,sent=0,received=0,deadlineReceived=0,timeouts=0,late=0,duplicates=0,streak=0,maxStreak=0,lastReply=0,nextScore=0;int8_t lastMasterRssi=0,lastSlaveRssi=0;};
+Node nodes[MAX_NODES];struct Rx{uint8_t mac[6]{};Packet p{};uint8_t firmwareRole=0;char firmwareVersion[24]{};int8_t rssi=-50;uint32_t atUs=0;};
 struct FakeIP{operator uint32_t()const{return 1;}String toString()const{return "192.168.50.88";}};
 struct Network{bool connected=true;bool ready()const{return connected;}FakeIP peerIP(const uint8_t*)const{return {};}}network;
 struct Preferences{void remove(const char*){}}prefs;
@@ -37,6 +37,7 @@ String jsonString(const String &s){return String("\"")+s+String("\"");}String ma
 int main(){
  for(int i=0;i<MAX_NODES;i++){nodes[i].used=true;nodes[i].mac[0]=0x20;nodes[i].mac[5]=i;}
  Rx r;r.mac[0]=0xaa;r.mac[5]=0x22;r.p=packet(REMOTE_HELLO,bootSession);r.p.deviceBoot=9;r.p.padding[0]='R';r.p.padding[1]=1;mockNow=100;assert(handleRemoteRx(r));assert(findRemote(r.mac)==0);for(auto &n:nodes)assert(n.used); // no actuator slots consumed
+ assert(remotePeers[0].monitor.firmwareVersion.empty());r.p=packet(FIRMWARE_REPORT,bootSession);r.p.deviceBoot=9;r.firmwareRole=FW_REMOTE;strcpy(r.firmwareVersion,"0.7.8");assert(handleRemoteRx(r)&&remotePeers[0].monitor.firmwareVersion=="0.7.8"&&showMaster.calls==0);r.p.deviceBoot=10;strcpy(r.firmwareVersion,"9.9.9");handleRemoteRx(r);assert(remotePeers[0].monitor.firmwareVersion=="0.7.8");r.p.deviceBoot=9;
  remoteMasterTick();assert(sent.back().p.type==REMOTE_PING);Packet ping=sent.back().p;assert(ping.deviceBoot==9);assert(remoteStatusJSON().find("remote")!=std::string::npos);
  r.p=packet(REMOTE_PONG,bootSession,ping.seq);r.p.deviceBoot=9;r.p.commandId=ping.commandId;r.p.padding[0]='R';r.p.padding[1]=1;r.p.rssi=-60;mockNow=102;r.atUs=102000;handleRemoteRx(r);assert(remotePeers[0].monitor.received==1);
  auto event=[&](uint32_t id,uint8_t action){r.p=packet(REMOTE_EVENT,bootSession,ping.commandId);r.p.deviceBoot=9;r.p.commandId=id;r.p.op=action;r.p.uptime=mockNow+700;r.p.padding[0]='R';r.p.padding[1]=1;};

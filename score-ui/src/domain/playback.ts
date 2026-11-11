@@ -64,6 +64,7 @@ function initial(project: Project): PlaybackSnapshot {
 }
 export class PreviewEngine {
   private state: PlaybackSnapshot;
+  private programSignature = '';
   private listeners = new Set<() => void>();
   constructor(project: Project) {
     this.state = initial(project);
@@ -79,6 +80,7 @@ export class PreviewEngine {
     for (const listener of this.listeners) listener();
   }
   reset(project: Project) {
+    this.programSignature = '';
     this.state = initial(project);
     this.emit();
   }
@@ -91,8 +93,27 @@ export class PreviewEngine {
   ): boolean {
     if (transitionId <= this.state.transitionId) return false;
     this.tick(now);
+    const programSignature = JSON.stringify([
+      step.id,
+      step.devices,
+      step.timings,
+      project.devices,
+      project.effects,
+    ]);
+    if (
+      reason === 'recover' &&
+      this.state.stepId === step.id &&
+      programSignature === this.programSignature
+    ) {
+      this.state = { ...this.state, transitionId };
+      this.emit();
+      return true;
+    }
     const state = clone(this.state),
-      restart = reason === 'back' || reason === 'first' || reason === 'recover';
+      restart =
+        reason === 'back' ||
+        reason === 'first' ||
+        (reason === 'recover' && this.state.stepId !== step.id);
     const defaults = initial(project).devices;
     state.devices = Object.fromEntries(
       project.devices.map((device) => [device.id, state.devices[device.id] ?? defaults[device.id]]),
@@ -178,6 +199,7 @@ export class PreviewEngine {
         }
       } else runtime.strip = null;
     }
+    this.programSignature = programSignature;
     state.stepId = step.id;
     state.transitionId = transitionId;
     this.state = state;

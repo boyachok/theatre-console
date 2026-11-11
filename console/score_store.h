@@ -17,6 +17,19 @@ inline String readText(const char *path){if(!strncmp(path,"/workspace.json",15))
 inline bool stageText(const char *path,const char *body){auto f=LittleFS.open(path,"w");if(!f)return false;if(!strncmp(path,"/workspace.json",15)){bool ok=writeWorkspace(f,body);f.close();return ok;}size_t n=strlen(body);bool ok=f.write((const uint8_t*)body,n)==n;f.close();return ok;}
 inline uint32_t workspaceVersion(const String &body,String &fingerprint){JsonDocument filter,doc(&jsonRam);filter["published"]["version"]=true;filter["published"]["fingerprint"]=true;if(deserializeJson(doc,body,DeserializationOption::Filter(filter)))return 0;fingerprint=doc["published"]["fingerprint"].as<String>();return doc["published"]["version"]|0;}
 inline bool atomicText(const char *path,const String &body){String temp=String(path)+".tmp";return stageText(temp.c_str(),body.c_str())&&LittleFS.rename(temp,path);}
+constexpr uint64_t MAX_BACKUP_SEQUENCE=9007199254740990ULL;
+inline bool backupFloor(const char *s,uint64_t &out){out=0;if(!s||!*s)return false;for(;*s;s++){if(*s<'0'||*s>'9'||out>(MAX_BACKUP_SEQUENCE-(*s-'0'))/10)return false;out=out*10+(*s-'0');}return true;}
+// Independent counter journal: reserving a filename never publishes, navigates or edits a scene.
+inline bool reserveBackupSequence(const char *id,uint32_t major,uint64_t floor,uint64_t &next){
+ if(!id||!*id||strlen(id)>640||!major||major>999999||floor>=MAX_BACKUP_SEQUENCE)return false;
+ String source=readText("/backup-sequences.json");if(source.length()>400000)return false;JsonDocument ledger(&jsonRam);
+ if(source.length()&&(deserializeJson(ledger,source)||ledger["format"]!=1||!ledger["sequences"].is<JsonArray>()))return false;
+ if(!source.length()){ledger["format"]=1;ledger["sequences"].to<JsonArray>();}
+ auto rows=ledger["sequences"].as<JsonArray>();JsonObject row;
+ for(auto item:rows){if(!item["id"].is<const char*>()||!item["major"].is<uint32_t>()||!item["minor"].is<uint64_t>()||item["minor"].as<uint64_t>()>=MAX_BACKUP_SEQUENCE)return false;if(!strcmp(item["id"].as<const char*>(),id)&&item["major"].as<uint32_t>()==major)row=item.as<JsonObject>();}
+ if(row.isNull()){if(rows.size()>=512)return false;row=rows.add<JsonObject>();row["id"]=id;row["major"]=major;row["minor"]=0;}
+ next=std::max(floor,row["minor"].as<uint64_t>())+1;if(next>=MAX_BACKUP_SEQUENCE)return false;row["minor"]=next;String text;serializeJson(ledger,text);return atomicText("/backup-sequences.json",text);
+}
 inline bool parseMAC(const char *s,uint8_t *out){unsigned n[6];if(!s||strlen(s)!=17||sscanf(s,"%x:%x:%x:%x:%x:%x",n,n+1,n+2,n+3,n+4,n+5)!=6)return false;for(int i=0;i<6;i++){if(n[i]>255)return false;out[i]=n[i];}return out[0]&&!(out[0]&1);}
 inline bool bounded(JsonVariantConst v,uint32_t maximum){return v.is<uint32_t>()&&v.as<uint32_t>()<=maximum;}
 inline bool decodeLight(JsonVariantConst row,Dimmer &d,DimmerAnimation &a,uint32_t &delay){
@@ -29,6 +42,7 @@ inline bool decodeLight(JsonVariantConst row,Dimmer &d,DimmerAnimation &a,uint32
 inline bool decodeCue(JsonVariantConst source,Cue &cue){
  if(!source.is<JsonObjectConst>()||!bounded(source["dimMask"],4095)||!bounded(source["relayMask"],3))return false;
  cue={};cue.dimmerMask=source["dimMask"];cue.relayMask=source["relayMask"];
+ if(!source["inversionSet"].isNull()||!source["invertedMask"].isNull()){if(!bounded(source["inversionSet"],4095)||!bounded(source["invertedMask"],4095))return false;cue.inversionSet=source["inversionSet"];cue.invertedMask=source["invertedMask"];}
  auto dim=source["d"].as<JsonArrayConst>(),rel=source["r"].as<JsonArrayConst>(),audio=source["a"].as<JsonArrayConst>();
  if((dim.size()!=8&&dim.size()!=12)||rel.size()!=2||(audio.size()!=5&&audio.size()!=6&&audio.size()!=7))return false;
  for(unsigned i=0;i<dim.size();i++){uint32_t delay;if(!decodeLight(dim[i],cue.dimmers[i],cue.animations[i],delay))return false;cue.lightDelayMs[i]=delay;}

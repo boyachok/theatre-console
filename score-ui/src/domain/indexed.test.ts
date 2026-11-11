@@ -82,7 +82,11 @@ test('published GO sends only index/version; scene ACK and preload readiness are
     const p = createProject();
     p.devices[0].mac = mac;
     status.nodes[0].localScoreSupported = false;
-    await assert.rejects(() => transport.publish(p, null), /0\.7\.4/);
+    await assert.rejects(
+      () => transport.publish(p, null),
+      (e: unknown) =>
+        e instanceof Error && e.message.includes(`Theatre console ${INTERFACE_VERSION}`),
+    );
     assert.equal(calls.filter((c) => c.url.includes('/publish')).length, 0);
   } finally {
     globalThis.fetch = original;

@@ -20,11 +20,11 @@ struct MockFS {
  bool mountOK=true;unsigned formats=0;
  bool begin(bool,const char*,int,const char*)const{return mountOK;}
  bool format(){formats++;files.clear();mountOK=true;return true;}
- std::map<std::string,std::shared_ptr<std::vector<uint8_t>>> files;bool failPlanRename=false;size_t peakBytes=0;
+ std::map<std::string,std::shared_ptr<std::vector<uint8_t>>> files;bool failPlanRename=false,failBackupRename=false;size_t peakBytes=0;
  size_t size()const{size_t result=0;for(auto &item:files)result+=item.second->size();return result;}
  MockFile open(const std::string &name,const char *mode){if(mode[0]=='w')files[name]=std::make_shared<std::vector<uint8_t>>();auto it=files.find(name);return it==files.end()?MockFile():MockFile(it->second);}
  bool exists(const std::string &name)const{return files.count(name);}
- bool rename(const std::string &from,const std::string &to){peakBytes=std::max(peakBytes,size());if(failPlanRename&&from=="/published.json.tmp")return false;auto it=files.find(from);if(it==files.end())return false;files[to]=it->second;files.erase(it);return true;}
+ bool rename(const std::string &from,const std::string &to){peakBytes=std::max(peakBytes,size());if((failPlanRename&&from=="/published.json.tmp")||(failBackupRename&&from=="/backup-sequences.json.tmp"))return false;auto it=files.find(from);if(it==files.end())return false;files[to]=it->second;files.erase(it);return true;}
 };
 using File=MockFile;
 inline MockFS LittleFS;

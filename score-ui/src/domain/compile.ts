@@ -3,6 +3,8 @@ import { percentToDuty, effectiveStrip, acParameter, acCue } from './project.ts'
 import { validateProject } from './validation.ts';
 import { dimmerAnimationWire } from './dimmer.ts';
 export interface WireCue {
+  invertedMask?: number;
+  inversionSet?: number;
   ac?: { enabled: number; d: number[] };
   dimMask: number;
   relayMask: number;
@@ -71,6 +73,15 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
       return {
         ...(device.profile !== 'helmet' && acParameter(device).enabled
           ? { ac: { enabled: 1, d: lightWire(acCue(c), step) } }
+          : {}),
+        ...(device.profile !== 'helmet' && device.dimmers.some((p) => p.inverted !== undefined)
+          ? {
+              inversionSet: device.dimmers.reduce(
+                (m, p, i) => m | (p.inverted !== undefined ? 1 << i : 0),
+                0,
+              ),
+              invertedMask: device.dimmers.reduce((m, p, i) => m | (p.inverted ? 1 << i : 0), 0),
+            }
           : {}),
         dimMask: device.dimmers.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),
         relayMask: device.relays.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),

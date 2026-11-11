@@ -21,7 +21,7 @@ class Runner {
   digitalWrite(RELAY2_PIN,(on==(relayMode2==1))?HIGH:LOW);pinMode(RELAY2_PIN,OUTPUT);relay2=on;
  }
 public:
- bool active=false;uint32_t run=0,sequence=0;uint16_t step=0;
+ bool active=false;uint32_t run=0,sequence=0,lastCueCRC=0;uint16_t step=0;
  explicit Runner(Actors &a):actors(a){}
  Mains::State acStatus(){return ac.diagnostics();}
  void begin(){ac.begin();relayConfig.begin("stage-io",false);relayMode2=relayConfig.getUChar("relayMode2",0);if(relayMode2>2)relayMode2=0;writeRelay(1,false);strip.begin();}
@@ -29,8 +29,11 @@ public:
  void stop(){ac.stop();strip.stop();stopAudio();active=false;stopAt=0;for(int i=0;i<2;i++)relayPending[i]=false;writeRelay(1,false);actors.off();}
  bool apply(const Packet &p,uint32_t now,bool recovering=false){
   if(!valid(p.cue)||!p.transition)return false;
-  if(run==p.run&&!newer(p.transition,sequence)&&!(recovering&&p.transition==sequence))return true;
-  const auto &c=p.cue;bool restart=p.reason!=0||recovering;bool fresh=p.run!=run||newer(p.transition,sequence);
+  if(run==p.run&&!newer(p.transition,sequence)&&!(recovering&&active&&p.transition==sequence))return true;
+  const auto &c=p.cue;uint32_t cueCRC=crc32(&c,sizeof(c));
+  if(recovering&&active&&p.step==step&&cueCRC==lastCueCRC){run=p.run;sequence=p.transition;tick(now);return true;}
+  bool restart=p.reason!=0;bool fresh=p.run!=run||newer(p.transition,sequence);
+  if(!actors.setDimmerInversions(c.invertedMask,c.inversionSet))return false;
   if(!ac.configure(c.ac.enabled,fresh&&(!active||p.step!=step||p.reason!=0)))return false;
   if(!strip.apply(c.strip,now,restart))return false;
   for(int i=0;i<12;i++){
@@ -46,16 +49,16 @@ public:
    relayTarget[i]=on;relayPending[i]=on!=actual;relayDue[i]=now+(on?c.relays[i].onMs:c.relays[i].offMs);
   }
   confirmAudioStart(); // A PLAY transmitted just before this cue is already running, not a pending start.
-  uint16_t track=c.audio.enabled?c.audio.track:0;uint32_t delay=audioDelay(c);bool newScene=!active||p.run!=run||p.step!=step;bool loop=c.audioLoop!=0;
-  targetVolume=c.audio.volume;audioFadeIn=c.audio.inMs;stopAt=0;stopPending=false;
-  if(!track){if(audioPending||audioStarting)actors.player.stop();volume.target(0,c.audio.inMs,c.audio.outMs,now);stopAt=now+c.audio.outMs;stopPending=true;audioPending=audioStarting=false;}
-  else if(!active||track!=targetTrack||restart||((audioPending||audioStarting)&&(newScene||delay!=audioDelayMs||loop!=targetLoop))){
-   if(newScene||track!=targetTrack||restart)audioSceneAt=now;
+  uint16_t track=c.audio.enabled?c.audio.track:0;uint32_t delay=audioDelay(c);bool loop=c.audioLoop!=0,volumeChanged=c.audio.volume!=targetVolume;
+  targetVolume=c.audio.volume;audioFadeIn=c.audio.inMs;if(track){stopAt=0;stopPending=false;}
+  if(!track){if(!active||targetTrack||audioPending||audioStarting){if(audioPending||audioStarting)actors.player.stop();volume.target(0,c.audio.inMs,c.audio.outMs,now);stopAt=now+c.audio.outMs;stopPending=true;audioPending=audioStarting=false;}}
+  else if(!active||track!=targetTrack||((audioPending||audioStarting)&&(delay!=audioDelayMs||loop!=targetLoop))){
+   if(!active||track!=targetTrack)audioSceneAt=now;
    audioStartAt=audioSceneAt+delay;actors.player.stop();volume=Ramp{0.f,0.f,now,0};audioPending=true;audioStarting=false;lastVolume=255;
-  }else if(!audioPending&&!audioStarting)volume.target(c.audio.volume,c.audio.inMs,c.audio.outMs,now);
+  }else if(!audioPending&&!audioStarting&&volumeChanged)volume.target(c.audio.volume,c.audio.inMs,c.audio.outMs,now);
   if(track&&loop!=targetLoop&&!audioPending&&!audioStarting)loopUpdate=true;
   if(!track||audioPending)loopUpdate=false;
-  targetLoop=loop;audioDelayMs=delay;targetTrack=track;run=p.run;sequence=p.transition;step=p.step;active=true;tick(now);return true;
+  targetLoop=loop;audioDelayMs=delay;targetTrack=track;lastCueCRC=cueCRC;run=p.run;sequence=p.transition;step=p.step;active=true;tick(now);return true;
  }
  void tick(uint32_t now,bool acLease=true){
   ac.tick(acLease);strip.tick(now);if(!active||now-lastTick<1)return;lastTick=now;

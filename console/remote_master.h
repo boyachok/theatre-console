@@ -31,6 +31,7 @@ void remoteMasterTick(){
 }
 bool handleRemoteRx(const Rx &r){
  if(!RADIO_MASTER)return false;
+ if(r.p.type==FIRMWARE_REPORT&&r.firmwareRole==FW_REMOTE){int i=findRemote(r.mac);if(i>=0&&r.p.session==bootSession&&remotePeers[i].monitor.deviceBoot==r.p.deviceBoot)remotePeers[i].monitor.firmwareVersion=String(r.firmwareVersion);return true;}
  if(!remoteType(r.p.type))return findRemote(r.mac)>=0&&(r.p.type==HELLO||r.p.type==ECHO);
  if(r.p.protocol!=PROTOCOL||!remoteTag(r.p)||r.p.session!=bootSession||!r.p.deviceBoot)return true;
  int index=findRemote(r.mac);uint32_t now=millis();
@@ -63,6 +64,7 @@ bool identifyRemote(const uint8_t *mac){int i=findRemote(mac);if(i<0)return fals
 String remoteStatusJSON(){
  String j="[";bool comma=false;for(auto &p:remotePeers)if(p.used){if(comma)j+=',';comma=true;auto &n=p.monitor;auto m=metrics(n);
   j+="{\"role\":\"remote\",\"name\":"+jsonString(n.name)+",\"mac\":"+jsonString(macString(p.mac))+",\"ip\":"+((uint32_t)network.peerIP(p.mac)?jsonString(network.peerIP(p.mac).toString()):String("null"))+",\"ageMs\":"+(n.hasReply?String(millis()-n.lastReply):String("null"));
+  j+=",\"firmwareVersion\":"+(n.firmwareVersion.length()?jsonString(n.firmwareVersion):String("null"));
   j+=",\"sent\":"+String(n.sent)+",\"received\":"+String(n.received)+",\"timeouts\":"+String(n.timeouts)+",\"p50\":"+(m.replies?String(m.p50,2):String("null"))+",\"p95\":"+(m.replies?String(m.p95,2):String("null"));
   j+=",\"rssiSlave\":"+(n.hasReply?String(n.lastSlaveRssi):String("null"))+",\"worstRssi\":"+(m.replies?String(m.worstRssi):String("null"))+",\"health\":"+jsonString(healthName(m.health))+"}";
  }return j+"]";

@@ -20,6 +20,7 @@ let workspace = {
 const peer = {
   mac,
   name: 'Bench',
+  firmwareVersion: INTERFACE_VERSION,
   ip: '192.168.50.33',
   ageMs: 10,
   scoreSupported: true,
@@ -39,6 +40,7 @@ const peer = {
 const remote = {
   ...peer,
   role: 'remote',
+  firmwareVersion: '0.7.8',
   mac: 'AA:BB:CC:00:00:22',
   name: 'remote',
   ip: '192.168.50.88',
@@ -51,6 +53,7 @@ const remote = {
 const helmet = {
   ...peer,
   role: 'helmet',
+  firmwareVersion: null,
   mac: '30:30:F9:32:02:30',
   name: 'Helmet bench',
   ip: '192.168.50.65',
@@ -86,6 +89,8 @@ const status = {
 };
 const calls = [],
   errors = [];
+const backupSequences = new Map();
+let failBackupReservations = false;
 let draft = null,
   lastSequence = 0;
 function command(form) {
@@ -121,6 +126,20 @@ const server = createServer(async (req, res) => {
       if (path.endsWith('/status')) {
         status.serverMs = Math.floor(performance.now()) >>> 0;
         res.end(JSON.stringify(status));
+        return;
+      }
+      if (path.endsWith('/backup-sequence')) {
+        if (failBackupReservations) {
+          res.writeHead(507).end('Mock counter write failed');
+          return;
+        }
+        const form = new URLSearchParams(raw);
+        assert.equal(form.get('token'), status.token);
+        const major = Number(form.get('major')),
+          key = `${form.get('project')}:${major}`,
+          minor = Math.max(backupSequences.get(key) ?? 0, Number(form.get('floor'))) + 1;
+        backupSequences.set(key, minor);
+        res.end(JSON.stringify({ major, minor }));
         return;
       }
       if (path.endsWith('/workspace')) {
@@ -345,6 +364,12 @@ try {
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
   assert.equal(await panel.locator('tbody tr').count(), 3);
+  assert((await panel.locator('[data-master-firmware]').textContent()).includes(INTERFACE_VERSION));
+  assert.deepEqual(await panel.locator('[data-firmware-version]').allTextContents(), [
+    INTERFACE_VERSION,
+    '—',
+    '0.7.8',
+  ]);
   await panel.getByRole('button', { name: 'Мигать remote', exact: true }).click();
   await page.waitForTimeout(80);
   assert(
@@ -372,6 +397,20 @@ try {
       .locator(`option[value="${remote.mac}"]`)
       .count(),
     0,
+  );
+  const inversion = settings.getByRole('checkbox', { name: 'Инвертировать DIM12', exact: true });
+  assert.equal(await inversion.isChecked(), false);
+  await inversion.check();
+  await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.waitForTimeout(650);
+  assert.equal(draft.devices[0].cues[0].inversionSet, 4095);
+  assert.equal(draft.devices[0].cues[0].invertedMask, 2048);
+  assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications);
+  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
+  await settings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
+  assert.equal(
+    await settings.getByRole('checkbox', { name: 'Инвертировать DIM12', exact: true }).isChecked(),
+    true,
   );
   await settings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
   assert.equal(
@@ -565,9 +604,107 @@ try {
   await page.waitForFunction(
     () => document.querySelectorAll('.network-table tbody tr').length === 0,
   );
+  await page
+    .getByRole('dialog', { name: 'Сеть', exact: true })
+    .getByRole('button', { name: 'Закрыть', exact: true })
+    .click();
+  // Jump only the backup wall clock; no real device/time control and no fabricated scene commands.
+  await page.evaluate(() => {
+    window.__backupOffset = 0;
+    const real = Date.now.bind(Date);
+    Date.now = () => real() + window.__backupOffset;
+    window.confirm = () => {
+      throw new Error('Native confirm must not be used');
+    };
+  });
+  const navigationCalls = () =>
+    calls.filter(
+      (c) => c.path.endsWith('/go') || c.path.endsWith('/navigate') || c.path.endsWith('/draft-go'),
+    ).length;
+  const beforeBackup = navigationCalls();
+  await page.evaluate(() => (window.__backupOffset += 600001));
+  const backupPrompt = page.getByRole('dialog', { name: 'Резервная копия JSON', exact: true });
+  await backupPrompt.waitFor();
+  assert.equal(await backupPrompt.getAttribute('aria-modal'), 'false');
+  const file1 = page.waitForEvent('download');
+  await backupPrompt.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
+  const download1 = await file1;
+  assert(download1.suggestedFilename().endsWith('_v1.001.json'));
+  await download1.saveAs('/tmp/theatre-0713-ui-json-1.json');
+  const backup1 = JSON.parse(await readFile('/tmp/theatre-0713-ui-json-1.json', 'utf8'));
+  assert.equal(backup1.backup.minor, 1);
+  assert.equal(backup1.draft.devices[0].dimmers[11].inverted, true);
+  const otherClient = await page.request.post('http://127.0.0.1:5179/api/console/backup-sequence', {
+    form: { token: status.token, project: project.id, major: '1', floor: '1' },
+  });
+  assert.equal((await otherClient.json()).minor, 2);
+  const thirdFile = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
+  assert((await thirdFile).suggestedFilename().endsWith('_v1.003.json'));
+  await page.evaluate(() => (window.__backupOffset += 600001));
+  await page.waitForTimeout(1400);
+  assert.equal(await backupPrompt.count(), 0);
+  assert.equal(navigationCalls(), beforeBackup);
+  await page.getByLabel('Название спектакля', { exact: true }).fill('Backup UI revised');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => (window.__backupOffset += 600001));
+  await backupPrompt.waitFor();
+  await backupPrompt.getByRole('button', { name: 'Через 10 минут', exact: true }).click();
+  await page.waitForTimeout(1100);
+  assert.equal(await backupPrompt.count(), 0);
+  await page.evaluate(() => (window.__backupOffset += 600001));
+  await backupPrompt.waitFor();
+  await page.getByLabel('Серия JSON', { exact: true }).fill('2');
+  const file2 = page.waitForEvent('download');
+  await backupPrompt.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
+  const download2 = await file2;
+  assert(download2.suggestedFilename().endsWith('_v2.001.json'));
+  await download2.saveAs('/tmp/theatre-0713-ui-json-2.json');
+  await page.waitForTimeout(1900);
+  assert.equal(workspace.backup.major, 2);
+  assert.equal(workspace.backup.minor, 1);
+  assert.equal(navigationCalls(), beforeBackup);
+  await page.reload();
+  await page.waitForSelector('.parameter-row');
+  assert.equal(await page.getByLabel('Серия JSON', { exact: true }).inputValue(), '2');
+  await page.evaluate(() => {
+    const real = Date.now.bind(Date);
+    Date.now = () => real() + 1200001;
+  });
+  await page.waitForTimeout(1600);
+  assert.equal(await backupPrompt.count(), 0);
+  assert.equal(navigationCalls(), beforeBackup);
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.getByLabel('Название спектакля', { exact: true }).fill('Mobile backup');
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const previous = Date.now;
+    Date.now = () => previous() + 600001;
+  });
+  await backupPrompt.waitFor();
+  const promptBounds = await backupPrompt.boundingBox();
+  assert(
+    promptBounds.x >= 0 &&
+      promptBounds.x + promptBounds.width <= 320 &&
+      promptBounds.y >= 0 &&
+      promptBounds.y + promptBounds.height <= 844,
+  );
+  await page.getByLabel('Серия JSON', { exact: true }).fill('3');
+  await page.screenshot({ path: '/tmp/theatre-0713-backup-320.png' });
+  let mobileDownload = page.waitForEvent('download');
+  await backupPrompt.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
+  assert((await mobileDownload).suggestedFilename().endsWith('_v3.001.json'));
+  failBackupReservations = true;
+  mobileDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
+  assert((await mobileDownload).suggestedFilename().endsWith('_v3.002.json'));
+  await page.getByRole('status').filter({ hasText: 'локальный номер' }).waitFor();
+  failBackupReservations = false;
+  assert.equal(navigationCalls(), beforeBackup);
+  assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 320);
   assert.deepEqual(errors, []);
   console.log(
-    'MOCK ESP production UI: opt-in Диммер220/safety-confirm cancel+enable, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
+    'MOCK ESP production UI: real/unknown firmware versions, 12-channel inversion/masks in LIVE, JSON dirty-only ten-minute reminders/snooze/manual series/download/reload/no GO, opt-in Диммер220/safety-confirm cancel+enable, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

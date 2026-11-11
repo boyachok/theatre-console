@@ -14,9 +14,9 @@ int main(){
  mockAcSubmitUs=200;edge(171000);assert(driver.diagnostics().latched&&driver.diagnostics().fault==Mains::TIMING&&GPIO.func_out_sel_cfg[40].func_sel==SIG_GPIO_OUT_IDX);writes=mockAcWrites;mockAcSubmitUs=20;
  assert(driver.configure(true,false));edge(181000);assert(driver.diagnostics().latched&&mockAcWrites==writes); // Reconciliation cannot clear the fault.
  mockAcUs=190000;assert(driver.configure(true,true));driver.level(128);for(int i=0;i<=6;i++)edge(191000+i*10000);assert(!driver.diagnostics().latched&&mockAcWrites==writes+1);
- mockAcUs=252000;driver.tick(false);assert(driver.diagnostics().fault==Mains::LINK_LOST&&GPIO.func_out_sel_cfg[40].func_sel==SIG_GPIO_OUT_IDX);writes=mockAcWrites;driver.testService();assert(mockAcWrites==writes);
+ mockAcUs=252000;driver.tick(false);assert(!driver.diagnostics().latched&&GPIO.func_out_sel_cfg[40].func_sel==37);writes=mockAcWrites;driver.testService();assert(mockAcWrites==writes);
  mockAcUs=260000;driver.stop();assert(driver.configure(true,true));driver.level(128);for(int i=0;i<=6;i++)edge(261000+i*10000);mockAcBusy=true;edge(331000);assert(driver.diagnostics().latched&&GPIO.func_out_sel_cfg[40].func_sel==SIG_GPIO_OUT_IDX);mockAcBusy=false;
  mockAcUs=340000;assert(driver.configure(true,true));driver.level(128);writes=mockAcWrites;for(int i=0;i<6;i++)edge(341000+i*10000);edge(401000,false);edge(411000,false);driver.testService();assert(driver.diagnostics().fault==Mains::TIMING&&driver.diagnostics().latched&&mockAcWrites==writes&&GPIO.func_out_sel_cfg[40].func_sel==SIG_GPIO_OUT_IDX);
  AcDimmer fail;fail.begin();mockAcMutexOK=false;assert(!fail.configure(true,true)&&fail.diagnostics().fault==Mains::RESOURCE&&GPIO.func_out_sel_cfg[40].func_sel==SIG_GPIO_OUT_IDX);mockAcMutexOK=true;
- puts("Actual AC adapter: lazy 1MHz/one-block non-looping RMT, IRAM zero-cross registration, bounded frame, priority/core, zero/resume matrix routing, STOP pending cancellation, late/busy/link/resource latches and explicit-only rearm passed (SDK/RMT mocked; no physical waveform proof)");
+ puts("Actual AC adapter: lazy 1MHz/one-block non-looping RMT, IRAM zero-cross registration, bounded frame, priority/core, zero/resume matrix routing, STOP pending cancellation, late/busy/resource latches, Wi-Fi-loss hold and explicit-only rearm passed (SDK/RMT mocked; no physical waveform proof)");
 }

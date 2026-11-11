@@ -1,5 +1,27 @@
 # Изменения Theatre console
 
+## 0.7.13 — инверсия12PWM, continuity и JSON-бэкапы (НЕ прошита)
+
+- Переключатель инверсии каждого12DIM в Приборах/defaultOFF, physical=255−logical,
+  8LEDC+4MCPWM25кГц; record dimConfig сохраняет12бит+прежние presets атомарно.
+  Старый pwmConfig не стирается, absent JSON flags не сбрасывают NVS; явное Save
+  может перенести полученную online-полярность в проект для замены платы.
+- Свет до delay держит прежний фейд/анимацию, включая delayed fade-to-zero; в due
+  handoff из attained output. Recovery одинакового cue не сбрасывает таймеры/фазы.
+- Same-file звук продолжается в обе стороны/FIRST/recovery, EOF не выдаёт новыйPLAY;
+  blank/другой файл/STOP меняют состояние. Pending same-file не переносит deadline.
+- Link-loss держит принятые Actors/AC outputs, без автоматической следующей сцены
+  и без replay истории. Оставлены boot/session/TTL guards, STOP и Z-C/timing faults.
+- Опциональный role/boot/session-bound64B FW report: версия firmware в Сети,
+  неизвестная — прочерк, не версия master. R/1 пульта прежний.
+- JSON1.001, ручной major, browser high-water и независимый master sequence journal;
+  atomic reserve/no GO, offline fallback не блокирует скачивание. Немодальный10мин
+  reminder только для правок содержимого, snooze/reload/import/metadata без ложных dirty.
+- Score11/P14/P15, Cue393/STORE437/RUN44; old caches7–10 мигрируютRAM без rewrite;
+ 59domain, ASan/UBSan actual Actors/Runner/Player/storage, real-adapter MOCK browser
+  с download/двумя clients, mobile и все4сборки. Без физического теста/OTA.
+ [Подробности/границы](docs/CONTINUITY_BACKUPS_POLARITY.md).
+
 ## 0.7.12 — Диммер220, повтор аудио, задержка света (НЕ прошита)
 
 - Отдельный opt-in «Диммер220»: GPIO41Z-C/GPIO40PSM, квалификация50/60Гц,

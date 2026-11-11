@@ -22,7 +22,7 @@ public:
  void arm(uint64_t now){if(s.enabled&&!s.latched)return;s.enabled=true;s.latched=false;s.qualified=false;s.lastZero=0;s.requested=s.paired=0;s.fault=WAIT_ZERO;stable=pair=noise=0;armedAt=controllerAt=now;++epoch;}
  void resourceFailure(){s.enabled=true;trip(RESOURCE);}
  void level(uint8_t v){s.requested=v;if(!v){s.paired=0;++epoch;}}
- void controller(uint64_t now,bool lease){controllerAt=now;if(s.enabled&&!s.latched&&!lease)trip(LINK_LOST);}
+ void controller(uint64_t now,bool /*lease*/){controllerAt=now;} // Wi-Fi/master loss is not an output fault.
  void watchdog(uint64_t now){if(!s.enabled||s.latched)return;if(now-controllerAt>50000){trip(CONTROL_LOST);return;}if(now-(s.lastZero?s.lastZero:armedAt)>35000)trip(ZERO_LOST);}
  bool MAINS_IRAM zeroCross(uint64_t now,Pulse &out){
   if(!s.enabled||s.latched)return false;

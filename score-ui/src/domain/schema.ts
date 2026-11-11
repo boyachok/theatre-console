@@ -1,6 +1,7 @@
 export type ChannelColor = 'red' | 'green' | 'blue' | 'white' | 'warm';
 export type ParameterKind = 'dimmer' | 'relay' | 'audio' | 'strip' | 'ac';
 export interface Parameter {
+  inverted?: boolean;
   id: string;
   name: string;
   color: ChannelColor;
@@ -107,7 +108,14 @@ export interface PublishedScore {
   project: Project;
   mode: 'local' | 'esp';
 }
+export interface BackupInfo {
+  major: number;
+  minor: number;
+  exportedFingerprint?: string;
+  exportedAt?: string;
+}
 export interface Workspace {
+  backup?: BackupInfo;
   format: 'theatre-score';
   schemaVersion: 1;
   interfaceVersion: string;

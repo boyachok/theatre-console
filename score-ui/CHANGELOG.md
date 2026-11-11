@@ -1,5 +1,14 @@
 # История Theatre console
 
+## 0.7.13 — подготовлено без прошивки
+
+-12inversion checkbox/defaultOFF, legacy polarity capture при явном Save, JSON.
+-Прежний свет/анимация до delayed transition; same-file звук продолжает back/forward.
+-Реальная версия firmware/unknown в Сети, отдельна от версии плана.
+-JSON1.001/manual major, master atomic sequence/browser fallback, dirty-only10мин
+ немодальный prompt, download/snooze/reload/import без GO.59domain, MOCK/mobile.
+ [Полные правила](../docs/CONTINUITY_BACKUPS_POLARITY.md).
+
 ## 0.7.12 — подготовлено без прошивки
 
 - Opt-in «Диммер220», отдельное safety confirmation; brightness/fade/delay/animation,

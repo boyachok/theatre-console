@@ -1,4 +1,11 @@
-# Theatre console — исходники0.7.12, без новой прошивки
+# Theatre console — исходники0.7.13, без новой прошивки
+
+[0.7.13](docs/CONTINUITY_BACKUPS_POLARITY.md): 12PWM inversion/defaultOFF/JSON,
+held-light delay, same-file audio в обе стороны, hold при link loss, реальные
+firmware-версии и dirty-only10мин JSON reminder/нумерация/central sequence без GO.
+Score11/P14/P15,393/437/44B. Платы, реальный LIVE/партитура/привязки не менялись.
+
+## Предыдущая подготовка0.7.12 (тоже не прошита)
 
 Подготовлены [Диммер220](docs/AC_DIMMER.md) GPIO41Z-C/GPIO40PSM и
 [повтор аудио/задержка12DIM иAC](docs/LIGHT_DELAY_AUDIO_LOOP.md).

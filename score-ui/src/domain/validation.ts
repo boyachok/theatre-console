@@ -83,6 +83,7 @@ export function validateProject(value: unknown): asserts value is Project {
           text(p.name) &&
           ['red', 'green', 'blue', 'white', 'warm'].includes(p.color) &&
           typeof p.enabled === 'boolean' &&
+          (p.inverted === undefined || typeof p.inverted === 'boolean') &&
           (p.relayMode === undefined || [0, 1, 2].includes(p.relayMode)),
         'Неверный параметр прибора',
       );
@@ -208,6 +209,22 @@ export function parseBackup(content: string): Workspace {
     'Неподдерживаемый формат партитуры',
   );
   validateProject(value.draft);
+  if (value.backup !== undefined) {
+    const b = value.backup;
+    ensure(
+      object(b) &&
+        Number.isSafeInteger(b.major) &&
+        b.major >= 1 &&
+        b.major <= 999999 &&
+        Number.isSafeInteger(b.minor) &&
+        b.minor >= 0 &&
+        b.minor < Number.MAX_SAFE_INTEGER &&
+        (b.exportedFingerprint === undefined || text(b.exportedFingerprint)) &&
+        (b.exportedAt === undefined ||
+          (typeof b.exportedAt === 'string' && Number.isFinite(Date.parse(b.exportedAt)))),
+      'Неверная версия JSON-бэкапа',
+    );
+  }
   if (value.published !== null) {
     ensure(
       object(value.published) &&

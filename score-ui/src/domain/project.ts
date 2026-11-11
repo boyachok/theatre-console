@@ -35,13 +35,33 @@ export const acParameter = (device: Device): Parameter =>
   device.acDimmer ?? { id: 'ac-220', name: 'Диммер220', color: 'warm', enabled: false };
 export const lightDefault = (): DimmerCue => ({ value: 0, fadeIn: null, fadeOut: null });
 export const acCue = (cue: DeviceCue): DimmerCue => cue.ac ?? lightDefault();
+// Called only by an explicit device-settings Save, never by telemetry or JSON parsing.
+export function captureDevicePolarity(device: Device, mask?: number): Device {
+  if (
+    device.profile === 'helmet' ||
+    typeof mask !== 'number' ||
+    !Number.isInteger(mask) ||
+    mask < 0 ||
+    mask > 4095
+  )
+    return device;
+  return {
+    ...device,
+    dimmers: device.dimmers.map((p, i) =>
+      p.inverted === undefined ? { ...p, inverted: !!(mask & (1 << i)) } : p,
+    ),
+  };
+}
 export function createDevice(index: number): Device {
   return {
     id: uid(),
     name: `Прибор ${index + 1}`,
     ip: null,
     acDimmer: { id: 'ac-220', name: 'Диммер220', color: 'warm', enabled: false },
-    dimmers: Array.from({ length: 12 }, (_, i) => parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`)),
+    dimmers: Array.from({ length: 12 }, (_, i) => ({
+      ...parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`),
+      inverted: false,
+    })),
     relays: Array.from({ length: 2 }, (_, i) =>
       parameter(`relay-${i + 1}`, `Реле ${i + 1}`, 'warm'),
     ),
@@ -72,7 +92,11 @@ export function upgradeDraft(project: Project): Project {
   for (const device of next.devices) {
     while (device.dimmers.length < 12) {
       const i = device.dimmers.length;
-      const p = { ...parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`), enabled: false };
+      const p = {
+        ...parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`),
+        enabled: false,
+        inverted: false,
+      };
       device.dimmers.push(p);
       for (const step of next.steps)
         step.devices[device.id].dimmers[p.id] = { value: 0, fadeIn: null, fadeOut: null };

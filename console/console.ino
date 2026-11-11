@@ -46,12 +46,12 @@ uint32_t measurementStoppedAt=0,discoverAt=0,networkResetAt=0;
 bool networkResetActive=false;
 Health slaveHealth=WARMUP;
 uint8_t masterMAC[6]{};
-bool masterKnown=false;
+bool masterKnown=false,masterWantsFirmware=false;
 uint32_t masterSession=0, masterSeen=0, lastProbe=0, helloAt=0;
 uint8_t assignedId=0;
 uint32_t lastProbeSeq=0;
 
-struct Rx { uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm; uint32_t pwmHz=0; int8_t rssi; uint32_t atUs; };
+struct Rx { uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm; uint32_t pwmHz=0;char firmwareVersion[24]{};uint8_t firmwareRole=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
 struct Node;bool currentSceneConfirmed(const Node &n);const char *sceneStatus(const Node &n);
 bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigateCurrent(uint8_t action);
@@ -61,7 +61,7 @@ struct Sample {
   bool used=false, received=false, expired=false, late=false;
 };
 struct Node {
-  bool used=false;uint8_t mac[6]{};String name;
+  bool used=false;uint8_t mac[6]{};String name,firmwareVersion;
   uint8_t protocol=0,pwmChannels=0;bool pwmConfigSupported=false,helmet=false;
   PwmStatus pwmConfig{};uint32_t pwmConfigAt=0,pwmReportSequence=0;
   uint32_t requestId=0,requestStartedAt=0,requestDeadline=0;bool boundedRequest=false;int32_t commandAckMs=-1;
@@ -92,9 +92,8 @@ void networkSessionChanged() {
   networkEpochSeen=network.generation;bootSession=freshSession();
   lastProbe=lastProbeSeq=probeReceivedAt=helloAt=debugUntil=0;
   lastControlId=0;lastControlResult=APPLIED;masterKnown=false;assignedId=0;
-  if(!RADIO_MASTER&&!showRunner.active)actors.off(1);
-  else for(auto &n:nodes)if(n.used){
-    n.pending=false;n.deferred=false;n.commandStatus="network_changed";n.deviceBoot=0;n.reportAt=0;n.reportUptime=0;n.pwmHz=0;n.pwmConfigAt=0;n.pwmConfigSupported=false;
+  if(RADIO_MASTER)for(auto &n:nodes)if(n.used){
+    n.pending=false;n.deferred=false;n.commandStatus="network_changed";n.deviceBoot=0;n.firmwareVersion=String();n.reportAt=0;n.reportUptime=0;n.pwmHz=0;n.pwmConfigAt=0;n.pwmConfigSupported=false;
     n.hasReply=false;n.uartAt=0;n.uartUptime=0;
   }
 }
@@ -102,7 +101,7 @@ void expireSlaveLease() {
   if(RADIO_MASTER||!lastProbe||millis()-probeReceivedAt<OFFLINE_MS)return;
   // UDP may contain frames queued during a stalled HTTP handler. Rotate the target
   // identity BEFORE draining them so delayed activation cannot undo the local failsafe.
-  if(showRunner.active)showRecovery=true;else actors.off(1);bootSession=freshSession();lastControlId=0;lastControlResult=APPLIED;
+  if(showRunner.active)showRecovery=true;bootSession=freshSession();lastControlId=0;lastControlResult=APPLIED;
   lastProbe=lastProbeSeq=probeReceivedAt=debugUntil=0;
   if(masterKnown)helloAt=millis()+20+esp_random()%100;
 }
@@ -125,7 +124,10 @@ String jsonString(String s) {
 }
 bool decodeMessage(const LanMessage &message,Rx &r) {
   const uint8_t *data=message.payload;int len=message.length;
-  if(len==(int)sizeof(Packet)) {
+  if(len==(int)sizeof(FirmwarePacket)&&data[4]==PROTOCOL&&data[5]==FIRMWARE_REPORT){
+    FirmwarePacket p;memcpy(&p,data,sizeof(p));if(!validFirmware(p))return false;
+    r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;r.firmwareRole=p.role;memcpy(r.firmwareVersion,p.version,sizeof(p.version));
+  } else if(len==(int)sizeof(Packet)) {
     memcpy(&r.p,data,sizeof(r.p));
     if(r.p.magic!=MAGIC||r.p.protocol!=PROTOCOL||r.p.size!=sizeof(Packet)||r.p.type==DEBUG_REPORT)return false;
   } else if(len==(int)sizeof(PwmPacket)&&data[4]==PROTOCOL&&data[5]==PWM_REPORT){
@@ -150,6 +152,7 @@ bool sendPacket(const uint8_t *mac,const Packet &p){
   if(RADIO_MASTER&&!broadcastMAC(mac))for(const auto &n:nodes)if(n.used&&!memcmp(n.mac,mac,6)&&n.protocol==LEGACY_PROTOCOL)return sendLegacy(mac,p);
   return network.send(mac,(const uint8_t*)&p,sizeof(p));
 }
+void sendFirmwareReport(){if(masterKnown&&masterWantsFirmware){auto p=firmwareReport(masterSession,bootSession,FW_SLAVE);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}}
 void sendUartReport() {
   if(!masterKnown||!heartbeatFresh())return;
   ExtendedDebugPacket full{};auto &p=full.legacy;p.magic=MAGIC;p.protocol=PROTOCOL;p.type=DEBUG_REPORT;p.size=sizeof(full);
@@ -282,6 +285,7 @@ void finishNetworkReset(){
 void handleMasterRx(const Rx &r) {
   if(r.p.session!=bootSession||!r.p.deviceBoot)return;
   if(handleRemoteRx(r))return;
+  if(r.p.type==FIRMWARE_REPORT){int i=findNode(r.mac,false);if(i>=0&&nodes[i].deviceBoot==r.p.deviceBoot&&r.firmwareRole==(nodes[i].helmet?FW_HELMET:FW_SLAVE))nodes[i].firmwareVersion=String(r.firmwareVersion);return;}
   if(r.p.type==SCORE_ACK){handleShowAck(r);return;}
   if(r.p.type==PWM_REPORT){
     int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];
@@ -302,7 +306,7 @@ void handleMasterRx(const Rx &r) {
     n.pending=false;n.deferred=false;n.commandStatus="session_changed";n.uartAt=0;n.uartUptime=0;
   }
   n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;
-  if(newBoot){n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
+  if(newBoot){n.firmwareVersion=String();n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
   if(newBoot||!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0) {
     if(r.p.type==HELLO||r.p.type==ECHO){n.helmet=helmetTag(r.p);n.pwmChannels=n.helmet?0:(r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT);n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=!n.helmet&&r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;n.localScoreSupported=localScoreTag(r.p);}
     n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;
@@ -344,10 +348,10 @@ void handleSlaveRx(const Rx &r) {
     if(!masterKnown||memcmp(r.mac,masterMAC,6)||masterSession!=r.p.session) {
       bootSession=freshSession();
       memcpy(masterMAC,r.mac,6);masterKnown=true;masterSession=r.p.session;lastProbeSeq=0;
-      if(showRunner.active)showRecovery=true;else actors.off(2);lastControlId=0;lastControlResult=APPLIED;
+      if(showRunner.active)showRecovery=true;lastControlId=0;lastControlResult=APPLIED;
       assignedId=0;slaveHealth=WARMUP;lastProbe=0;probeReceivedAt=0;debugUntil=0;
     }
-    masterSeen=now;
+    masterSeen=now;masterWantsFirmware=firmwareRequested(r.p);
     helloAt=now+20+esp_random()%350;
     return;
   }
@@ -361,7 +365,7 @@ void handleSlaveRx(const Rx &r) {
     slaveHealth=r.p.health<=OFFLINE?(Health)r.p.health:BAD;
     Packet p=packet(ECHO,masterSession,r.p.seq);p.rssi=r.rssi;p.nodeId=assignedId;
     p.deviceBoot=bootSession;p.commandId=lastControlId;p.result=lastControlResult;p.state=actors.snapshot();setPWMFrequency(p,actors.pwmFrequency());
-    sendPacket(masterMAC,p);sendPwmReport();
+    sendPacket(masterMAC,p);sendPwmReport();sendFirmwareReport();
   } else if(r.p.type==COMMAND) {
     // Bind commands to BOTH boots. Delayed PLAY packets cannot replay after a slave reboot.
     if(r.p.deviceBoot!=bootSession||!r.p.commandId)return;
@@ -395,7 +399,7 @@ void linkTick() {
     commandTick();showMasterTick();consoleButtons();remoteMasterTick();
     static uint32_t sendAt=0;
     if(network.ready()&&!networkResetActive&&(int32_t)(now-discoverAt)>=0){
-      Packet p=packet(DISCOVER,bootSession);sendPacket(BROADCAST,p);sendLegacy(BROADCAST,p);discoverAt=now+2000;
+      Packet p=packet(DISCOVER,bootSession);requestFirmware(p);sendPacket(BROADCAST,p);sendLegacy(BROADCAST,p);discoverAt=now+2000;
     }
     uint32_t nowUs=(uint32_t)esp_timer_get_time();
     for(auto &n:nodes)if(n.used&&measurementsRunning)for(auto &s:n.samples) {
@@ -421,14 +425,14 @@ void linkTick() {
   } else {
     if(network.ready()&&helloAt&&(int32_t)(now-helloAt)>=0) {
       helloAt=0;Packet p=packet(HELLO,masterSession);p.deviceBoot=bootSession;p.state=actors.snapshot();
-      p.commandId=lastControlId;p.result=lastControlResult;setPWMFrequency(p,actors.pwmFrequency());sendPacket(masterMAC,p);sendPwmReport();
+      p.commandId=lastControlId;p.result=lastControlResult;setPWMFrequency(p,actors.pwmFrequency());sendPacket(masterMAC,p);sendPwmReport();sendFirmwareReport();
     }
     if(debugUntil&&(int32_t)(debugUntil-now)>0&&(int32_t)(now-nextDebugAt)>=0){sendUartReport();nextDebugAt=now+1000;}
   }
 }
 String pwmJSON(const PwmStatus &p){
   String j="{\"levels\":[";for(int i=0;i<PWM_COUNT;i++){if(i)j+=',';j+=p.level[i];}
-  return j+"],\"inverted\":"+String(p.inverted)+",\"onMask\":"+String(p.onMask)+",\"revision\":"+String(p.revision)+"}";
+  return j+"],\"inverted12\":"+String(reportedDimmerInversions(p))+",\"inverted\":"+String(p.inverted)+",\"onMask\":"+String(p.onMask)+",\"revision\":"+String(p.revision)+"}";
 }
 String controlJSON(const ControlState &s) {
   String j="{\"ready\":"+String(s.ready?"true":"false")+",\"pwm\":[";
@@ -461,6 +465,7 @@ String statusJSON(bool history) {
     Node &n=nodes[i];if(!n.used)continue;Metrics m=metrics(n);if(comma)j+=',';comma=true;
     IPAddress ip=network.peerIP(n.mac);
     j+="{\"id\":"+String(i+1)+",\"name\":"+jsonString(n.name)+",\"mac\":"+jsonString(macString(n.mac))+",\"health\":"+jsonString(healthName(m.health));
+    j+=",\"firmwareVersion\":"+(n.firmwareVersion.length()?jsonString(n.firmwareVersion):String("null"));
     j+=",\"ip\":"+((uint32_t)ip?jsonString(ip.toString()):String("null"))+",\"protocol\":"+String(n.protocol)+",\"pwmChannels\":"+String(n.pwmChannels)+",\"pwmHz\":"+(n.pwmHz?String(n.pwmHz):String("null"))+",\"pwmConfigSupported\":"+String(n.pwmConfigSupported?"true":"false")+",\"pwmConfig\":"+(n.pwmConfigAt?pwmJSON(n.pwmConfig):String("null"));
     j+=",\"windowN\":"+String(m.n)+",\"deliveryPct\":"+(m.n?String(100.0*m.replies/m.n,3):String("null"))+",\"deadlinePct\":"+(m.n?String(100.0*m.deadline/m.n,3):String("null"));
     j+=",\"p50\":"+(m.replies?String(m.p50,2):String("null"))+",\"p95\":"+(m.replies?String(m.p95,2):String("null"))+",\"maxRtt\":"+(m.replies?String(m.maxRtt,2):String("null"))+",\"spread\":"+(m.replies?String(m.p95-m.p50,2):String("null"));

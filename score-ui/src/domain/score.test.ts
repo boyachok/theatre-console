@@ -103,7 +103,7 @@ test('linear fade is interrupted from the attained level; retries do not restart
   e.tick(7000);
   assert.equal(e.getSnapshot().devices[id].dimmers['pwm-1'].value, 0);
 });
-test('audio continues across equal tracks, stays paused at EOF, restarts backwards and fades out on blank', () => {
+test('audio continues across equal tracks, stays paused at EOF even backwards and fades out on blank', () => {
   const p = createProject(),
     id = p.devices[0].id,
     a = p.steps[0];
@@ -122,8 +122,8 @@ test('audio continues across equal tracks, stays paused at EOF, restarts backwar
   assert.equal(e.getSnapshot().devices[id].audio.status, 'paused');
   assert.equal(e.getSnapshot().devices[id].audio.generation, 1);
   e.apply(p, b, 'back', 4, 30);
-  assert.equal(e.getSnapshot().devices[id].audio.status, 'playing');
-  assert.equal(e.getSnapshot().devices[id].audio.generation, 2);
+  assert.equal(e.getSnapshot().devices[id].audio.status, 'paused');
+  assert.equal(e.getSnapshot().devices[id].audio.generation, 1);
   e.apply(p, blank, 'forward', 5, 1000);
   e.tick(2000);
   assert.equal(e.getSnapshot().devices[id].audio.volume, 50);
@@ -174,7 +174,7 @@ test('editing draft never alters currently previewed targets or published snapsh
   assert.equal(edited.steps[0].devices[id].dimmers['pwm-1'].value, 90);
   assert.equal((await transport.publish(edited, version)).version, 2);
 });
-test('local fades finish without further transitions; recovery restarts audio with fade-in', () => {
+test('local fades finish without further transitions; recovery keeps an already playing file and its volume', () => {
   const p = createProject(),
     id = p.devices[0].id,
     step = p.steps[0];
@@ -187,9 +187,10 @@ test('local fades finish without further transitions; recovery restarts audio wi
   e.tick(4000);
   assert.equal(e.getSnapshot().devices[id].dimmers['pwm-1'].value, 75);
   e.apply(p, step, 'recover', 2, 5000);
-  assert.equal(e.getSnapshot().devices[id].audio.volume, 0);
+  assert.equal(e.getSnapshot().devices[id].audio.volume, 100);
   e.tick(6000);
-  assert.equal(e.getSnapshot().devices[id].audio.volume, 50);
+  assert.equal(e.getSnapshot().devices[id].audio.volume, 100);
+  assert.equal(e.getSnapshot().devices[id].audio.generation, 1);
 });
 test('strip effect is copied for preview; same forward effect continues, backwards restarts', () => {
   const p = createProject(),

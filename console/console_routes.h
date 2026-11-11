@@ -22,6 +22,12 @@ void consoleRoutes(){
   if((doc["published"]["version"]|0U)<showMaster.version){web.send(409,"text/plain","Версия уже изменилась");return;}
   if(!Show::atomicText("/workspace.json",body)){web.send(507);return;}showMaster.workspace=std::move(body);showMaster.workspaceFault=false;web.send(200,"text/plain","OK");
  });
+ web.on("/api/console/backup-sequence",HTTP_POST,[]{
+  if(!consoleForm())return;if(!showFSReady||otaSafetyLock||networkResetActive){web.send(503);return;}uint32_t major;uint64_t floor,next;
+  if(!unsignedArg("major",999999,major)||!major||!Show::backupFloor(web.arg("floor").c_str(),floor)){web.send(400);return;}
+  if(!Show::reserveBackupSequence(web.arg("project").c_str(),major,floor,next)){web.send(507,"text/plain","Не удалось зарезервировать номер JSON");return;}
+  JsonDocument reply;reply["major"]=major;reply["minor"]=next;String text;serializeJson(reply,text);web.send(200,"application/json",text);
+ });
  web.on("/api/console/publish",HTTP_POST,[]{
   if(!consoleForm())return;if(otaSafetyLock||networkResetActive){web.send(409);return;}if(!showFSReady){web.send(503);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
   if(!showMaster.loadPayload(body,true,error)){web.send(400,"text/plain",error);return;}invalidateShowDelivery();web.send(200,"application/json","{\"version\":"+String(showMaster.version)+"}");

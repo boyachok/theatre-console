@@ -9,6 +9,7 @@ import {
   deviceProfile,
   parameterCode,
   acParameter,
+  captureDevicePolarity,
 } from '../domain/project.ts';
 import { Modal } from './Modal.tsx';
 import { useConfirm } from './Confirm.tsx';
@@ -81,6 +82,11 @@ export function DevicesDialog({
     onSave(
       devices.map((device, index) => {
         const original = project.devices.find((d) => d.id === device.id);
+        const report = status.devices[device.mac?.toUpperCase() ?? ''];
+        const measured = captureDevicePolarity(
+          device,
+          report?.online === true ? report.dimmerInverted : undefined,
+        );
         const normalize = (p: Parameter) => ({
           ...p,
           name:
@@ -91,7 +97,7 @@ export function DevicesDialog({
         return {
           ...device,
           name: device.name.trim() || original?.name || `Прибор ${index + 1}`,
-          dimmers: device.dimmers.map(normalize),
+          dimmers: measured.dimmers.map(normalize),
           relays: device.relays.map(normalize),
           strip: normalize(device.strip),
           audio: normalize(device.audio),
@@ -279,7 +285,8 @@ export function DevicesDialog({
                               )
                               .map(([mac, info]) => (
                                 <option key={mac} value={mac}>
-                                  {info.name ?? mac} · {info.ip ?? mac}
+                                  {info.name ?? mac} · {info.ip ?? mac} ·{' '}
+                                  {info.firmwareVersion ?? 'версия неизвестна'}
                                 </option>
                               ))}
                           </select>
@@ -314,6 +321,14 @@ export function DevicesDialog({
                             </select>
                           </label>
                         </div>
+                        {device.dimmers.some((p) => p.inverted === undefined) &&
+                          device.profile !== 'helmet' && (
+                            <p className="muted">
+                              Старые каналы наследуют полярность платы. «Сохранить» запишет в
+                              партитуру полученные от неё значения. Если плата недоступна, задайте
+                              инверсию вручную перед заменой.
+                            </p>
+                          )}
                         <div className="parameter-fine-grid">
                           {parameters(device)
                             .filter(
@@ -351,6 +366,34 @@ export function DevicesDialog({
                                       </option>
                                     ))}
                                   </select>
+                                  {device.dimmers.some((item) => item.id === p.id) && (
+                                    <label
+                                      className="pwm-inversion"
+                                      title={
+                                        p.inverted === undefined
+                                          ? 'Унаследованная настройка платы; сохранение прибора зафиксирует полученную полярность в партитуре'
+                                          : 'Инверсия только физического PWM: 0 → 255, 255 → 0'
+                                      }
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Инвертировать ${code}`}
+                                        checked={
+                                          p.inverted ??
+                                          !!(
+                                            (status.devices[device.mac?.toUpperCase() ?? '']
+                                              ?.dimmerInverted ?? 0) &
+                                            (1 <<
+                                              device.dimmers.findIndex((item) => item.id === p.id))
+                                          )
+                                        }
+                                        onChange={(e) =>
+                                          parameterChange(device, p, { inverted: e.target.checked })
+                                        }
+                                      />
+                                      Инверсия PWM
+                                    </label>
+                                  )}
                                   {device.relays.some((item) => item.id === p.id) && (
                                     <select
                                       aria-label={`Уровень ${code}`}

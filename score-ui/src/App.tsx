@@ -34,6 +34,7 @@ import type { TransitionReason } from './domain/playback.ts';
 import { parseBackup } from './domain/validation.ts';
 import {
   downloadWorkspace,
+  backupSequenceFloor,
   emptyWorkspace,
   loadWorkspace,
   saveWorkspace,
@@ -49,6 +50,16 @@ import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { NetworkDialog } from './components/NetworkDialog.tsx';
 import { Modal } from './components/Modal.tsx';
 import { useConfirm } from './components/Confirm.tsx';
+import { BackupPrompt, BackupSeries } from './components/BackupControls.tsx';
+import {
+  backupDirty,
+  backupInfo,
+  backupNumber,
+  BackupReminder,
+  changeBackupMajor,
+  importedBackup,
+  restoreBackupMetadata,
+} from './domain/backup.ts';
 import { StepPlayer } from './components/StepPlayer.tsx';
 import { INTERFACE_VERSION, PRODUCT_NAME } from './version.ts';
 const previewSignature = (project: Project, step: Step) =>
@@ -75,6 +86,10 @@ export default function App() {
     useEspBackend ? new EspConsoleTransport() : new DisconnectedNetworkTransport(),
   );
   const [backendReady, setBackendReady] = useState(!useEspBackend);
+  const [backupOpen, setBackupOpen] = useState(false),
+    [exporting, setExporting] = useState(false);
+  const exportBusy = useRef(false);
+  const backupClock = useRef(new BackupReminder());
   const [showMode, setShowMode] = useState(true);
   const [selectionIntent, setSelectionIntent] = useState<{ id: string; nonce: number } | null>(
     null,
@@ -156,7 +171,7 @@ export default function App() {
       .then((saved) => {
         if (!mounted) return;
         if (saved) {
-          setWorkspace(saved);
+          setWorkspace(restoreBackupMetadata(saved, latest.current));
           setShowMode(!(network.getSnapshot().livePreview ?? false));
           setSelectedStepId(saved.draft.steps[0].id);
           setDeviceId(saved.draft.devices[0].id);
@@ -237,6 +252,65 @@ export default function App() {
     window.addEventListener('beforeunload', flush);
     return () => window.removeEventListener('beforeunload', flush);
   }, [saveBlocked]);
+  useEffect(() => {
+    if (!backendReady || saveBlocked) return;
+    const check = () => {
+      const w = latest.current;
+      const due = backupClock.current.observe(w, Date.now());
+      if (!backupDirty(w)) setBackupOpen(false);
+      else if (due && !document.hidden && !document.querySelector('[aria-modal="true"]'))
+        setBackupOpen(true);
+    };
+    check();
+    const timer = setInterval(check, 1000);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [backendReady, saveBlocked]);
+  useEffect(() => {
+    if (network instanceof EspConsoleTransport) network.rememberBackup(workspace.backup);
+    backupClock.current.observe(workspace, Date.now());
+    if (!backupDirty(workspace)) setBackupOpen(false);
+  }, [workspace, network]);
+  const exportJSON = async () => {
+    if (exportBusy.current) return;
+    exportBusy.current = true;
+    setExporting(true);
+    try {
+      const requested = latest.current;
+      let floor = backupSequenceFloor(requested),
+        localOnly = false;
+      if (network instanceof EspConsoleTransport) {
+        try {
+          if (!network.getSnapshot().connected) throw new Error('offline');
+          floor = (await network.reserveBackupSequence(requested, floor)) - 1;
+        } catch {
+          localOnly = true;
+        }
+      }
+      const current = latest.current;
+      if (
+        current.draft.id !== requested.draft.id ||
+        backupInfo(current).major !== backupInfo(requested).major
+      ) {
+        floor = 0;
+        localOnly = true;
+      }
+      const next = downloadWorkspace(current, floor);
+      setWorkspace((w) => (w.draft.id === next.draft.id ? { ...w, backup: next.backup } : w));
+      setBackupOpen(false);
+      setToast(
+        `JSON ${backupNumber(next.backup!)} передан браузеру${localOnly ? ' · локальный номер' : ''}`,
+      );
+    } catch (e) {
+      setToast(e instanceof Error ? e.message : 'Не удалось скачать JSON');
+    } finally {
+      exportBusy.current = false;
+      setExporting(false);
+    }
+  };
   const changeCell = useCallback(
     (cell: CellSelection, changes: Record<string, unknown>) =>
       setWorkspace((w) => ({ ...w, draft: updateCell(w.draft, cell, changes) })),
@@ -477,7 +551,7 @@ export default function App() {
       const next = parseBackup(await file.text());
       if (!(await ask({ message: 'Заменить текущую партитуру из JSON?', accept: 'Заменить' })))
         return;
-      setWorkspace({ ...next, interfaceVersion: INTERFACE_VERSION });
+      setWorkspace({ ...importedBackup(next), interfaceVersion: INTERFACE_VERSION });
       setSaveBlocked(false);
       setSelectedStepId(next.draft.steps[0].id);
       setSelection(null);
@@ -643,11 +717,18 @@ export default function App() {
             <Waves size={18} />
           </button>
           <span className="header-divider" />
+          <BackupSeries
+            info={backupInfo(workspace)}
+            disabled={exporting}
+            onChange={(major) => setWorkspace((w) => changeBackupMajor(w, major))}
+          />
           <button
             className="icon-button"
             aria-label="Скачать JSON"
             title="Скачать JSON"
-            onClick={() => downloadWorkspace(workspace)}
+            onClick={exportJSON}
+            disabled={exporting}
+            aria-busy={exporting}
           >
             <Download size={17} />
           </button>
@@ -656,6 +737,7 @@ export default function App() {
             aria-label="Загрузить JSON"
             title="Загрузить JSON"
             onClick={() => importInput.current?.click()}
+            disabled={exporting}
           >
             <Upload size={17} />
           </button>
@@ -708,6 +790,16 @@ export default function App() {
           />
         </div>
       </header>
+      {backupOpen && (
+        <BackupPrompt
+          onDownload={exportJSON}
+          disabled={exporting}
+          onLater={() => {
+            backupClock.current.snooze(Date.now());
+            setBackupOpen(false);
+          }}
+        />
+      )}
       <main className="workspace">
         <section className="matrix-area">
           <Matrix

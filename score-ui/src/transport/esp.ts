@@ -11,6 +11,10 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
   private snapshot: NetworkSnapshot = { connected: false, testEnabled: false, devices: {} };
   private listeners = new Set<() => void>();
   private token = '';
+  private backupMeta: Workspace['backup'];
+  rememberBackup(backup: Workspace['backup']) {
+    this.backupMeta = backup;
+  }
   private manifest: {
     version: number;
     fingerprint?: string;
@@ -80,6 +84,8 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const history = prior && n.sent >= prior.sent ? prior.history : [];
       devices[key] = {
         mac: key,
+        firmwareVersion: typeof n.firmwareVersion === 'string' ? n.firmwareVersion : null,
+        dimmerInverted: n.pwmConfig?.inverted12 ?? n.pwmConfig?.inverted,
         role: n.role === 'remote' ? 'remote' : n.role === 'helmet' ? 'helmet' : 'slave',
         name: n.name,
         ip: n.ip,
@@ -111,6 +117,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       testEnabled: data.measuring,
       devices,
       masterMac: data.mac,
+      masterFirmwareVersion: data.version,
       activeStep: data.console.step,
       activeStepId: data.console.stepId,
       livePreview: data.console.livePreview,
@@ -180,9 +187,29 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     await this.status();
     const r = await this.request('/api/console/workspace', {}, 7000),
       text = await r.text();
-    return text === 'null' ? null : parseBackup(text);
+    const workspace = text === 'null' ? null : parseBackup(text);
+    this.backupMeta = workspace?.backup;
+    return workspace;
+  }
+  async reserveBackupSequence(workspace: Workspace, floor: number): Promise<number> {
+    const major = workspace.backup?.major ?? 1,
+      r = await this.post('/api/console/backup-sequence', {
+        project: workspace.draft.id,
+        major,
+        floor,
+      }),
+      data = await r.json();
+    if (
+      data.major !== major ||
+      !Number.isSafeInteger(data.minor) ||
+      data.minor <= floor ||
+      data.minor >= Number.MAX_SAFE_INTEGER
+    )
+      throw new Error('Некорректный номер JSON от мастера');
+    return data.minor;
   }
   async saveWorkspace(workspace: Workspace) {
+    this.backupMeta = workspace.backup;
     if (!this.token) await this.status();
     await this.request(
       `/api/console/workspace?token=${this.token}`,
@@ -204,7 +231,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         throw new Error('Тип прибора и прошивки контроллера не совпадают: Helmet / стандартный');
       if (state?.online && !state.localScoreSupported)
         throw new Error(
-          `Обновите прошивку ${state.name ?? device.mac} до 0.7.4: нужен запуск локальных сцен`,
+          `Обновите прошивку ${state.name ?? device.mac}: нужен протокол сцен, совместимый с Theatre console ${INTERFACE_VERSION}`,
         );
     }
     return devices;
@@ -227,6 +254,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       interfaceVersion: INTERFACE_VERSION,
       draft: project,
       published,
+      ...(this.backupMeta ? { backup: this.backupMeta } : {}),
     };
     await this.request(
       `/api/console/publish?token=${this.token}`,

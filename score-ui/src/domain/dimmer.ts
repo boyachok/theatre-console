@@ -33,7 +33,15 @@ export interface DimmerClock {
   position: number;
   cycle: number;
 }
+interface LightTarget {
+  maximum: number;
+  fadeIn: number;
+  fadeOut: number;
+  animation?: DimmerAnimation;
+}
 export interface LightRuntime {
+  pending?: LightTarget;
+  enabled?: boolean;
   startAt?: number | null;
   requestedAt?: number;
   startDelay?: number;
@@ -76,14 +84,63 @@ export function dimmerFactor(a: DimmerAnimation, clock: DimmerClock) {
   const floor = Math.round(a.floor) / 100;
   return floor + (1 - floor) * wave;
 }
-export function sampleDimmer(light: LightRuntime, now: number): LightRuntime {
-  if (light.startAt != null && now < light.startAt) return { ...light, value: 0 };
+function sampleRunning(light: LightRuntime, now: number): LightRuntime {
   const clock =
     light.animation && light.clock ? advance(light.clock, light.animation, now) : undefined;
   const factor = light.animation && clock ? dimmerFactor(light.animation, clock) : 1;
   const e = light.envelope,
     blend = e.duration ? Math.min(1, Math.max(0, (now - e.at) / e.duration)) : 1;
-  return { ...light, startAt: null, clock, value: e.from * (1 - blend) + e.to * factor * blend };
+  return { ...light, clock, value: e.from * (1 - blend) + e.to * factor * blend };
+}
+function beginLight(
+  light: LightRuntime,
+  target: LightTarget,
+  now: number,
+  restart: boolean,
+): LightRuntime {
+  const a = target.animation,
+    old = light.animation,
+    previous = light.clock;
+  const preserve =
+    !restart &&
+    a &&
+    previous &&
+    old?.mode === a.mode &&
+    (a.mode === 'random'
+      ? old.seed === a.seed
+      : Math.round(old.phase * 10) % 3600 === Math.round(a.phase * 10) % 3600);
+  const clock = a
+    ? preserve
+      ? { ...previous!, position: Math.floor((previous!.position * periodMs(a)) / periodMs(old!)) }
+      : {
+          at: now,
+          cycle: 0,
+          position:
+            a.mode === 'random'
+              ? 0
+              : Math.floor((periodMs(a) * (Math.round(a.phase * 10) % 3600)) / 3600),
+        }
+    : undefined;
+  return {
+    ...light,
+    startAt: null,
+    pending: undefined,
+    animation: a,
+    clock,
+    envelope: {
+      from: light.value,
+      to: target.maximum,
+      at: now,
+      duration: (target.maximum >= light.envelope.to ? target.fadeIn : target.fadeOut) * 1000,
+    },
+  };
+}
+export function sampleDimmer(light: LightRuntime, now: number): LightRuntime {
+  if (light.startAt != null && light.pending && now >= light.startAt) {
+    const attained = sampleRunning(light, light.startAt);
+    return sampleRunning(beginLight(attained, light.pending, light.startAt, true), now);
+  }
+  return sampleRunning(light, now);
 }
 export function retargetDimmer(
   light: LightRuntime,
@@ -109,58 +166,19 @@ export function retargetDimmer(
   const requestedAt = !restart && current.startAt != null ? (current.requestedAt ?? now) : now;
   const waiting =
     enabled &&
-    cue.value > 0 &&
     delay > 0 &&
-    (restart || current.startAt != null || !light.signature || light.envelope.to === 0);
+    (restart || current.startAt != null || !light.signature || light.enabled === false);
   const beginAt = waiting ? Math.max(now, requestedAt + delay) : now;
   const a =
     enabled && cue.animation?.enabled && cue.animation.mode !== 'static'
       ? { ...cue.animation }
       : undefined;
-  let clock: DimmerClock | undefined;
-  if (a) {
-    const old = current.animation,
-      previous = current.clock;
-    if (
-      !restart &&
-      !waiting &&
-      previous &&
-      old?.mode === a.mode &&
-      (a.mode === 'random'
-        ? old.seed === a.seed
-        : Math.round(old.phase * 10) % 3600 === Math.round(a.phase * 10) % 3600)
-    )
-      clock = {
-        ...previous,
-        position: Math.floor((previous.position * periodMs(a)) / periodMs(old)),
-      };
-    else
-      clock = {
-        at: beginAt,
-        cycle: 0,
-        position:
-          a.mode === 'random'
-            ? 0
-            : Math.floor((periodMs(a) * (Math.round(a.phase * 10) % 3600)) / 3600),
-      };
-  }
-  const maximum = enabled ? cue.value : 0;
+  const target: LightTarget = { maximum: enabled ? cue.value : 0, fadeIn, fadeOut, animation: a };
+  const accepted = { ...current, enabled, requestedAt, startDelay: delay, signature };
   return sampleDimmer(
-    {
-      value: waiting ? 0 : current.value,
-      requestedAt,
-      startDelay: delay,
-      startAt: waiting ? beginAt : null,
-      signature,
-      animation: a,
-      clock,
-      envelope: {
-        from: waiting ? 0 : current.value,
-        to: maximum,
-        at: beginAt,
-        duration: (waiting || maximum >= light.envelope.to ? fadeIn : fadeOut) * 1000,
-      },
-    },
+    waiting
+      ? { ...accepted, startAt: beginAt, pending: target }
+      : beginLight(accepted, target, now, restart || current.startAt != null),
     now,
   );
 }

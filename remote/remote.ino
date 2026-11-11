@@ -11,7 +11,7 @@
 // Dedicated remote: maintenance HTTP/OTA only. No filesystem/PWM/relays/audio.
 constexpr uint8_t FORWARD_PIN=13,BACK_PIN=14,STATUS_PIN=48;
 WifiTransport network;Remote::Buttons buttons;Remote::Outbox outbox;ControlWebServer web(80);
-uint8_t masterMAC[6]{};bool masterKnown=false,hasPing=false;
+uint8_t masterMAC[6]{};bool masterKnown=false,hasPing=false,masterWantsFirmware=false;
 uint32_t selfBoot=1,firmwareBoot=1,masterSession=0,generation=0,masterSeen=0,lastPing=0,lastPingSeq=0,helloAt=0;
 uint32_t token=0,clockMaster=0,clockAt=0,whiteUntil=0,identifyUntil=0,longAckAt=0,longConfirmations=0;
 uint32_t sentCommands=0,ackedCommands=0,lastAck=0,whitePulses=0,diagSent=0,diagAcks=0,diagAt=0;bool diagPending=false;
@@ -30,6 +30,7 @@ bool setButtonTest(bool enabled){
 String remoteStatusJSON();void remoteWebBegin();void remoteWebTick();
 uint32_t randomId(){uint32_t n=esp_random();return n?n:1;}
 Packet message(Type type,uint32_t seq=0){Packet p=packet(type,masterSession,seq);p.deviceBoot=selfBoot;p.padding[0]='R';p.padding[1]=1;p.rssi=(int8_t)WiFi.RSSI();return p;}
+void sendFirmwareReport(){if(masterKnown&&masterWantsFirmware){auto p=firmwareReport(masterSession,selfBoot,FW_REMOTE);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}}
 void cancelInputs(){outbox.clear();buttons.cancel(digitalRead(FORWARD_PIN)==LOW,digitalRead(BACK_PIN)==LOW,millis());}
 void cancelLink(bool forget){
  selfBoot=randomId();hasPing=false;lastPingSeq=token=0;diagPending=false;longAckAt=0;cancelInputs();
@@ -52,14 +53,14 @@ void receiveRemote(){
   if(p.type==DISCOVER&&p.session){
    if(masterKnown&&memcmp(masterMAC,wire.mac,6)&&now-masterSeen<15000)continue;
    if(!masterKnown||memcmp(masterMAC,wire.mac,6)||masterSession!=p.session){cancelLink(true);memcpy(masterMAC,wire.mac,6);masterKnown=true;masterSession=p.session;grade=WARMUP;}
-   masterSeen=now;helloAt=now+20+esp_random()%350;continue;
+   masterSeen=now;masterWantsFirmware=firmwareRequested(p);helloAt=now+20+esp_random()%350;continue;
   }
   if(!masterKnown||memcmp(masterMAC,wire.mac,6)||p.session!=masterSession||p.deviceBoot!=selfBoot)continue;
   if(p.type==IDENTIFY){identifyUntil=now+5000;continue;}if(!remoteTag(p))continue;
   if(p.type==REMOTE_PING&&p.commandId&&p.seq){
    if(lastPingSeq&&(int32_t)(p.seq-lastPingSeq)<=0)continue;
    lastPingSeq=p.seq;masterSeen=lastPing=clockAt=now;hasPing=true;clockMaster=p.uptime;token=p.commandId;currentStep=p.value;grade=p.health<=OFFLINE?(Health)p.health:BAD;
-   Packet pong=message(REMOTE_PONG,p.seq);pong.commandId=p.commandId;pong.value=p.value;network.send(masterMAC,(const uint8_t*)&pong,sizeof(pong));
+   Packet pong=message(REMOTE_PONG,p.seq);pong.commandId=p.commandId;pong.value=p.value;network.send(masterMAC,(const uint8_t*)&pong,sizeof(pong));sendFirmwareReport();
   }else if(p.type==REMOTE_ACK){
    if(p.commandId==0&&diagPending&&now-diagAt<1500){diagPending=false;diagAcks++;diagResult=p.result;masterSeen=now;}
    else {Remote::Action action=Remote::NONE;if(outbox.acknowledge(p.commandId,&action)){
@@ -83,7 +84,7 @@ void loop(){
  network.tick();uint32_t now=millis();if(generation!=network.generation){generation=network.generation;cancelLink(true);}
  if(hasPing&&now-lastPing>Remote::LEASE_MS)cancelLink(false);
  receiveRemote();now=millis();
- if(network.ready()&&masterKnown&&helloAt&&(int32_t)(now-helloAt)>=0){helloAt=0;Packet hello=message(REMOTE_HELLO);network.send(masterMAC,(const uint8_t*)&hello,sizeof(hello));}
+ if(network.ready()&&masterKnown&&helloAt&&(int32_t)(now-helloAt)>=0){helloAt=0;Packet hello=message(REMOTE_HELLO);network.send(masterMAC,(const uint8_t*)&hello,sizeof(hello));sendFirmwareReport();}
  if(diagPending&&now-diagAt>=1500)diagPending=false;
  bool live=canOperate(now),forward=digitalRead(FORWARD_PIN)==LOW,back=digitalRead(BACK_PIN)==LOW;
  uint32_t released=buttonProbe.releases[0]+buttonProbe.releases[1];buttonProbe.tick(forward,back,now);
