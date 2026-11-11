@@ -4,10 +4,10 @@
 #include "../console/score_runtime.h"
 #include "../console/lan_wire.h"
 int main(){
- assert(sizeof(Show::Cue)==314&&sizeof(Show::Packet)==358);
+ assert(sizeof(Show::Cue)==389&&sizeof(Show::Packet)==433);
  const char known[]="123456789";assert(Show::crc32(known,9)==0xcbf43926);
  uint8_t wire[532]{},mac[]={0xA0,1,2,3,4,5},dest[]={0xB0,1,2,3,4,6};Show::Packet p{};p.run=55;p.transition=1;p.cue.dimmerMask=1;p.cue.dimmers[0]={255,1000,2000};p.cue.relayMask=2;p.cue.relays[1]={1,2,100,200};
- assert(Show::valid(p.cue));assert(encodeLAN(mac,dest,(uint8_t*)&p,sizeof(p),wire)==378);LanHeader h;assert(decodeLAN(wire,378,h)&&h.length==358);
+ assert(Show::valid(p.cue));assert(encodeLAN(mac,dest,(uint8_t*)&p,sizeof(p),wire)==453);LanHeader h;assert(decodeLAN(wire,453,h)&&h.length==433);
  const uint8_t expectedPins[12]={5,6,7,15,16,17,18,8,9,10,11,12};for(int i=0;i<12;i++)assert(PWM_PINS[i]==expectedPins[i]);assert(RELAY_PIN==39&&RELAY2_PIN==38&&PLAYER_RX==1&&PLAYER_TX==2&&STRIP_PIN==47);
  Actors actors;actors.begin();Show::Runner runner(actors);runner.begin();assert(mockModes[RELAY2_PIN]==INPUT);assert(mockUARTRx==1&&mockUARTTx==2&&mockUARTBaud==9600);
  runner.apply(p,0);assert(mockLevels[RELAY2_PIN]==HIGH);runner.tick(50);assert(!runner.active||mockLevels[RELAY2_PIN]==HIGH);runner.tick(100);assert(mockLevels[RELAY2_PIN]==LOW);
@@ -33,5 +33,5 @@ int main(){
  Show::SlaveStore store;Show::Cue cues[3]{};cues[1].dimmerMask=1;cues[1].dimmers[0].value=44;
  Show::Packet part{};part.version=2;part.total=3;part.checksum=Show::crc32(cues,sizeof(cues));part.step=2;part.cue=cues[2];assert(store.accept(part)&&store.nextMissing()==0);part.step=0;part.cue=cues[0];assert(store.accept(part)&&store.nextMissing()==1);part.step=1;part.cue=cues[1];assert(store.accept(part)&&store.version==2);
  Show::SlaveStore loaded;loaded.begin();assert(loaded.version==2&&loaded.cues.size()==3&&loaded.cues[1].dimmers[0].value==44);
- puts("Console: 12 PWM + WS2811 RGB/GRB, 400/800 kHz, asynchronous busy/stop; 358-byte framing, CRC, local fades/retries/stale rejection, safe second relay, stopped-state latch, out-of-order score transfer and flash reload passed");
+ puts("Console: 12 PWM + WS2811 RGB/GRB, 400/800 kHz, asynchronous busy/stop; 433-byte framing, CRC, local fades/retries/stale rejection, safe second relay, stopped-state latch, out-of-order score transfer and flash reload passed");
 }

@@ -1,8 +1,9 @@
-import type { Project, Step } from './schema.ts';
-import { percentToDuty, effectiveStrip } from './project.ts';
+import type { Project, Step, DimmerCue } from './schema.ts';
+import { percentToDuty, effectiveStrip, acParameter, acCue } from './project.ts';
 import { validateProject } from './validation.ts';
 import { dimmerAnimationWire } from './dimmer.ts';
 export interface WireCue {
+  ac?: { enabled: number; d: number[] };
   dimMask: number;
   relayMask: number;
   d: number[][];
@@ -17,6 +18,13 @@ export interface CompiledDevice {
   cues: WireCue[];
 }
 const ms = (seconds: number) => Math.round(seconds * 1000);
+const lightWire = (c: DimmerCue, step: Step) => [
+  percentToDuty(c.value),
+  ms(c.fadeIn ?? step.timings.lightIn),
+  ms(c.fadeOut ?? step.timings.lightOut),
+  ...dimmerAnimationWire(c),
+  ...(ms(c.startDelay ?? 0) ? [ms(c.startDelay ?? 0)] : []),
+];
 const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 function programKey(value: unknown) {
   let h = 2166136261;
@@ -35,6 +43,7 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
       const c = step.devices[device.id];
       return (
         device.dimmers.some((p) => p.enabled && c.dimmers[p.id].value > 0) ||
+        (device.profile !== 'helmet' && acParameter(device).enabled && acCue(c).value > 0) ||
         device.relays.some((p) => p.enabled && c.relays[p.id].on) ||
         (device.audio.enabled &&
           (device.profile === 'helmet' ? !!c.audio.voiceOn : c.audio.track !== null)) ||
@@ -60,18 +69,14 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
       const action = device.strip.enabled && fx ? 2 : 1,
         enabled = Number(device.strip.enabled);
       return {
+        ...(device.profile !== 'helmet' && acParameter(device).enabled
+          ? { ac: { enabled: 1, d: lightWire(acCue(c), step) } }
+          : {}),
         dimMask: device.dimmers.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),
         relayMask: device.relays.reduce((mask, p, i) => mask | (p.enabled ? 1 << i : 0), 0),
         d: Array.from({ length: 12 }, (_, i) => {
           const p = device.dimmers[i];
-          return p && device.profile !== 'helmet'
-            ? [
-                percentToDuty(c.dimmers[p.id].value),
-                ms(c.dimmers[p.id].fadeIn ?? step.timings.lightIn),
-                ms(c.dimmers[p.id].fadeOut ?? step.timings.lightOut),
-                ...dimmerAnimationWire(c.dimmers[p.id]),
-              ]
-            : [0, 0, 0];
+          return p && device.profile !== 'helmet' ? lightWire(c.dimmers[p.id], step) : [0, 0, 0];
         }),
         r: device.relays.map((p) =>
           device.profile === 'helmet'
@@ -92,7 +97,10 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
                 Number(device.audio.enabled),
                 ms(c.audio.fadeIn ?? step.timings.audioIn),
                 ms(c.audio.fadeOut ?? step.timings.audioOut),
-                ...(ms(c.audio.startDelay ?? 0) ? [ms(c.audio.startDelay ?? 0)] : []),
+                ...(ms(c.audio.startDelay ?? 0) || c.audio.loop
+                  ? [ms(c.audio.startDelay ?? 0)]
+                  : []),
+                ...(c.audio.loop ? [1] : []),
               ],
         stripAction: action,
         s: [

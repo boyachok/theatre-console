@@ -1,5 +1,14 @@
 # История Theatre console
 
+## 0.7.12 — подготовлено без прошивки
+
+- Opt-in «Диммер220», отдельное safety confirmation; brightness/fade/delay/animation,
+  AC period≥40мс, GPIO41/40. DefaultOFF и отсутствие в helmet.
+- Галочка «Зациклить трек», optional audio.loop, отсутствие=false.
+- Задержка каждого12DIM/AC0–3600с, text/log sliders; cell fade controls без spinner.
+- Старые published JSON/fingerprint без rewrite;48domain и MOCK browser/mobile.
+  [Полные правила](../docs/LIGHT_DELAY_AUDIO_LOOP.md), [AC](../docs/AC_DIMMER.md).
+
 ## 0.7.2 — подтверждения до перезагрузки и мониторинг remote
 
 - Свои подтверждения вместо window.confirm, в том числе импорт/приборы/сеть.

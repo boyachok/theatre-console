@@ -72,5 +72,8 @@ int main(){
  assert(disconnected.player.bootSettled()&&!disconnected.player.ready());YX::Parser offline;bool muted=false,selected=false;
  for(auto c:mockUARTOut)if(offline.feed(c)){assert(offline.buf[3]!=YX::PLAY_TRACK&&offline.buf[3]!=YX::RESUME&&offline.buf[3]!=YX::NEXT);if(offline.buf[3]==YX::VOLUME&&offline.value()==0)muted=true;if(offline.buf[3]==YX::SELECT&&offline.value()==2)selected=true;}
  assert(muted&&selected);
+ // An EOF arriving before a queued loop-enable TX must still stop the single file, not pretend the mode has applied.
+ mockNow=18000;mockUARTOut.clear();Player race;race.autoPoll=false;race.begin();for(mockNow=18000;mockNow<=20500;mockNow+=10)race.tick();assert(race.startTrack(7));for(mockNow=21000;mockNow<=21500;mockNow+=10)race.tick();assert(race.setRepeat(true));inject(YX::FILE_END,7);mockNow=21501;race.tick();assert(race.state==0&&race.diagnostics().lastTx[3]==YX::STOP&&race.freeSlots()==8);
+ assert(race.startTrack(8,true));for(mockNow=22000;mockNow<=22500;mockNow+=10)race.tick();assert(race.setRepeat(false));inject(YX::FILE_END,8);mockNow=22501;race.tick();assert(race.diagnostics().lastTx[3]==YX::REPEAT);inject(YX::FILE_END,8);mockNow=22600;race.tick();assert(race.state==0&&race.diagnostics().lastTx[3]==YX::STOP);
  puts("YX6300 actual driver: RX1/TX2 + complete slave pin map, 10B checksum/parser/resync, safe muted TF initialization/200ms settle, real replies vs echoes, atomic start/actual TX timestamp, volume telemetry, stop/EOF/repeat/reboot, queue limits, RX/TX failures, legacy100B + extended116B diagnostics passed (UART mocked; no physical sound proof)");
 }

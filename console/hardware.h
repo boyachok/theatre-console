@@ -11,8 +11,9 @@ constexpr uint8_t RELAY_PIN=39;
 constexpr uint8_t PLAYER_TX=2; // ESP TX -> YX6300 module RX (not the board's COM TX label)
 constexpr uint8_t PLAYER_RX=1; // ESP RX <- YX6300 module TX, 3.3 V ONLY
 constexpr uint8_t RGB_PIN=48;
+constexpr uint8_t AC_ZC_PIN=41,AC_GATE_PIN=40; // Isolated 3.3V Z-C input; active-HIGH optotriac gate, external pulldown required.
 constexpr bool validSlavePinMap(){
- const uint8_t fixed[]={RELAY_PIN,RELAY2_PIN,PLAYER_TX,PLAYER_RX,STRIP_PIN,RGB_PIN};
+ const uint8_t fixed[]={RELAY_PIN,RELAY2_PIN,PLAYER_TX,PLAYER_RX,STRIP_PIN,RGB_PIN,AC_ZC_PIN,AC_GATE_PIN};
  for(unsigned i=0;i<DIMMER_COUNT;i++){for(unsigned j=0;j<i;j++)if(PWM_PINS[i]==PWM_PINS[j])return false;for(auto p:fixed)if(PWM_PINS[i]==p)return false;}
  for(unsigned i=0;i<sizeof(fixed);i++)for(unsigned j=0;j<i;j++)if(fixed[i]==fixed[j])return false;
  return true;

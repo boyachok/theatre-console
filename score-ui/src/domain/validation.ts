@@ -69,7 +69,13 @@ export function validateProject(value: unknown): asserts value is Project {
       device.stripRate === undefined || [800, 400].includes(device.stripRate),
       'Неверная частота ленты',
     );
-    const parameters = [...device.dimmers, ...device.relays, device.audio, device.strip];
+    const parameters = [
+      ...device.dimmers,
+      ...device.relays,
+      device.audio,
+      device.strip,
+      ...(device.acDimmer === undefined ? [] : [device.acDimmer]),
+    ];
     for (const p of parameters)
       ensure(
         object(p) &&
@@ -83,7 +89,9 @@ export function validateProject(value: unknown): asserts value is Project {
     unique(parameters);
     if (device.profile === 'helmet')
       ensure(
-        [...device.dimmers, ...device.relays].every((p: any) => !p.enabled),
+        [...device.dimmers, ...device.relays, ...(device.acDimmer ? [device.acDimmer] : [])].every(
+          (p: any) => !p.enabled,
+        ),
         'Helmet не поддерживает диммеры и реле',
       );
     ensure(
@@ -131,10 +139,16 @@ export function validateProject(value: unknown): asserts value is Project {
           object(cue.strip),
         'В шаге нет данных прибора',
       );
-      for (const p of device.dimmers) {
-        const c = cue.dimmers[p.id];
+      for (const c of [
+        ...device.dimmers.map((p: any) => cue.dimmers[p.id]),
+        ...(cue.ac === undefined ? [] : [cue.ac]),
+      ]) {
         ensure(
-          object(c) && number(c.value, 100) && optional(c.fadeIn) && optional(c.fadeOut),
+          object(c) &&
+            number(c.value, 100) &&
+            optional(c.fadeIn) &&
+            optional(c.fadeOut) &&
+            (c.startDelay === undefined || number(c.startDelay)),
           'Неверная яркость/фейд',
         );
         if (c.animation !== undefined) {
@@ -144,7 +158,7 @@ export function validateProject(value: unknown): asserts value is Project {
               typeof a.enabled === 'boolean' &&
               dimmerModes.includes(a.mode) &&
               number(a.period) &&
-              a.period >= 0.02 &&
+              a.period >= (c === cue.ac ? 0.04 : 0.02) &&
               number(a.phase, 360) &&
               Number.isInteger(a.seed) &&
               number(a.seed, 0xffffffff) &&
@@ -164,7 +178,8 @@ export function validateProject(value: unknown): asserts value is Project {
       }
       const a = cue.audio;
       ensure(
-        (a.startDelay === undefined || number(a.startDelay)) &&
+        (a.loop === undefined || typeof a.loop === 'boolean') &&
+          (a.startDelay === undefined || number(a.startDelay)) &&
           (a.voiceOn === undefined || typeof a.voiceOn === 'boolean') &&
           (a.track === null || (Number.isInteger(a.track) && a.track > 0 && a.track <= 65535)) &&
           (a.lastTrack === undefined ||

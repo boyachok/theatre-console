@@ -49,14 +49,14 @@ static_assert(sizeof(Packet)==72&&sizeof(LegacyPacket)==64&&sizeof(DebugPacket)=
 // Optional HELLO/ECHO telemetry. Older 0.5.0 producers leave this tag zero.
 inline void setPWMFrequency(Packet &p,uint32_t hz){
   if(p.type!=HELLO&&p.type!=ECHO)return;
-  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=10;p.value=hz&0xffff;
+  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=12;p.value=hz&0xffff;
 }
-// P/10 regular and P/11 helmet support score9 delayed audio. P/8,P/9 are score8.
-// Service layout stays 72B. Older peers must never ignore an active audio delay.
-inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==5||p.padding[2]==7||p.padding[2]==9||p.padding[2]==11);}
-inline bool localScoreTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==10||p.padding[2]==11);}
+// P/12 regular and P/13 helmet support score10 AC/light-delay/audio-loop.
+// Service layout stays 72B. Older peers must never ignore new timed or mains outputs.
+inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==5||p.padding[2]==7||p.padding[2]==9||p.padding[2]==11||p.padding[2]==13);}
+inline bool localScoreTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==12||p.padding[2]==13);}
 inline uint32_t reportedPWMFrequency(const Packet &p){
-  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>11)||helmetTag(p))return 0;
+  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>13)||helmetTag(p))return 0;
   return p.value|((uint32_t)p.padding[1]<<16);
 }
 inline LegacyPacket legacyPacket(const Packet &p){

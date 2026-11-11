@@ -20,6 +20,7 @@ int main(){
  auto p=scene(1);p.cue.audio.enabled=1;inject(p);tick(1510);assert(runner.active&&runner.sequence==1&&runner.voice.requested()&&!runner.voice.available());
  auto ack=last(SCORE_ACK);assert(ack.result==APPLIED&&(ack.reserved&1)&&ack.seq==1&&ack.state.audioEnabled==0&&ack.state.audioState==255);
  int frames=mockRmtWrites;inject(p);tick(1511);assert(runner.sequence==1&&mockRmtWrites==frames); // No restart on duplicate.
+ auto unsupported=scene(2).cue;unsupported.audioLoop=1;assert(!Helmet::supported(unsupported));unsupported.audioLoop=0;unsupported.lightDelayMs[0]=500;assert(!Helmet::supported(unsupported));unsupported.lightDelayMs[0]=0;unsupported.ac.delayMs=500;assert(!Helmet::supported(unsupported));
  auto bad=scene(2);bad.cue.dimmerMask=1;bad.cue.dimmers[0].value=255;inject(bad);tick(1512);assert(last(SCORE_ACK).result==NOT_READY&&runner.sequence==1);
  bad=scene(2);bad.cue.audio.track=1;inject(bad);tick(1513);assert(last(SCORE_ACK).result==NOT_READY); // Not an XY player.
  bad=scene(2);bad.deviceBoot++;inject(bad);tick(1514);assert(runner.sequence==1);

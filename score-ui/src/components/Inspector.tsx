@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { RotateCcw } from 'lucide-react';
 import type { CellSelection, Project, Step, Timings } from '../domain/schema.ts';
+import { acParameter, acCue } from '../domain/project.ts';
 import type { PreviewEngine } from '../domain/playback.ts';
 import { FieldPair, NumberField, Section } from './Fields.tsx';
 import { DevicePreview } from './DevicePreview.tsx';
@@ -33,32 +34,37 @@ export function Inspector({
   const device =
     project.devices.find((d) => d.id === (selection?.deviceId ?? deviceId)) ?? project.devices[0];
   const parameter = selection
-    ? [...device.dimmers, ...device.relays, device.audio, device.strip].find(
+    ? [...device.dimmers, ...device.relays, device.audio, device.strip, acParameter(device)].find(
         (p) => p.id === selection.parameterId,
       )
     : null;
   const cue = step.devices[device.id];
+  const light = selection?.kind === 'ac' ? acCue(cue) : cue.dimmers[selection?.parameterId ?? ''];
   const change = (patch: Record<string, unknown>) => {
     if (selection) onChangeCell(selection, patch);
   };
   const timing = (key: keyof Timings, n: number | null) =>
     onStep(step.id, { timings: { ...step.timings, [key]: n ?? 0 } });
   const fadeFields = (kind: 'light' | 'audio') => {
-    const cell = kind === 'light' ? cue.dimmers[selection!.parameterId] : cue.audio;
+    const cell = kind === 'light' ? light : cue.audio;
     return (
       <Section title="Фейд">
         <FieldPair>
-          <NumberField
+          <SliderField
             label="Вход"
-            value={cell.fadeIn}
-            placeholder={String(step.timings[kind === 'light' ? 'lightIn' : 'audioIn'])}
+            value={cell.fadeIn ?? step.timings[kind === 'light' ? 'lightIn' : 'audioIn']}
+            min={0}
+            max={3600}
+            logarithmic
             suffix="с"
             onChange={(n) => change({ fadeIn: n })}
           />
-          <NumberField
+          <SliderField
             label="Выход"
-            value={cell.fadeOut}
-            placeholder={String(step.timings[kind === 'light' ? 'lightOut' : 'audioOut'])}
+            value={cell.fadeOut ?? step.timings[kind === 'light' ? 'lightOut' : 'audioOut']}
+            min={0}
+            max={3600}
+            logarithmic
             suffix="с"
             onChange={(n) => change({ fadeOut: n })}
           />
@@ -144,11 +150,11 @@ export function Inspector({
             <span>{device.name}</span>
             <h3>{parameter?.name}</h3>
           </div>
-          {selection.kind === 'dimmer' && (
+          {(selection.kind === 'dimmer' || selection.kind === 'ac') && (
             <>
               <NumberField
                 label="Яркость"
-                value={cue.dimmers[selection.parameterId].value}
+                value={light.value}
                 suffix="%"
                 min={0}
                 max={100}
@@ -161,12 +167,33 @@ export function Inspector({
                 type="range"
                 min="0"
                 max="100"
-                value={cue.dimmers[selection.parameterId].value}
+                value={light.value}
                 onChange={(e) => change({ value: Number(e.target.value) })}
               />
+              <SliderField
+                label="Задержка включения света"
+                value={light.startDelay ?? 0}
+                min={0}
+                max={3600}
+                logarithmic
+                suffix="с"
+                onChange={(startDelay) => change({ startDelay })}
+              />
+              <p className="muted">
+                От начала сцены; во время ожидания канал выключен. Затем начинаются фейд и анимация.
+                Новый шаг задаёт новую задержку.
+              </p>
+              {selection.kind === 'ac' && (
+                <p className="muted">
+                  220 В · GPIO41 Z-C → GPIO40 PSM. Только фазовое управление, не PWM. Нужны
+                  проверенные уровни 3.3 В, изоляция и охлаждение. Без Z-C выход блокируется; после
+                  ошибки — STOP, затем GO. Предпросмотр не измеряет сеть.
+                </p>
+              )}
               <DimmerAnimationEditor
                 key={`${step.id}/${device.id}/${selection.parameterId}`}
-                cue={cue.dimmers[selection.parameterId]}
+                cue={light}
+                minPeriod={selection.kind === 'ac' ? 0.04 : 0.02}
                 onChange={change}
               />
               {fadeFields('light')}
@@ -215,6 +242,14 @@ export function Inspector({
                 step={1}
                 onChange={(n) => change({ volume: n ?? 0 })}
               />
+              <label className="animation-enable">
+                <input
+                  type="checkbox"
+                  checked={cue.audio.loop ?? false}
+                  onChange={(e) => change({ loop: e.target.checked })}
+                />
+                Зациклить трек
+              </label>
               <SliderField
                 label="Задержка старта трека"
                 value={cue.audio.startDelay ?? 0}

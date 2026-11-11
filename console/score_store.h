@@ -19,20 +19,25 @@ inline uint32_t workspaceVersion(const String &body,String &fingerprint){JsonDoc
 inline bool atomicText(const char *path,const String &body){String temp=String(path)+".tmp";return stageText(temp.c_str(),body.c_str())&&LittleFS.rename(temp,path);}
 inline bool parseMAC(const char *s,uint8_t *out){unsigned n[6];if(!s||strlen(s)!=17||sscanf(s,"%x:%x:%x:%x:%x:%x",n,n+1,n+2,n+3,n+4,n+5)!=6)return false;for(int i=0;i<6;i++){if(n[i]>255)return false;out[i]=n[i];}return out[0]&&!(out[0]&1);}
 inline bool bounded(JsonVariantConst v,uint32_t maximum){return v.is<uint32_t>()&&v.as<uint32_t>()<=maximum;}
+inline bool decodeLight(JsonVariantConst row,Dimmer &d,DimmerAnimation &a,uint32_t &delay){
+ size_t n=row.size();if(n!=3&&n!=4&&n!=9&&n!=10)return false;
+ if(!bounded(row[0],255)||!bounded(row[1],3600000)||!bounded(row[2],3600000))return false;
+ d={row[0],row[1],row[2]};a={};delay=0;
+ if(n>=9){const uint32_t max[]={4,3600000,0xffffffffUL,100,100,100};for(unsigned k=0;k<6;k++)if(!bounded(row[k+3],max[k]))return false;a={row[3],row[4],row[5],row[6],row[7],row[8]};}
+ if(n==4||n==10){if(!bounded(row[n-1],3600000))return false;delay=row[n-1];}return validAnimation(a);
+}
 inline bool decodeCue(JsonVariantConst source,Cue &cue){
  if(!source.is<JsonObjectConst>()||!bounded(source["dimMask"],4095)||!bounded(source["relayMask"],3))return false;
  cue={};cue.dimmerMask=source["dimMask"];cue.relayMask=source["relayMask"];
  auto dim=source["d"].as<JsonArrayConst>(),rel=source["r"].as<JsonArrayConst>(),audio=source["a"].as<JsonArrayConst>();
- if((dim.size()!=8&&dim.size()!=12)||rel.size()!=2||(audio.size()!=5&&audio.size()!=6))return false;
- for(unsigned i=0;i<dim.size();i++){
-  if((dim[i].size()!=3&&dim[i].size()!=9)||!bounded(dim[i][0],255)||!bounded(dim[i][1],3600000)||!bounded(dim[i][2],3600000))return false;
-  cue.dimmers[i]={dim[i][0],dim[i][1],dim[i][2]};
-  if(dim[i].size()==9){const uint32_t max[]={4,3600000,0xffffffffUL,100,100,100};for(unsigned k=0;k<6;k++)if(!bounded(dim[i][k+3],max[k]))return false;cue.animations[i]={dim[i][3],dim[i][4],dim[i][5],dim[i][6],dim[i][7],dim[i][8]};}
- }
+ if((dim.size()!=8&&dim.size()!=12)||rel.size()!=2||(audio.size()!=5&&audio.size()!=6&&audio.size()!=7))return false;
+ for(unsigned i=0;i<dim.size();i++){uint32_t delay;if(!decodeLight(dim[i],cue.dimmers[i],cue.animations[i],delay))return false;cue.lightDelayMs[i]=delay;}
+ if(!source["ac"].isNull()){auto ac=source["ac"];uint32_t delay;if(!ac.is<JsonObjectConst>()||!bounded(ac["enabled"],1)||!decodeLight(ac["d"],cue.ac.dimmer,cue.ac.animation,delay))return false;cue.ac.enabled=ac["enabled"];cue.ac.delayMs=delay;}
  for(int i=0;i<2;i++){if(rel[i].size()!=4||!bounded(rel[i][0],1)||!bounded(rel[i][1],2)||!bounded(rel[i][2],3600000)||!bounded(rel[i][3],3600000))return false;cue.relays[i]={rel[i][0],rel[i][1],rel[i][2],rel[i][3]};}
  if(!bounded(audio[0],65535)||!bounded(audio[1],30)||!bounded(audio[2],1)||!bounded(audio[3],3600000)||!bounded(audio[4],3600000))return false;
  cue.audio={audio[0],audio[1],audio[2],audio[3],audio[4]};
- if(audio.size()==6){if(!bounded(audio[5],3600000))return false;setAudioDelay(cue,audio[5]);}
+ if(audio.size()>=6){if(!bounded(audio[5],3600000))return false;setAudioDelay(cue,audio[5]);}
+ if(audio.size()==7){if(!bounded(audio[6],1))return false;cue.audioLoop=audio[6];}
  auto s=source["s"].as<JsonArrayConst>();
  if(s.size()){
   const uint32_t max[17]={1,2,2,1024,255,255,255,255,255,255,100,100,1,3600000,0xffffffffUL,1,1};

@@ -28,16 +28,29 @@ public:
  }
 };
 class DimmerChannel {
- DimmerOscillator oscillator;Dimmer previous{};DimmerAnimation animation{};bool configured=false,enabled=false;
- float from=0,maximum=0;uint32_t at=0,duration=0;
+ DimmerOscillator oscillator;Dimmer previous{};DimmerAnimation animation{};bool configured=false,enabled=false,pending=false;
+ float from=0,maximum=0;uint32_t at=0,duration=0,requestedAt=0,due=0,delayMs=0;
+ void begin(const Dimmer &d,const DimmerAnimation &effect,bool on,uint32_t now,bool restart,float actual){
+  float target=on?d.value:0;duration=target>=maximum?d.inMs:d.outMs;from=actual;maximum=target;at=now;
+  DimmerAnimation off{};oscillator.apply(on?effect:off,now,restart);
+ }
 public:
- void reset(float actual,uint32_t now){from=maximum=actual;at=now;duration=0;configured=false;oscillator=DimmerOscillator{};}
- float value(uint32_t now){float mix=duration?std::min(1.f,(float)(uint32_t)(now-at)/duration):1;return from*(1-mix)+maximum*oscillator.factor(now)*mix;}
- void apply(const Dimmer &next,const DimmerAnimation &effect,bool on,uint32_t now,bool restart){
-  if(configured&&!restart&&on==enabled&&!memcmp(&next,&previous,sizeof(next))&&!memcmp(&effect,&animation,sizeof(effect)))return;
-  float actual=value(now),target=on?next.value:0;duration=target>=maximum?next.inMs:next.outMs;
-  from=actual;maximum=target;at=now;DimmerAnimation off{};oscillator.apply(on?effect:off,now,restart);
-  previous=next;animation=effect;enabled=on;configured=true;
+ void reset(float actual,uint32_t now){from=maximum=actual;at=now;duration=0;configured=pending=false;oscillator=DimmerOscillator{};}
+ bool waiting()const{return pending;}
+ float value(uint32_t now){
+  if(pending){if((int32_t)(now-due)<0)return 0;pending=false;begin(previous,animation,enabled,due,true,0);}
+  float mix=duration?std::min(1.f,(float)(uint32_t)(now-at)/duration):1;return from*(1-mix)+maximum*oscillator.factor(now)*mix;
+ }
+ void apply(const Dimmer &next,const DimmerAnimation &effect,bool on,uint32_t now,bool restart,uint32_t delay=0){
+  bool unchanged=configured&&on==enabled&&!memcmp(&next,&previous,sizeof(next))&&!memcmp(&effect,&animation,sizeof(effect));
+  if(!restart&&unchanged&&delay==delayMs)return;
+  float actual=value(now);bool wasPending=pending;
+  if(!restart&&unchanged&&!wasPending){delayMs=delay;return;} // Editing delay does not interrupt an already running light.
+  if(on&&next.value&&delay&&(restart||!configured||wasPending||!enabled||maximum==0)){
+   if(restart||!wasPending)requestedAt=now;due=requestedAt+delay;pending=true;from=maximum=0;duration=0;
+  }else{pending=false;begin(next,effect,on,now,restart||wasPending,actual);}
+  previous=next;animation=effect;enabled=on;configured=true;delayMs=delay;
+  if(pending&&(int32_t)(now-due)>=0){due=now;value(now);} // Shortened LIVE deadline is not retroactive.
  }
 };
 }

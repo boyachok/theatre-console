@@ -14,13 +14,15 @@ import {
   GripVertical,
   Link2,
   Music2,
+  Clock3,
+  Repeat2,
   Power,
   Settings2,
   Waves,
 } from 'lucide-react';
 import type { CellSelection, Column, DeviceCue, Project, StripEffect } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
-import { columnsFor, parameterCode } from '../domain/project.ts';
+import { columnsFor, parameterCode, acCue } from '../domain/project.ts';
 import type { NetworkTransport } from '../transport/network.ts';
 const DeviceIP = ({
   mac,
@@ -77,8 +79,9 @@ const ScoreCell = memo(function ScoreCell({
   const cell: CellSelection = { stepId, deviceId: device.id, parameterId: parameter.id, kind };
   const label = `${device.name} · ${parameter.name} · шаг ${index + 1}`;
   let content;
-  if (kind === 'dimmer') {
-    const value = cue.dimmers[parameter.id].value;
+  if (kind === 'dimmer' || kind === 'ac') {
+    const light = kind === 'ac' ? acCue(cue) : cue.dimmers[parameter.id],
+      value = light.value;
     content = (
       <button
         className={`value-button ${value > 0 ? 'lit' : 'zero'}`}
@@ -89,10 +92,10 @@ const ScoreCell = memo(function ScoreCell({
           onSelectCell(cell);
         }}
       >
-        {cue.dimmers[parameter.id].animation?.enabled &&
-          cue.dimmers[parameter.id].animation?.mode !== 'static' && (
-            <Waves size={11} aria-label="Анимация DIM" />
-          )}
+        {light.animation?.enabled && light.animation?.mode !== 'static' && (
+          <Waves size={11} aria-label="Анимация DIM" />
+        )}
+        {!!light.startDelay && <Clock3 size={10} aria-label="Задержка света" />}
         <span>{value}</span>
         <small>%</small>
       </button>
@@ -146,6 +149,7 @@ const ScoreCell = memo(function ScoreCell({
         }}
       >
         {track && <Music2 size={12} />}
+        {track && cue.audio.loop && <Repeat2 size={10} aria-label="Зациклить трек" />}
         <span>{track ?? '—'}</span>
         {track !== null && track === previousTrack && <Link2 size={11} />}
       </button>

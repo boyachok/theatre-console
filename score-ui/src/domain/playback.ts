@@ -1,5 +1,5 @@
 import type { Project, Step, StripEffect } from './schema.ts';
-import { clone, effectiveStrip } from './project.ts';
+import { clone, effectiveStrip, acParameter, acCue } from './project.ts';
 import { retargetDimmer, sampleDimmer } from './dimmer.ts';
 import type { LightRuntime } from './dimmer.ts';
 import { initialAudio, retargetAudio, sampleAudio } from './audio.ts';
@@ -17,6 +17,7 @@ export interface RelayRuntime {
   due: number | null;
 }
 export interface DeviceRuntime {
+  ac: LightRuntime;
   dimmers: Record<string, LightRuntime>;
   relays: Record<string, RelayRuntime>;
   audio: AudioRuntime;
@@ -47,6 +48,7 @@ function initial(project: Project): PlaybackSnapshot {
       project.devices.map((d) => [
         d.id,
         {
+          ac: { value: 0, envelope: envelope(0, 0, 0, 0) },
           dimmers: Object.fromEntries(
             d.dimmers.map((p) => [p.id, { value: 0, envelope: envelope(0, 0, 0, 0) }]),
           ),
@@ -112,6 +114,16 @@ export class PreviewEngine {
           restart || state.stepId !== step.id,
         );
       }
+      const ac = acCue(cue);
+      runtime.ac = retargetDimmer(
+        runtime.ac,
+        ac,
+        device.profile !== 'helmet' && acParameter(device).enabled,
+        ac.fadeIn ?? step.timings.lightIn,
+        ac.fadeOut ?? step.timings.lightOut,
+        now,
+        restart || state.stepId !== step.id,
+      );
       for (const p of device.relays.filter((p) => p.enabled)) {
         const relay = runtime.relays[p.id],
           target = cue.relays[p.id];
@@ -181,10 +193,13 @@ export class PreviewEngine {
           dimmers: { ...previous.dimmers },
           relays: { ...previous.relays },
           audio: { ...previous.audio },
+          ac: sampleDimmer(previous.ac, now),
         };
+        if (d.ac.value !== previous.ac.value || d.ac.clock || d.ac.startAt !== previous.ac.startAt)
+          changed = true;
         for (const [key, light] of Object.entries(previous.dimmers)) {
           const next = sampleDimmer(light, now);
-          if (next.value !== light.value || next.clock) {
+          if (next.value !== light.value || next.clock || next.startAt !== light.startAt) {
             changed = true;
             d.dimmers[key] = next;
           }
@@ -209,7 +224,7 @@ export class PreviewEngine {
   }
   trackEnded(deviceId: string) {
     const device = this.state.devices[deviceId];
-    if (!device) return;
+    if (!device || (device.audio.loop && device.audio.targetTrack !== null)) return;
     this.state = {
       ...this.state,
       devices: {

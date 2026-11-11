@@ -335,6 +335,9 @@ try {
   await page.getByLabel('Задержка старта трека', { exact: true }).fill('1.25');
   await page.waitForTimeout(600);
   assert.equal(draft.devices[0].cues[0].a[5], 1250);
+  await page.getByRole('checkbox', { name: 'Зациклить трек', exact: true }).check();
+  await page.waitForTimeout(550);
+  assert.equal(draft.devices[0].cues[0].a[6], 1);
   assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications);
   await cell.locator('button').click();
   await page.getByLabel('Яркость', { exact: true }).fill('60');
@@ -475,6 +478,46 @@ try {
     workspace.draft.steps[0].devices[project.devices[0].id].dimmers['pwm-1'].animation.period,
     2,
   );
+  // New mains channel is opt-in with a non-native, cancellable safety prompt; OFF edits store without execution.
+  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
+  const mainsCheck = settings.getByRole('checkbox', { name: 'Прибор 1 · AC220', exact: true });
+  assert.equal(await mainsCheck.isChecked(), false);
+  await mainsCheck.click();
+  let confirmation = page.getByRole('dialog', { name: 'Подтверждение', exact: true });
+  await confirmation.getByText('Сначала испытайте без 220 В', { exact: false }).waitFor();
+  await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click();
+  assert.equal(await mainsCheck.isChecked(), false);
+  await mainsCheck.click();
+  await confirmation.getByRole('button', { name: 'Включить канал', exact: true }).click();
+  await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  const acCell = page
+    .locator('.parameter-row[data-parameter="ac-220"]')
+    .first()
+    .locator('td')
+    .first();
+  await acCell.locator('button').click();
+  await page.getByLabel('Задержка включения света', { exact: true }).fill('2.5');
+  await page.getByLabel('Вход', { exact: true }).fill('1');
+  await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).check();
+  await page.getByLabel('Период анимации', { exact: true }).fill('0.04');
+  await page.waitForTimeout(1100);
+  let lastPublish = () =>
+    JSON.parse(calls.filter((c) => c.path.endsWith('/publish')).at(-1).raw).devices[0].cues[0];
+  assert.equal(workspace.draft.steps[0].devices[project.devices[0].id].ac.startDelay, 2.5);
+  assert.deepEqual(lastPublish().ac, { enabled: 1, d: [255, 1000, 0, 1, 40, 0, 0, 50, 0, 2500] });
+  await audioCell.locator('button').click();
+  await page.getByRole('checkbox', { name: 'Зациклить трек', exact: true }).uncheck();
+  await page.waitForTimeout(1000);
+  assert.equal(lastPublish().a.length, 6);
+  await cell.locator('button').click();
+  await page.getByLabel('Задержка включения света', { exact: true }).fill('0.75');
+  await page.waitForTimeout(1000);
+  assert.equal(lastPublish().d[0][9], 750);
+  assert.equal(status.console.running, false);
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
+    goes,
+  );
   for (const width of [390, 375, 320]) {
     await page.setViewportSize({ width, height: 844 });
     await page.waitForTimeout(100);
@@ -498,6 +541,12 @@ try {
     await page.mouse.wheel(0, 90);
     await page.waitForTimeout(80);
     assert.equal(await input.inputValue(), value);
+    const delay = sheet.getByLabel('Задержка включения света', { exact: true });
+    assert.equal(await delay.getAttribute('type'), 'text');
+    const delayValue = await delay.inputValue();
+    await sheet.getByLabel('Ползунок: Задержка включения света', { exact: true }).hover();
+    await page.mouse.wheel(0, 90);
+    assert.equal(await delay.inputValue(), delayValue);
     assert(await sheet.evaluate((el) => el.scrollWidth <= el.clientWidth));
     if (width === 390) await page.screenshot({ path: '/tmp/theatre-dimmer-0710-390.png' });
     await sheet.getByRole('button', { name: 'Закрыть', exact: true }).click();
@@ -518,7 +567,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    'MOCK ESP production UI: audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
+    'MOCK ESP production UI: opt-in Диммер220/safety-confirm cancel+enable, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

@@ -64,9 +64,9 @@ public:
   if(!file||initializing||freeSlots()<3)return false;
   // Atomic queue admission: never enqueue a partial mute/mode/play transaction.
   enqueue(YX::VOLUME,0);enqueue(YX::REPEAT,loop?0:1);enqueue(YX::PLAY_TRACK,file);
-  repeatTrack=loop;wantPlay=switchPending=true;return true;
+  wantPlay=switchPending=true;return true;
  }
- bool playTrack(uint16_t file){if(!file||initializing||freeSlots()<2)return false;enqueue(YX::REPEAT,1);enqueue(YX::PLAY_TRACK,file);repeatTrack=false;wantPlay=switchPending=true;return true;}
+ bool playTrack(uint16_t file){if(!file||initializing||freeSlots()<2)return false;enqueue(YX::REPEAT,1);enqueue(YX::PLAY_TRACK,file);wantPlay=switchPending=true;return true;}
  bool resume(){if(initializing||!enqueue(YX::RESUME))return false;wantPlay=switchPending=true;return true;}
  bool pause(){return enqueue(YX::PAUSE);}
  bool next(){if(initializing||!enqueue(YX::NEXT))return false;wantPlay=switchPending=true;return true;}
@@ -77,7 +77,7 @@ public:
   for(uint8_t k=count;k>0;k--){auto &f=queue[(head+k-1)%8];if(f.cmd==YX::PLAY_TRACK||f.cmd==YX::STOP||f.cmd==YX::SELECT||f.cmd==YX::REPEAT)break;if(f.cmd==YX::VOLUME){f.value=value;return true;}}
   return enqueue(YX::VOLUME,value);
  }
- bool setRepeat(bool value){if(!enqueue(YX::REPEAT,value?0:1))return false;repeatTrack=value;return true;}
+ bool setRepeat(bool value){return enqueue(YX::REPEAT,value?0:1);}
  bool setEq(uint8_t value){return value<=5&&enqueue(YX::EQ,value);}
  bool selectTF(){if(initializing)return false;stop();enqueue(YX::VOLUME,0);enqueue(YX::SELECT,2);enqueue(YX::STOP);return true;}
  void stop(){wantPlay=switchPending=false;requestedTrack=0;if(initializing&&initStage)return;head=count=0;enqueue(YX::STOP);} // Keep the safe STOP/mute/TF/STOP bootstrap intact under repeated offline ALL_OFF.
@@ -105,6 +105,7 @@ public:
    memcpy(recent[recentHead],bytes,10);recentHead=(recentHead+1)%4;if(recentCount<4)recentCount++;
    if(f.cmd==YX::SELECT){nextTx=now+200;if(initializing)initStage=2;}
    if(initializing&&initStage==2&&f.cmd==YX::STOP)initializing=false;
+   if(f.cmd==YX::REPEAT)repeatTrack=f.value==0; // Last complete TX, not queue acceptance (and not physical/ACK feedback).
    if(f.cmd==YX::PLAY_TRACK){requestedTrack=f.value;switchPending=false;playSentAt=now;if(!++playSerial)++playSerial;}
    else if(f.cmd==YX::NEXT||f.cmd==YX::PREVIOUS||f.cmd==YX::RESUME){requestedTrack=0;switchPending=false;}
   }else if(autoPoll&&!initializing&&(int32_t)(now-nextPoll)>=0){

@@ -88,8 +88,10 @@ export { Slider as SliderField };
 export function DimmerAnimationEditor({
   cue,
   onChange,
+  minPeriod = 0.02,
 }: {
   cue: DimmerCue;
+  minPeriod?: number;
   onChange: (patch: Record<string, unknown>) => void;
 }) {
   const a = cue.animation ?? defaultDimmerAnimation();
@@ -137,7 +139,7 @@ export function DimmerAnimationEditor({
             <Slider
               label="Период анимации"
               value={a.period}
-              min={0.02}
+              min={minPeriod}
               max={3600}
               logarithmic
               suffix="с"

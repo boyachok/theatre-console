@@ -2,7 +2,14 @@ import { Fragment, useState, useSyncExternalStore } from 'react';
 import { Check, Plus, Settings2, Trash2 } from 'lucide-react';
 import type { Device, Parameter, Project } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
-import { clamp, clone, createDevice, deviceProfile, parameterCode } from '../domain/project.ts';
+import {
+  clamp,
+  clone,
+  createDevice,
+  deviceProfile,
+  parameterCode,
+  acParameter,
+} from '../domain/project.ts';
 import { Modal } from './Modal.tsx';
 import { useConfirm } from './Confirm.tsx';
 import type { NetworkTransport } from '../transport/network.ts';
@@ -25,13 +32,31 @@ export function DevicesDialog({
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const update = (id: string, patch: Partial<Device>) =>
     setDevices((list) => list.map((d) => (d.id === id ? { ...d, ...patch } : d)));
-  const parameterChange = (device: Device, parameter: Parameter, patch: Partial<Parameter>) => {
+  const parameterChange = async (
+    device: Device,
+    parameter: Parameter,
+    patch: Partial<Parameter>,
+  ) => {
+    if (
+      parameter.id === acParameter(device).id &&
+      patch.enabled &&
+      !parameter.enabled &&
+      !(await ask({
+        message:
+          'Диммер220: GPIO41 — Z-C, GPIO40 — PSM. До включения необходимо проверить изолированную логику 3.3 В, входной ток PSM, защиту и охлаждение. ESP32 не выдерживает 5 В; GND не соединять с N/PE. Сначала испытайте без 220 В. В LIVE сохранение может сразу передать эту сцену. Включить канал?',
+        accept: 'Включить канал',
+      }))
+    )
+      return;
     const transform = (p: Parameter) => (p.id === parameter.id ? { ...p, ...patch } : p);
     update(device.id, {
       dimmers: device.dimmers.map(transform),
       relays: device.relays.map(transform),
       audio: transform(device.audio),
       strip: transform(device.strip),
+      ...(parameter.id === acParameter(device).id
+        ? { acDimmer: transform(acParameter(device)) }
+        : {}),
     });
   };
   const add = () => {
@@ -51,7 +76,7 @@ export function DevicesDialog({
     setDevices((list) => list.filter((d) => d.id !== device.id));
     if (selected === device.id) setSelected(null);
   };
-  const parameters = (d: Device) => [...d.dimmers, ...d.relays, d.strip, d.audio];
+  const parameters = (d: Device) => [...d.dimmers, ...d.relays, d.strip, d.audio, acParameter(d)];
   const save = () => {
     onSave(
       devices.map((device, index) => {
@@ -70,6 +95,7 @@ export function DevicesDialog({
           relays: device.relays.map(normalize),
           strip: normalize(device.strip),
           audio: normalize(device.audio),
+          ...(device.acDimmer ? { acDimmer: normalize(device.acDimmer) } : {}),
         };
       }),
     );
@@ -110,6 +136,7 @@ export function DevicesDialog({
                 'REL2',
                 'LED',
                 'SOU1',
+                'Диммер220',
               ].map((code) => (
                 <th key={code}>{code}</th>
               ))}
@@ -139,7 +166,9 @@ export function DevicesDialog({
                         checked={parameter.enabled}
                         disabled={
                           device.profile === 'helmet' &&
-                          [...device.dimmers, ...device.relays].some((p) => p.id === parameter.id)
+                          [...device.dimmers, ...device.relays, acParameter(device)].some(
+                            (p) => p.id === parameter.id,
+                          )
                         }
                         onChange={(e) =>
                           parameterChange(device, parameter, { enabled: e.target.checked })
@@ -167,7 +196,7 @@ export function DevicesDialog({
                 </tr>
                 {selected === device.id && (
                   <tr className="device-details">
-                    <td colSpan={18}>
+                    <td colSpan={19}>
                       <div className="device-detail-form">
                         <div className="device-detail-top">
                           <label className="field">

@@ -1,5 +1,6 @@
 import type { AudioCue } from './schema.ts';
 export interface AudioRuntime {
+  loop: boolean;
   track: number | null;
   targetTrack: number | null;
   status: 'playing' | 'paused' | 'stopped' | 'waiting';
@@ -20,6 +21,7 @@ const ramp = (from: number, to: number, seconds: number, at: number) => ({
   duration: seconds * 1000,
 });
 export const initialAudio = (): AudioRuntime => ({
+  loop: false,
   track: null,
   targetTrack: null,
   status: 'stopped',
@@ -69,7 +71,7 @@ export function retargetAudio(
   newScene: boolean,
   now: number,
 ): AudioRuntime {
-  const a = { ...sampleAudio(previous, now) },
+  const a = { ...sampleAudio(previous, now), loop: target.loop ?? false },
     track = enabled ? target.track : null;
   const pending = a.startAt !== null,
     different = track !== a.targetTrack,

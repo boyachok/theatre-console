@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import type { Device } from '../domain/schema.ts';
+import { acParameter } from '../domain/project.ts';
 import { COLORS } from '../domain/schema.ts';
 import type { PreviewEngine } from '../domain/playback.ts';
 import { StripCanvas } from './StripCanvas.tsx';
@@ -24,7 +25,10 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
               data-live-value={Math.round(runtime.dimmers[p.id]?.value ?? 0)}
             >
               <div>
-                <span>{i + 1}</span>
+                <span>
+                  {i + 1}
+                  {runtime.dimmers[p.id]?.startAt != null ? ' ◷' : ''}
+                </span>
                 <b>
                   {Math.round(runtime.dimmers[p.id]?.value ?? 0)}
                   <small>%</small>
@@ -40,6 +44,25 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
               </div>
             </div>
           ))}
+        {device.profile !== 'helmet' && acParameter(device).enabled && (
+          <div
+            className="preview-light"
+            data-live-parameter="ac-220"
+            data-live-value={Math.round(runtime.ac.value)}
+            title="Расчёт команды Диммер220; не измерение сети"
+          >
+            <div>
+              <span>220{runtime.ac.startAt != null ? ' ◷' : ''}</span>
+              <b>
+                {Math.round(runtime.ac.value)}
+                <small>%</small>
+              </b>
+            </div>
+            <div className="level-track">
+              <i style={{ width: `${runtime.ac.value}%`, background: COLORS.warm.hex }} />
+            </div>
+          </div>
+        )}
       </div>
       <div className="preview-relays">
         {device.relays
@@ -80,7 +103,9 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
                   ? 'Ⅱ'
                   : '■'}
           </span>
-          <span>{Math.round(runtime.audio.volume)}%</span>
+          <span>
+            {Math.round(runtime.audio.volume)}%{runtime.audio.loop ? ' ↻' : ''}
+          </span>
         </div>
       )}
       {device.strip.enabled && (

@@ -3,6 +3,7 @@ import type {
   Column,
   Device,
   DeviceCue,
+  DimmerCue,
   Parameter,
   Project,
   Step,
@@ -30,11 +31,16 @@ const parameter = (id: string, name: string, color: Parameter['color'] = 'white'
   color,
   enabled: true,
 });
+export const acParameter = (device: Device): Parameter =>
+  device.acDimmer ?? { id: 'ac-220', name: 'Диммер220', color: 'warm', enabled: false };
+export const lightDefault = (): DimmerCue => ({ value: 0, fadeIn: null, fadeOut: null });
+export const acCue = (cue: DeviceCue): DimmerCue => cue.ac ?? lightDefault();
 export function createDevice(index: number): Device {
   return {
     id: uid(),
     name: `Прибор ${index + 1}`,
     ip: null,
+    acDimmer: { id: 'ac-220', name: 'Диммер220', color: 'warm', enabled: false },
     dimmers: Array.from({ length: 12 }, (_, i) => parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`)),
     relays: Array.from({ length: 2 }, (_, i) =>
       parameter(`relay-${i + 1}`, `Реле ${i + 1}`, 'warm'),
@@ -48,6 +54,10 @@ export function deviceProfile(device: Device, profile: 'standard' | 'helmet'): D
   return {
     ...device,
     profile,
+    acDimmer: {
+      ...acParameter(device),
+      enabled: profile === 'helmet' ? false : acParameter(device).enabled,
+    },
     dimmers: device.dimmers.map((p) => ({
       ...p,
       enabled: profile === 'helmet' ? false : p.enabled,
@@ -81,6 +91,7 @@ export function effectiveStrip(project: Project, step: Step, deviceId: string) {
 }
 export function createDeviceCue(device: Device): DeviceCue {
   return {
+    ac: lightDefault(),
     dimmers: Object.fromEntries(
       device.dimmers.map((p) => [p.id, { value: 0, fadeIn: null, fadeOut: null }]),
     ),
@@ -183,6 +194,9 @@ export function columnsFor(project: Project, deviceId: string): Column[] {
       ...(device.profile === 'helmet'
         ? []
         : device.relays.map((parameter) => ({ device, parameter, kind: 'relay' as const }))),
+      ...(device.profile === 'helmet'
+        ? []
+        : [{ device, parameter: acParameter(device), kind: 'ac' as const }]),
       { device, parameter: device.strip, kind: 'strip' as const },
       { device, parameter: device.audio, kind: 'audio' as const },
     ])
@@ -209,6 +223,7 @@ export function replaceDevices(project: Project, devices: Device[]): Project {
   return touch(project, { devices, steps });
 }
 export function parameterCode(device: Device, parameter: Parameter): string {
+  if (parameter.id === acParameter(device).id) return 'AC220';
   const dim = device.dimmers.findIndex((p) => p.id === parameter.id);
   if (dim >= 0) return `DIM${dim + 1}`;
   const relay = device.relays.findIndex((p) => p.id === parameter.id);
@@ -236,7 +251,8 @@ export function updateCell(
   return updateStep(project, cell.stepId, (step) => {
     const source = step.devices[cell.deviceId];
     let cue: DeviceCue;
-    if (cell.kind === 'dimmer')
+    if (cell.kind === 'ac') cue = { ...source, ac: { ...acCue(source), ...changes } };
+    else if (cell.kind === 'dimmer')
       cue = {
         ...source,
         dimmers: {

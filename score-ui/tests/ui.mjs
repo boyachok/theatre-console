@@ -55,7 +55,7 @@ try {
   assert.equal(await p.locator('.parameter-row').count(), 160);
   await cell(p, 0, 'pwm-1').locator('button').click();
   assert.equal(await p.getByLabel('Яркость', { exact: true }).inputValue(), '100');
-  assert.equal(await p.getByLabel('Вход', { exact: true }).getAttribute('step'), '0.2');
+  assert.equal(await p.getByLabel('Вход', { exact: true }).getAttribute('type'), 'text');
   assert.equal(
     await p.locator('[data-live-parameter="pwm-1"]').getAttribute('data-live-value'),
     '0',
@@ -155,7 +155,8 @@ try {
   await p.getByRole('button', { name: 'Приборы', exact: true }).click();
   const devices = p.getByRole('dialog', { name: 'Приборы', exact: true });
   assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
-  assert.equal(await devices.locator('input[type=checkbox]').count(), 160);
+  assert.equal(await devices.locator('input[type=checkbox]').count(), 170);
+  assert.equal(await devices.locator('input[type=checkbox]:checked').count(), 160);
   assert(await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).isDisabled());
   await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
   await p.getByRole('dialog', { name: 'Подтверждение', exact: true }).waitFor();
@@ -319,7 +320,7 @@ try {
     await mobile.getByRole('button', { name: 'Приборы', exact: true }).click();
     const modal = mobile.getByRole('dialog', { name: 'Приборы', exact: true });
     assert.equal(await modal.locator('tr[data-config-device]').count(), 10);
-    assert.equal(await modal.locator('input[type=checkbox]').count(), 160);
+    assert.equal(await modal.locator('input[type=checkbox]').count(), 170);
     await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await context.close();
   }
@@ -374,7 +375,7 @@ try {
   await helmetModal.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
   await helmetModal.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
   const hardware = helmetModal.locator('tr[data-config-device]').first();
-  assert.equal(await hardware.locator('input:disabled').count(), 14);
+  assert.equal(await hardware.locator('input:disabled').count(), 15);
   assert.equal(await helmetModal.locator('.parameter-config').count(), 2);
   await helmetModal.getByLabel('Точек WS2811', { exact: true }).fill('127');
   await helmetModal.getByRole('button', { name: 'Сохранить', exact: true }).click();

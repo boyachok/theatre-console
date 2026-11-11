@@ -1,5 +1,23 @@
 # Изменения Theatre console
 
+## 0.7.12 — Диммер220, повтор аудио, задержка света (НЕ прошита)
+
+- Отдельный opt-in «Диммер220»: GPIO41Z-C/GPIO40PSM, квалификация50/60Гц,
+  paired half-waves, non-looping1MHz RMT/200мкс gate, IRAM ISR, latch на потерю Z-C,
+  timing/CPU/lease/resource fault, GPIO LOW при STOP.12PWM25кГц не менялись.
+  Настоящий модуль/уровни/форма сигнала/500Вт/тепло не проверены; сначала без220В.
+- Галочка audio.loop: atomic mute/repeat/play, mid-file REPEAT без нового PLAY,
+  EOF-решение по actual repeat TX, не optimistic enqueue; STOP отменяет pending.
+- startDelay0–3600с отдельно каждому12DIM/AC: blackout в ожидании, fade/phase отdue,
+  LIVE deadline от исходного запроса, retry без переноса, new scene/back restart,
+  cancel/shorten/wrap. Световые/звуковые cell fades — text+log faders без spinners.
+- Score10/P12/P13, Cue389/STORE433/RUN44, строгая capability gate; cache7/8/9 в RAM,
+  сохранены delay9/animations, новые поля0/off, immutable JSON/fingerprint без rewrite.
+-48domain, actual Runner/Player/decoder/storage/ASan/UBSan, pure phase и actual AC
+  adapter с SDK/RMT mocks, production/local browser/mobile, сборки4ролей.
+  Без OTA, команд реальным устройствам, изменения NVS/привязок/партитуры.
+  [AC](docs/AC_DIMMER.md), [delay/loop/формат](docs/LIGHT_DELAY_AUDIO_LOOP.md).
+
 ## 0.7.11 — задержка старта трека (установлены master, DC и30:30:F9:31:19:C4)
 
 - Опциональный `audio.startDelay` в секундах0–3600 отдельно на прибор/шаг, текст+

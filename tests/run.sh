@@ -4,14 +4,16 @@ cd "$(dirname "$0")/.."
 OUT="$(mktemp -d /tmp/stage-tests.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 FLAGS=(-std=c++17 -Wall -Wextra -pedantic -fsanitize=address,undefined)
-for TEST in quality control lan remote; do
+for TEST in quality control lan remote ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors player yx_player compat console dimmer_animation audio_delay scene_delivery remote_master; do
+for TEST in actors player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery remote_master; do
   c++ "${FLAGS[@]}" -Itests/mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
+c++ "${FLAGS[@]}" -Itests/ac_mock -Itests/mock tests/ac_backend.cpp -o "$OUT/ac_backend"
+"$OUT/ac_backend"
 c++ "${FLAGS[@]}" -Itests/rom_mock tests/workspace_inflate.cpp -lz -o "$OUT/workspace_inflate"
 "$OUT/workspace_inflate"
 ARDUINOJSON_PATH="${ARDUINOJSON_PATH:-$HOME/Documents/Arduino/libraries/ArduinoJson/src}"

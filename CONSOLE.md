@@ -1,4 +1,15 @@
-# Theatre console —master и7slave0.7.11; slave17:8B:140.7.9; remote0.7.8
+# Theatre console — исходники0.7.12, без новой прошивки
+
+Подготовлены [Диммер220](docs/AC_DIMMER.md) GPIO41Z-C/GPIO40PSM и
+[повтор аудио/задержка12DIM иAC](docs/LIGHT_DELAY_AUDIO_LOOP.md).
+12PWM25кГц, player/relay/strip GPIO, NVS и старые score snapshots сохранены.
+Score10/P12/P13 требует совместимых master+назначенных slave; remote0.7.8/R1
+можно оставить. Никаких OTA/реальных GO/перепривязок в этой подготовке.
+Сетевой модуль ещё не проверен электрически; сначала стенд без220В.
+
+## Последняя установка: master и7slave0.7.11; slave17:8B:140.7.9; remote0.7.8
+
+Ниже история; v104 — сохранённый snapshot, не обещание текущей публикации.
 
 Последним обновлён74:4D:BD:73:0A:A4 (.20),0.7.10→0.7.11; видимые32/EC уже0.7.11
 не перешивались. LIVE ужеoff, fresh workspace2шага/5приборов/v104 совпал JSON/файлSHA

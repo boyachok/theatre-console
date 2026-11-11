@@ -1,5 +1,5 @@
 export type ChannelColor = 'red' | 'green' | 'blue' | 'white' | 'warm';
-export type ParameterKind = 'dimmer' | 'relay' | 'audio' | 'strip';
+export type ParameterKind = 'dimmer' | 'relay' | 'audio' | 'strip' | 'ac';
 export interface Parameter {
   id: string;
   name: string;
@@ -13,6 +13,7 @@ export interface Device {
   name: string;
   ip?: string | null;
   mac?: string | null;
+  acDimmer?: Parameter;
   dimmers: Parameter[];
   relays: Parameter[];
   audio: Parameter;
@@ -41,6 +42,7 @@ export interface DimmerAnimation {
   smooth: number; // random transition fraction, percent
 }
 export interface DimmerCue {
+  startDelay?: number;
   animation?: DimmerAnimation;
   value: number;
   fadeIn: number | null;
@@ -52,6 +54,7 @@ export interface RelayCue {
   delayOff: number | null;
 }
 export interface AudioCue {
+  loop?: boolean;
   startDelay?: number; // seconds, per device/step; absent means zero
   voiceOn?: boolean;
   lastTrack?: number;
@@ -65,6 +68,7 @@ export interface StripCue {
   effectId: string | null;
 }
 export interface DeviceCue {
+  ac?: DimmerCue;
   dimmers: Record<string, DimmerCue>;
   relays: Record<string, RelayCue>;
   audio: AudioCue;

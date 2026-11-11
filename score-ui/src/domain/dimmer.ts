@@ -34,6 +34,9 @@ export interface DimmerClock {
   cycle: number;
 }
 export interface LightRuntime {
+  startAt?: number | null;
+  requestedAt?: number;
+  startDelay?: number;
   value: number;
   envelope: { from: number; to: number; at: number; duration: number };
   animation?: DimmerAnimation;
@@ -74,12 +77,13 @@ export function dimmerFactor(a: DimmerAnimation, clock: DimmerClock) {
   return floor + (1 - floor) * wave;
 }
 export function sampleDimmer(light: LightRuntime, now: number): LightRuntime {
+  if (light.startAt != null && now < light.startAt) return { ...light, value: 0 };
   const clock =
     light.animation && light.clock ? advance(light.clock, light.animation, now) : undefined;
   const factor = light.animation && clock ? dimmerFactor(light.animation, clock) : 1;
   const e = light.envelope,
     blend = e.duration ? Math.min(1, Math.max(0, (now - e.at) / e.duration)) : 1;
-  return { ...light, clock, value: e.from * (1 - blend) + e.to * factor * blend };
+  return { ...light, startAt: null, clock, value: e.from * (1 - blend) + e.to * factor * blend };
 }
 export function retargetDimmer(
   light: LightRuntime,
@@ -97,18 +101,29 @@ export function retargetDimmer(
     fadeOut,
     ...dimmerAnimationWire(cue),
   ]);
-  if (!restart && light.signature === signature) return light;
-  const current = sampleDimmer(light, now),
-    a =
-      enabled && cue.animation?.enabled && cue.animation.mode !== 'static'
-        ? { ...cue.animation }
-        : undefined;
+  const delay = Math.round((cue.startDelay ?? 0) * 1000);
+  if (!restart && light.signature === signature && delay === (light.startDelay ?? 0)) return light;
+  const current = sampleDimmer(light, now);
+  if (!restart && light.signature === signature && current.startAt == null)
+    return { ...current, startDelay: delay };
+  const requestedAt = !restart && current.startAt != null ? (current.requestedAt ?? now) : now;
+  const waiting =
+    enabled &&
+    cue.value > 0 &&
+    delay > 0 &&
+    (restart || current.startAt != null || !light.signature || light.envelope.to === 0);
+  const beginAt = waiting ? Math.max(now, requestedAt + delay) : now;
+  const a =
+    enabled && cue.animation?.enabled && cue.animation.mode !== 'static'
+      ? { ...cue.animation }
+      : undefined;
   let clock: DimmerClock | undefined;
   if (a) {
     const old = current.animation,
       previous = current.clock;
     if (
       !restart &&
+      !waiting &&
       previous &&
       old?.mode === a.mode &&
       (a.mode === 'random'
@@ -121,7 +136,7 @@ export function retargetDimmer(
       };
     else
       clock = {
-        at: now,
+        at: beginAt,
         cycle: 0,
         position:
           a.mode === 'random'
@@ -132,15 +147,18 @@ export function retargetDimmer(
   const maximum = enabled ? cue.value : 0;
   return sampleDimmer(
     {
-      value: current.value,
+      value: waiting ? 0 : current.value,
+      requestedAt,
+      startDelay: delay,
+      startAt: waiting ? beginAt : null,
       signature,
       animation: a,
       clock,
       envelope: {
-        from: current.value,
+        from: waiting ? 0 : current.value,
         to: maximum,
-        at: now,
-        duration: (maximum >= light.envelope.to ? fadeIn : fadeOut) * 1000,
+        at: beginAt,
+        duration: (waiting || maximum >= light.envelope.to ? fadeIn : fadeOut) * 1000,
       },
     },
     now,

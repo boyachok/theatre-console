@@ -379,7 +379,7 @@ void handleSlaveRx(const Rx &r) {
   } else if(r.p.type==DEBUG_REQUEST) {
     if(r.p.deviceBoot==bootSession){extendedDebugRequested=r.p.reserved==1;debugUntil=now+15000;nextDebugAt=now;}
   } else if(r.p.type==IDENTIFY) identifyUntil=now+5000;
-  else if(r.p.type==MAINTENANCE)actors.off(3);
+  else if(r.p.type==MAINTENANCE){showRunner.stop();actors.off(3);}
 }
 void linkTick() {
   expireSlaveLease();finishNetworkReset();
@@ -483,6 +483,7 @@ String statusJSON(bool history) {
   }
   j+="]";
   if(!RADIO_MASTER){j+=",\"hardwareProfile\":\"s3-yx6300-rx1-tx2-v1\",\"dimmerPins\":[";for(int i=0;i<DIMMER_COUNT;i++){if(i)j+=',';j+=PWM_PINS[i];}j+="],\"relayPins\":["+String(RELAY_PIN)+","+String(RELAY2_PIN)+"],\"stripPin\":"+String(STRIP_PIN);}
+  if(!RADIO_MASTER){auto a=showRunner.acStatus();j+=",\"acDimmer\":{\"zcPin\":41,\"gatePin\":40,\"enabled\":"+String(a.enabled?"true":"false")+",\"qualified\":"+String(a.qualified?"true":"false")+",\"latched\":"+String(a.latched?"true":"false")+",\"fault\":"+jsonString(Mains::faultName(a.fault))+",\"requested\":"+String(a.requested)+",\"paired\":"+String(a.paired)+",\"goodZero\":"+String(a.good)+",\"rejectedZero\":"+String(a.rejected)+",\"halfUs\":"+String(a.halfUs)+",\"scheduled\":"+String(a.scheduled)+",\"late\":"+String(a.late)+"}";}
   if(!RADIO_MASTER)j+=",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics(),actors.player.debug());
   if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.cursorValid?String(showMaster.step+1):String("null"))+",\"stepId\":"+jsonString(showMaster.cursorId())+",\"livePreview\":"+String(showMaster.livePreview?"true":"false")+",\"running\":"+String(showMaster.active?"true":"false")+",\"syncing\":"+String((showMaster.syncPending||(!showMaster.livePreview&&showMaster.draftUnsaved()))?"true":"false")+",\"navigation\":"+String(showMaster.navigation)+",\"draftFingerprint\":"+jsonString(showMaster.draftFingerprint)+",\"syncFingerprint\":"+jsonString(showMaster.syncFingerprint)+",\"draftRevision\":"+String(showMaster.draftRevision)+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
   if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
@@ -627,7 +628,7 @@ void loop() {
   if(!radioReady){led(BAD);delay(100);return;}
   linkTick();
   if(!RADIO_MASTER)actors.tick(heartbeatFresh()||showRunner.active);
-  web.service();if(!RADIO_MASTER)showRunner.tick(millis());
+  web.service();if(!RADIO_MASTER)showRunner.tick(millis(),heartbeatFresh());
   linkTick();
   if(!RADIO_MASTER)actors.tick(heartbeatFresh()||showRunner.active);
   if(Serial.available()) {
