@@ -389,9 +389,7 @@ try {
   await voiceCell.click();
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'true');
   assert.equal(await helmet.getByLabel('Номер трека', { exact: true }).count(), 0);
-  await helmet
-    .getByText('Аудиомодуль пока не подключён', { exact: false })
-    .waitFor({ state: 'visible' });
+  await helmet.getByText('Живой голос INMP441', { exact: false }).waitFor({ state: 'visible' });
   await voiceCell.click();
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'false');
   await pause(400);

@@ -2,7 +2,10 @@ import type { Project, Step, DimmerCue } from './schema.ts';
 import { percentToDuty, effectiveStrip, acParameter, acCue } from './project.ts';
 import { validateProject } from './validation.ts';
 import { dimmerAnimationWire } from './dimmer.ts';
+import { voiceWire } from './voice.ts';
 export interface WireCue {
+  v?: number[];
+  x?: number[];
   invertedMask?: number;
   inversionSet?: number;
   ac?: { enabled: number; d: number[] };
@@ -65,12 +68,28 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
         if (p.enabled && c.relays[p.id].on && !p.relayMode)
           throw new Error(`Выберите HIGH/LOW для ${device.name} · ${p.name}`);
       const strip = effectiveStrip(project, step, device.id),
-        fx = strip.action === 'play' ? project.effects.find((f) => f.id === strip.effectId) : null;
+        fx =
+          strip.action === 'play'
+            ? (strip.settings ?? project.effects.find((f) => f.id === strip.effectId))
+            : null;
       if (device.strip.enabled && device.ledCount > 1024)
         throw new Error('WS2811: максимум 1024 управляемые точки');
       const action = device.strip.enabled && fx ? 2 : 1,
         enabled = Number(device.strip.enabled);
       return {
+        ...(device.profile === 'helmet' ? { v: voiceWire(device) } : {}),
+        x: [
+          Math.round(fx?.density ?? 50),
+          Math.round(fx?.sparkles ?? 25),
+          Math.round(fx?.noise ?? 30),
+          fx?.palette ?? 0,
+          Number(!!fx?.audioReactive && device.profile === 'helmet'),
+          Number(fx?.backgroundEnabled ?? true),
+          Math.round(fx?.backgroundBrightness ?? 100),
+          Math.round(fx?.sensitivity ?? 50),
+          ms(fx?.release ?? 0.4),
+          fx?.seed ?? 1,
+        ],
         ...(device.profile !== 'helmet' && acParameter(device).enabled
           ? { ac: { enabled: 1, d: lightWire(acCue(c), step) } }
           : {}),
@@ -117,7 +136,9 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
         s: [
           enabled,
           action,
-          fx ? ['wave', 'fill', 'static'].indexOf(fx.mode) : 0,
+          fx
+            ? ['wave', 'fill', 'static', 'waiting', 'disco', 'alarm', 'loading'].indexOf(fx.mode)
+            : 0,
           enabled ? device.ledCount : 0,
           ...rgb(fx?.color ?? '#000000'),
           ...rgb(fx?.background ?? '#000000'),
@@ -135,6 +156,16 @@ export function compileDevices(project: Project, steps: Step[]): CompiledDevice[
                 fx.width,
                 fx.duration,
                 fx.direction,
+                fx.density,
+                fx.sparkles,
+                fx.noise,
+                fx.palette,
+                fx.audioReactive,
+                fx.release,
+                fx.backgroundEnabled,
+                fx.backgroundBrightness,
+                fx.sensitivity,
+                fx.seed,
               ])
             : 0,
           Number(device.stripOrder === 'GRB'),

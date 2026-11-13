@@ -4,7 +4,15 @@ import { acParameter } from '../domain/project.ts';
 import { COLORS } from '../domain/schema.ts';
 import type { PreviewEngine } from '../domain/playback.ts';
 import { StripCanvas } from './StripCanvas.tsx';
-export function DevicePreview({ device, engine }: { device: Device; engine: PreviewEngine }) {
+export function DevicePreview({
+  device,
+  engine,
+  audioLevel,
+}: {
+  device: Device;
+  engine: PreviewEngine;
+  audioLevel?: number;
+}) {
   const snapshot = useSyncExternalStore(engine.subscribe, engine.getSnapshot),
     runtime = snapshot.devices[device.id];
   if (!runtime) return null;
@@ -82,7 +90,10 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
           ))}
       </div>
       {device.profile === 'helmet' && device.audio.enabled && (
-        <p className="muted">Голос: модуль не подключён</p>
+        <p className="muted">
+          Голос: локальная обработка в шлеме. Настройки и микрофон — в окне шлема; браузер звук не
+          синтезирует.
+        </p>
       )}
       {device.audio.enabled && device.profile !== 'helmet' && (
         <div className="preview-audio">
@@ -115,9 +126,18 @@ export function DevicePreview({ device, engine }: { device: Device; engine: Prev
             <small>{runtime.strip?.effect.name ?? '—'}</small>
           </div>
           <StripCanvas
-            effect={runtime.strip?.effect ?? null}
+            effect={
+              runtime.strip?.effect
+                ? {
+                    ...runtime.strip.effect,
+                    audioReactive:
+                      device.profile === 'helmet' && !!runtime.strip.effect.audioReactive,
+                  }
+                : null
+            }
             startedAt={runtime.strip?.startedAt}
             count={device.ledCount}
+            audioLevel={audioLevel}
           />
         </div>
       )}

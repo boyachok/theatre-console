@@ -1,0 +1,20 @@
+#define THEATRE_HOST_TEST
+#include <cassert>
+#include <cstdio>
+#include "../helmet/runtime.h"
+int main(){
+ mockPrefsBytes.clear();mockNow=0;Helmet::Runner r;r.begin();assert(r.active&&r.standalone&&r.voice.requested()&&r.defaults.saved&&r.defaults.writes==1);auto before=r.defaults.settings();
+ Show::Packet p{};p.run=10;p.transition=1;p.cue.voice=before.voice;p.cue.voice.frequency=222;p.cue.voice.gain=2;p.cue.strip=before.strip;p.cue.strip.mode=6;p.cue.strip.brightness=33;p.cue.stripOptions=before.options;p.cue.audio.enabled=1;
+ assert(r.apply(p,100));assert(!r.standalone&&r.defaults.writes==1&&!r.defaults.saved);r.tick(2099);assert(r.defaults.writes==1);r.tick(2100);assert(r.defaults.writes==2&&r.defaults.saved);
+ auto nvs=mockPrefsBytes["defaults"];assert(r.dryTest()&&r.diagnostic);assert(r.voice.appliedProfile().mode==0&&r.voice.appliedProfile().gain==8&&r.voice.appliedProfile().volume==.15f&&r.voice.appliedProfile().gateDb==-90);r.tick(2500);assert(mockPrefsBytes["defaults"]==nvs&&r.defaults.writes==2);assert(r.endTest()&&!r.diagnostic&&r.voice.appliedProfile().frequency==222&&r.voice.appliedProfile().gain==2);assert(r.dryTest());r.stop();assert(!r.diagnostic&&!r.endTest()&&!r.voice.requested());for(int i=0;i<10;i++)r.tick(3000+i*1000);assert(!r.active&&!r.voice.requested()&&!r.standalone&&r.defaults.writes==2);
+ p.transition++;p.cue.audio.enabled=0;p.cue.strip.action=1;assert(r.apply(p,14000));r.tick(17000);assert(!r.voice.requested()&&r.defaults.settings().strip.mode==6&&r.defaults.writes==2);
+ Helmet::Runner reboot;reboot.begin();assert(reboot.standalone&&reboot.voice.requested()&&reboot.defaults.saved&&reboot.defaults.settings().voice.frequency==222&&reboot.defaults.settings().strip.brightness==33);
+ // Failed writes retain the committed profile and retry, not pretend persistence.
+ p.transition++;p.cue.voice.frequency=333;mockPrefsWriteOK=false;assert(reboot.apply(p,20000));reboot.tick(22000);assert(!reboot.defaults.saved);Helmet::Defaults fresh;fresh.begin();assert(fresh.settings().voice.frequency==222);mockPrefsWriteOK=true;reboot.tick(52000);assert(reboot.defaults.saved);
+ // Existing Robot Voice bank seeds only the active profile, retaining original bank bytes.
+ mockPrefsBytes.clear();RVPresetBank bank{};bank.active=1;bank.generation=1;auto &slot=bank.slots[1];slot.used=1;strcpy(slot.name,"bodj");auto &s=slot.sound;s.flags=3;s.mode=1;s.algorithm=0;s.gain=.9f;s.volume=1;s.frequency=349;s.mix=1;s.gateDb=-70;s.toneHz=4500;s.clarity=.5f;s.strength=1;rv_bank_seal(&bank);Preferences prefs;prefs.putBytes("bank_v1",&bank,sizeof(bank));auto blob=mockPrefsBytes["bank_v1"];Helmet::Defaults imported;imported.begin();assert(imported.settings().voice.frequency==349&&imported.settings().voice.volume==1&&mockPrefsBytes["bank_v1"]==blob&&imported.saved);
+ // Returning from Robot Voice may leave a newer working bank than the old helmet-start record.
+ bank.slots[0]=bank.slots[1];strcpy(bank.slots[0].name,"working chip");bank.active=0;bank.slots[0].sound.algorithm=4;bank.slots[0].sound.frequency=154;bank.slots[0].sound.gain=.8f;bank.slots[0].sound.gateDb=-42;rv_bank_seal(&bank);prefs.putBytes("bank_v1",&bank,sizeof(bank));auto newBank=mockPrefsBytes["bank_v1"];Helmet::Defaults existing;existing.begin();assert(existing.settings().voice.frequency==349);assert(existing.importLegacy()&&existing.saved&&existing.settings().voice.algorithm==4&&existing.settings().voice.frequency==154&&mockPrefsBytes["bank_v1"]==newBank);Helmet::Defaults nextBoot;nextBoot.begin();assert(nextBoot.settings().voice.frequency==154&&nextBoot.settings().voice.gateDb==-42);
+ Helmet::Runner maintenance;maintenance.begin();maintenance.stop();assert(maintenance.importLegacy()&&!maintenance.active&&!maintenance.voice.requested()); // Import after explicit STOP saves sound without re-enabling it.
+ puts("Helmet standalone: saved defaults autostart, master overrides, debounce/no duplicate writes, STOP/link hold never rearm, off scene not saved as boot mute, reboot restore, write failure/retry, legacy active preset import preserves bank (mock NVS/I2S)");
+}

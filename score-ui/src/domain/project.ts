@@ -10,6 +10,7 @@ import type {
   StripEffect,
   Timings,
 } from './schema.ts';
+import { defaultVoiceBank } from './voice.ts';
 export const uid = () =>
   globalThis.crypto?.randomUUID?.() ??
   `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
@@ -74,6 +75,7 @@ export function deviceProfile(device: Device, profile: 'standard' | 'helmet'): D
   return {
     ...device,
     profile,
+    ...(profile === 'helmet' ? { voice: device.voice ?? defaultVoiceBank() } : {}),
     acDimmer: {
       ...acParameter(device),
       enabled: profile === 'helmet' ? false : acParameter(device).enabled,
@@ -123,7 +125,7 @@ export function createDeviceCue(device: Device): DeviceCue {
       device.relays.map((p) => [p.id, { on: false, delayOn: null, delayOff: null }]),
     ),
     audio: { track: null, volume: 100, fadeIn: null, fadeOut: null },
-    strip: { action: 'hold', effectId: null },
+    strip: { action: device.profile === 'helmet' ? 'stop' : 'hold', effectId: null },
   };
 }
 export function createStep(devices: Device[], name = 'Шаг 1'): Step {
@@ -236,14 +238,32 @@ export function replaceDevices(project: Project, devices: Device[]): Project {
   const sameIds =
     devices.length === project.devices.length &&
     devices.every((d, i) => d.id === project.devices[i].id);
-  const steps = sameIds
-    ? project.steps
-    : project.steps.map((step) => ({
-        ...step,
-        devices: Object.fromEntries(
-          devices.map((d) => [d.id, step.devices[d.id] ?? createDeviceCue(d)]),
-        ),
-      }));
+  const toHelmet = new Set(
+    devices
+      .filter(
+        (d) =>
+          d.profile === 'helmet' &&
+          project.devices.find((old) => old.id === d.id)?.profile !== 'helmet',
+      )
+      .map((d) => d.id),
+  );
+  const steps =
+    sameIds && !toHelmet.size
+      ? project.steps
+      : project.steps.map((step) => ({
+          ...step,
+          devices: Object.fromEntries(
+            devices.map((d) => {
+              const cue = step.devices[d.id] ?? createDeviceCue(d);
+              return [
+                d.id,
+                toHelmet.has(d.id) && cue.strip.action === 'hold'
+                  ? { ...cue, strip: { action: 'stop' as const, effectId: null } }
+                  : cue,
+              ];
+            }),
+          ),
+        }));
   return touch(project, { devices, steps });
 }
 export function parameterCode(device: Device, parameter: Parameter): string {

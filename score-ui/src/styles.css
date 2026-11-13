@@ -1110,6 +1110,36 @@ code {
   overflow: auto;
   padding: 10px 24px 20px;
 }
+.helmet-modal {
+  padding: 0 16px;
+}
+.helmet-modal > .modal-heading,
+.helmet-modal > .modal-footer {
+  margin-left: -16px;
+  margin-right: -16px;
+}
+.helmet-modal input[type='range'] {
+  display: block;
+  margin-left: 0;
+  margin-right: 0;
+  width: 100%;
+}
+.helmet-modal .segmented {
+  flex-wrap: wrap;
+}
+.helmet-modal .segmented button {
+  flex: 1 1 110px;
+  white-space: normal;
+}
+.helmet-modal meter {
+  width: 100%;
+}
+.helmet-modal summary {
+  padding: 14px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+
 .effect-fields > .segmented {
   margin: 17px 0 8px;
 }

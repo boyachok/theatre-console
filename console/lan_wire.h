@@ -6,7 +6,7 @@ constexpr uint32_t LAN_MAGIC=0x34475453;
 constexpr uint8_t LAN_VERSION=1;
 constexpr uint16_t LAN_PORT=4210;
 constexpr size_t LAN_MAX_PAYLOAD=512;
-inline bool lanPayloadSize(size_t n){return n==44||n==64||n==72||n==100||n==116||n==214||n==358||n==433||n==437;}
+inline bool lanPayloadSize(size_t n){return n==44||n==64||n==72||n==100||n==116||n==214||n==358||n==433||n==437||n==512;}
 struct __attribute__((packed)) LanHeader {
   uint32_t magic;
   uint8_t version,reserved;

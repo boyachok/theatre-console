@@ -14,7 +14,9 @@ constexpr uint32_t MAGIC=0x32544753;
 constexpr uint8_t PROTOCOL=4,LEGACY_PROTOCOL=3;
 constexpr int MAX_NODES=10,WINDOW=120;
 constexpr uint32_t POLL_MS=500,TIMEOUT_MS=400,OFFLINE_MS=3000;
-enum Type : uint8_t {DISCOVER=1,HELLO,PROBE,ECHO,IDENTIFY,MAINTENANCE,COMMAND,COMMAND_ACK,DEBUG_REQUEST,DEBUG_REPORT,PWM_REPORT,SCORE_STORE,SCORE_RUN,SCORE_ACK,REMOTE_HELLO,REMOTE_PING,REMOTE_PONG,REMOTE_EVENT,REMOTE_ACK,FIRMWARE_REPORT};
+enum Type : uint8_t {DISCOVER=1,HELLO,PROBE,ECHO,IDENTIFY,MAINTENANCE,COMMAND,COMMAND_ACK,DEBUG_REQUEST,DEBUG_REPORT,PWM_REPORT,SCORE_STORE,SCORE_RUN,SCORE_ACK,REMOTE_HELLO,REMOTE_PING,REMOTE_PONG,REMOTE_EVENT,REMOTE_ACK,FIRMWARE_REPORT,VOICE_REPORT};
+struct __attribute__((packed)) VoiceReport {uint32_t magic;uint8_t protocol,type;uint16_t size;uint32_t session,deviceBoot,uptime,captured,played,errors,late,limited,workMax;float inputLevel,outputLevel,load;uint8_t ready,enabled,audioCore,controlCore;uint32_t profileHash;};
+static_assert(sizeof(VoiceReport)==64,"Helmet audio telemetry");
 enum FirmwareRole:uint8_t { FW_SLAVE=1,FW_REMOTE=2,FW_HELMET=3 };
 struct __attribute__((packed)) FirmwarePacket {
  uint32_t magic;uint8_t protocol,type;uint16_t size;uint32_t session,deviceBoot,uptime;uint8_t role,reserved[3];char version[24];uint8_t padding[16];
@@ -61,14 +63,14 @@ inline bool validFirmware(const FirmwarePacket &p){
 // Optional HELLO/ECHO telemetry. Older 0.5.0 producers leave this tag zero.
 inline void setPWMFrequency(Packet &p,uint32_t hz){
   if(p.type!=HELLO&&p.type!=ECHO)return;
-  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=14;p.value=hz&0xffff;
+  p.padding[0]='P';p.padding[1]=(hz>>16)&0xff;p.padding[2]=16;p.value=hz&0xffff;
 }
-// P/14 regular and P/15 helmet support score11 polarity/held-light delays/continuous audio.
+// P/16 regular and P/17 helmet support score12 voice and extended strip effects.
 // Service layout stays 72B. Older peers must never ignore new timed or mains outputs.
-inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==5||p.padding[2]==7||p.padding[2]==9||p.padding[2]==11||p.padding[2]==13||p.padding[2]==15);}
-inline bool localScoreTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==14||p.padding[2]==15);}
+inline bool helmetTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==5||p.padding[2]==7||p.padding[2]==9||p.padding[2]==11||p.padding[2]==13||p.padding[2]==15||p.padding[2]==17);}
+inline bool localScoreTag(const Packet &p){return p.protocol==PROTOCOL&&p.padding[0]=='P'&&(p.padding[2]==16||p.padding[2]==17);}
 inline uint32_t reportedPWMFrequency(const Packet &p){
-  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>15)||helmetTag(p))return 0;
+  if(p.protocol!=PROTOCOL||(p.type!=HELLO&&p.type!=ECHO)||p.padding[0]!='P'||(p.padding[2]<1||p.padding[2]>17)||helmetTag(p))return 0;
   return p.value|((uint32_t)p.padding[1]<<16);
 }
 inline LegacyPacket legacyPacket(const Packet &p){

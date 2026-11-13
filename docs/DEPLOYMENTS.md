@@ -1,5 +1,111 @@
 # Проверенные записи на платы
 
+## Онлайн slave0.7.18 — три обычных исполнителя
+
+Пользователь явно разрешил все обычные слейвы, которые сейчас в сети.
+Обнаружены и обновлены последовательно с0.7.11 до0.7.18:
+- 30:30:F9:31:19:C4 /192.168.50.55;
+- C0:4E:30:27:69:98 /192.168.50.33;
+- EC:DA:3B:56:F2:CC /192.168.50.197.
+
+Slave app1117600B SHA `b48ba2da8f1e2fe72ebc94eda4bd7e167cc1f885bb8f844e6a87da82930683f4`.
+Перед каждым OTA свежий MAC/role/token, masterLIVE/runningfalse, snapshots настроек.
+Для каждого200UpdateOK, новый boot-token/MAC/slave/0.7.18, сохранённые8PWMlevels,
+инверсия, relayMode/pins проверены; master видит firmware0.7.18/P16/score12 и
+sceneStatusready/scoreVersion119. Workspace до/после равен целиком, привязок/GO/LIVE
+не меняли. Автоматическая синхронизация существующего плана119 штатно прошла безGO.
+Master/helmet/remote повторно не писались. DC:DA:0C:43:C3:C0,84:FC:E6:57:0F:AC,
+30:30:F9:32:02:30,74:4D:BD:73:0A:A4 остались offline в master и не обновлялись.
+Полный свежий flash по HTTP недоступен: OTA сохраняет FS/NVS/разметку на месте;
+доступные настройки и оба draft/published сохранены отдельно до записи.
+
+Первый postcheck ошибочно ожидал pwmHz25000 при OFF, остановил скрипт после
+успешной записи. ESP32core3.3.11 ledcReadFreq() явно возвращает0 при duty0 (строки408–417).
+Проверку исправили, первый MAC подтвердили без повторной записи и продолжили двумя.
+Это не отказ PWM: source PWM_HZ25000; физическую частоту не измеряли и выходы не
+включали ради теста. На старой0.7.11 эти же платы также отдавали pwmHz0 при OFF.
+Логи/бинарник/настройки/workspace/исходники700/600:
+`~/Theatre-console-backups/ota-online-slaves-0718-20261113-123741/`.
+Свет/реле/MP3/AC физически не тестировались.
+
+
+## OTA master0.7.18 — A0:85:E3:E2:BC:D4, исправлено распознавание P/17
+
+Пользователь явно запросил обновление master: шлем исчезал в picker типаhelmet.
+Read-only preflight подтвердил master0.7.11 на192.168.50.119 и helmet0.7.18,
+ошибочно role=slave/localScoreSupported=false. LIVE/running=false.
+До OTA свежий полный JSON workspace: draft7scenes, публикация119, все bindings;
+fixtureР имеет profilehelmet, macnull. Свежий полный flash по HTTP недоступен;
+не подменять его исходниками: OTA сохраняет текущие FS/NVS/таблицу на месте.
+Master1277424B SHA `131f0524033be945f40141dc6ad81efce9a5fdaa492cf3fae10bb05002f92375`.
+Только один POST/update с targetMAC/role/token,200 Update OK, новый boot-token,
+masterMAC/role/version0.7.18 проверены. Workspace draft+published и весь JSON равны
+до/после OTA и после read-only browser. Никаких GO/LIVE/новых bindings/публикаций.
+На живом master браузер проверил Приборы→Р: typehelmet, picker содержит
+`Ведомый8 ·192.168.50.21 ·0.7.18`, valueC0:4E:30:36:C6:88. Rolehelmet,
+firmware0.7.18, localScoreSupported=true. Все browser POST были заблокированы.
+Сначала browser открывал диалог раньше гидратации workspace и видел default10;
+повтор с ожиданиемv119/Р подтвердил настоящий сохранённый fixture без изменений.
+После OTA голос шлема enabled=false (сервисный STOP при обновлении master),
+автоматического восстановления не делали: явная новая команда или reboothelmet.
+Обычные slave0.7.11 остались без изменений и несовместимы со score12 до отдельного
+разрешённого обновления; пользователь предупреждён до OTA. Не запускать спектакль.
+При первом SDK build обнаружена устаревшая forward declaration mountShowFS();
+заменена ранним include show_filesystem.h с действительной сигнатурой label.
+Успешный повторный production build; это исправление только master-source.
+Логи/бинарник/свежие оба workspace/скрин/исходники700/600:
+`~/Theatre-console-backups/ota-master-0718-A085E3E2BCD4-20261113-121748/`.
+
+
+## USB helmet0.7.18 — C0:4E:30:36:C6:88, рабочий профиль из5.9
+
+Пользователь сообщил, что на старой5.9 микрофон работает, железо/лента настроены,
+и явно запросил актуальный helmet. До записи serial5.9 dirty=false: chip154Гц,
+gain0.8/volume1/gate−42, preset0, bankCRC2481115094. MAC проверена повторно.
+Полный16MB backup SHA `3c3c8d5545d5a7fc592786626abb90fb4a586aa5596eaf1122873070f056ea39`.
+Записан только app0x10000,1011472B SHA
+`11cac5402476885ed18541e12f40d1aaa89d964ef7a5e8032695ec954e826c35`.
+Verify-flash успешен; bootloader/table/OTAdata не менялись, NVS не стиралась.
+Явной USB-командой L скопирован активный валидный старый звук в helmet-start,
+не весь банк в проект master. Diagnostic=false, нормальный chip154/gain0.8/volume1/gate−42.
+После контрольного reboot новый boot, те же сохранённые параметры, autonomous=true;
+RX=TX1032960, errors0/late0 в снимке. Слышимость/свет пользователь проверяет отдельно.
+Таблица побайтно прежняя. NVS bank_v1 состоит из двух chunks128/129 на разных страницах:
+read-only offline parser собрал их, bank_v1 И bank_backup совпали полностью до/после,
+CRC2481115094 сохранён. Простое contiguous-сканирование сначала не нашло split blob;
+это не было потерей банка, повторного upload не делали.
+Логи/полный flash/исходники/бинарник700/600:
+`~/Theatre-console-backups/usb-helmet-current-C04E3036C688-20261113-115114/`.
+Другие платы/привязки/спектакль не менялись. Архив0.7.17 сохранён отдельно.
+
+
+## USB helmet0.7.16 — C0:4E:30:36:C6:88, автономный старт
+
+Пользователь разрешил прошивку подключённого шлема и изменил bootstrap: включаться
+без master с сохранёнными настройками, один общий звук для всех сцен.
+
+- До записи serial показал Robot Voice5.9, saved/dirty=false, preset1bodj,
+  ring349Гц/gain0.9/volume1. MAC проверена esptool, S3rev0.2/16MB/PSRAM8MB.
+- Полный flash16MB сохранён SHA256
+  `a4043d3ce7b905670917533cf21d9eb038142627a2db268cbedb912c740ef747`.
+- Только app0x10000,1009792B SHA256
+  `f6c4f74b9af9829f3ca01f5abe6a513aeae0f4ac734af7e66344b551ff3c40ce`.
+  Esptool verify-flash digest успешен. Bootloader/partition table/OTAdata не писались,
+  полного erase/NVS erase не было. Старый app0x140000 достаточен; пустой spiffs
+  0x290000/0x160000 используется LittleFS без смены таблицы.
+- После boot MAC/role helmet/version0.7.16 подтверждены. connected=false/masterReady=false,
+  standalone=true, step=null, audio enabled/ready, исходный349/0.9/1 восстановлен.
+  Factory свет waiting/blue10%/60точек на47; последующие принятые настройки сохраняются.
+- STOP держал OFF6с без master, не включал fallback. После контрольного reset новый
+  boot/token, defaultsSource=helmet-start/defaults, writes0, те же звук/свет включились.
+  Audio captured=played1031936, errors0/late0 на втором boot; не доказательство слышимости.
+- Таблица после записи совпала побайтно; CRC1397020606 старого полного voice bank
+  найдена валидной до/после. Новый startup-record имеет отдельный namespace.
+- Приватные логи/16MB backup/result700/600:
+  `~/Theatre-console-backups/usb-helmet-C04E3036C688-20261112-173307/`.
+  Настройки/партитуры других плат, сети и привязки не менялись.
+
+
 ## Новая USB-плата → master0.7.13 — 84:FC:E6:66:F3:8C
 
 Пользователь явно разрешил роль master, затем подтвердил новую плату и замену

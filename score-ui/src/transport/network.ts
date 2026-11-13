@@ -4,6 +4,17 @@ export interface NetworkSample {
   rssi: number | null;
 }
 export interface NetworkDeviceStatus {
+  voice?: {
+    ready: boolean;
+    enabled: boolean;
+    inputLevel: number;
+    outputLevel: number;
+    load: number;
+    errors: number;
+    late: number;
+    limited: number;
+    ageMs: number;
+  } | null;
   firmwareVersion?: string | null;
   dimmerInverted?: number;
   role?: 'slave' | 'remote' | 'helmet';

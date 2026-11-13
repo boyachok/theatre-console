@@ -241,7 +241,9 @@ export function NetworkDialog({
                     <td title="Программный ACK применения сцены; не датчик нагрузки и не завершение фейда">
                       {r?.role === 'remote'
                         ? '—'
-                        : {
+                        : r?.online !== true
+                          ? 'Нет связи'
+                          : {
                             idle: '—',
                             upgrade: 'Обновить прошивку',
                             loading: 'Загрузка плана',

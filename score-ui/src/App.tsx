@@ -45,6 +45,7 @@ import { EspConsoleTransport, useEspBackend } from './transport/esp.ts';
 import { DisconnectedNetworkTransport } from './transport/network.ts';
 import { Matrix } from './components/Matrix.tsx';
 import { Inspector } from './components/Inspector.tsx';
+import { HelmetDialog } from './components/HelmetDialog.tsx';
 import { DevicesDialog } from './components/DevicesDialog.tsx';
 import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { NetworkDialog } from './components/NetworkDialog.tsx';
@@ -106,8 +107,10 @@ export default function App() {
   const [deviceId, setDeviceId] = useState(project.devices[0].id),
     [compact, setCompact] = useState(() => window.matchMedia('(max-width: 960px)').matches);
   const [inspectorOpen, setInspectorOpen] = useState(false),
-    [dialog, setDialog] = useState<'devices' | 'effects' | 'network' | null>(null);
+    [dialog, setDialog] = useState<'devices' | 'effects' | 'network' | 'helmet' | null>(null);
   const [deviceDialogId, setDeviceDialogId] = useState<string | undefined>();
+  const [helmetDeviceId, setHelmetDeviceId] = useState<string>();
+  const helmetDevice = project.devices.find((d) => d.id === helmetDeviceId);
   const [saveState, setSaveState] = useState<'pending' | 'saved' | 'error'>('pending'),
     [saveBlocked, setSaveBlocked] = useState(!!initial.error);
   const [toast, setToast] = useState(initial.error),
@@ -591,6 +594,19 @@ export default function App() {
       deviceId={deviceId}
       engine={engine}
       onChangeCell={changeCell}
+      onHelmet={(id) => {
+        setHelmetDeviceId(id);
+        setDialog('helmet');
+      }}
+      onDevice={(device) =>
+        setWorkspace((w) => ({
+          ...w,
+          draft: touch(w.draft, {
+            devices: w.draft.devices.map((d) => (d.id === device.id ? device : d)),
+          }),
+        }))
+      }
+      network={network}
       onStep={changeStep}
     />
   );
@@ -818,7 +834,7 @@ export default function App() {
         </section>
         {!compact && <aside className="inspector">{inspector}</aside>}
       </main>
-      {compact && inspectorOpen && (
+      {compact && inspectorOpen && dialog !== 'helmet' && (
         <Modal
           title="Параметры"
           className="inspector-modal"
@@ -838,6 +854,21 @@ export default function App() {
       )}
       {dialog === 'effects' && (
         <EffectsDialog project={project} onSave={saveEffects} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'helmet' && helmetDevice && (
+        <HelmetDialog
+          device={helmetDevice}
+          network={network}
+          onClose={() => setDialog(null)}
+          onChange={(device) =>
+            setWorkspace((w) => ({
+              ...w,
+              draft: touch(w.draft, {
+                devices: w.draft.devices.map((d) => (d.id === device.id ? device : d)),
+              }),
+            }))
+          }
+        />
       )}
       {dialog === 'network' && (
         <NetworkDialog project={project} transport={network} onClose={() => setDialog(null)} />

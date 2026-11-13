@@ -1,5 +1,6 @@
 import type { Project, Workspace } from './schema.ts';
 import { fingerprint, upgradeDraft } from './project.ts';
+import { validVoiceBank } from './voice.ts';
 import { dimmerModes } from './dimmer.ts';
 const object = (v: unknown): v is Record<string, any> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
@@ -69,6 +70,7 @@ export function validateProject(value: unknown): asserts value is Project {
       device.stripRate === undefined || [800, 400].includes(device.stripRate),
       'Неверная частота ленты',
     );
+    ensure(device.voice === undefined || validVoiceBank(device.voice), 'Неверные пресеты голоса');
     const parameters = [
       ...device.dimmers,
       ...device.relays,
@@ -103,12 +105,18 @@ export function validateProject(value: unknown): asserts value is Project {
   unique(value.devices);
   unique(value.steps);
   unique(value.effects);
-  for (const fx of value.effects)
+  const snapshots: unknown[] = [];
+  for (const step of value.steps)
+    if (object(step) && object(step.devices))
+      for (const c of Object.values(step.devices))
+        if (object(c) && object(c.strip) && c.strip.settings !== undefined)
+          snapshots.push(c.strip.settings);
+  for (const fx of [...value.effects, ...snapshots])
     ensure(
       object(fx) &&
         text(fx.id) &&
         text(fx.name) &&
-        ['wave', 'fill', 'static'].includes(fx.mode) &&
+        ['wave', 'fill', 'static', 'waiting', 'disco', 'alarm', 'loading'].includes(fx.mode) &&
         /^#[0-9a-f]{6}$/i.test(fx.color) &&
         /^#[0-9a-f]{6}$/i.test(fx.background) &&
         number(fx.brightness, 100) &&
@@ -116,7 +124,15 @@ export function validateProject(value: unknown): asserts value is Project {
         fx.width > 0 &&
         number(fx.duration) &&
         fx.duration > 0 &&
-        ['forward', 'reverse'].includes(fx.direction),
+        ['forward', 'reverse'].includes(fx.direction) &&
+        ['density', 'sparkles', 'noise', 'sensitivity', 'backgroundBrightness'].every(
+          (k) => fx[k] === undefined || number(fx[k], 100),
+        ) &&
+        (fx.palette === undefined || [0, 1, 2].includes(fx.palette)) &&
+        (fx.audioReactive === undefined || typeof fx.audioReactive === 'boolean') &&
+        (fx.backgroundEnabled === undefined || typeof fx.backgroundEnabled === 'boolean') &&
+        (fx.release === undefined || number(fx.release)) &&
+        (fx.seed === undefined || (Number.isInteger(fx.seed) && number(fx.seed, 0xffffffff))),
       'Неверный эффект ленты',
     );
   for (const step of value.steps) {

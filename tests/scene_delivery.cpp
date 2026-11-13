@@ -44,7 +44,7 @@ struct Metrics {Health health=GOOD;};Metrics metrics(const Node&){return {};}
 template<class T>bool receive(const T &p){LanMessage m;memcpy(m.mac,masterMAC,6);m.length=sizeof(p);memcpy(m.payload,&p,sizeof(p));return handleShowMessage(m);}
 Show::Packet base(uint8_t type){Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.type=type;p.size=sizeof(p);p.session=77;p.deviceBoot=700;p.run=100;p.transition=1;p.reserved=Show::ACTIVE;p.version=12;p.total=2;return p;}
 int main(){
- assert(Show::REPEAT_MS==200&&sizeof(Show::RunPacket)==44&&Show::PROTOCOL==11);
+ assert(Show::REPEAT_MS==200&&sizeof(Show::RunPacket)==44&&Show::PROTOCOL==12);
  actors.begin();showRunner.begin();mockNow=100;
  Show::Cue cues[2]{};for(int i=0;i<2;i++){cues[i].dimmerMask=1;cues[i].dimmers[0]={(uint8_t)(60+i*120),1000,0};}
  auto crc=Show::crc32(cues,sizeof(cues));auto ref=Show::reference(base(Show::RUN));ref.checksum=crc;ref.step=1;

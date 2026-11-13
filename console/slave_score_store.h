@@ -21,11 +21,14 @@ public:
   version=checksum=0;cues.clear();
   auto f=LittleFS.open("/slave-score.bin","r");if(!f)return;FileHeader h{};
   if(f.read((uint8_t*)&h,sizeof(h))!=sizeof(h)||h.magic!=MAGIC||!h.version||!h.total||h.total>MAX_STEPS)return;
-  if(h.reserved!=0&&h.reserved!=8&&h.reserved!=9&&h.reserved!=10&&h.reserved!=PROTOCOL)return;
-  size_t stride=!h.reserved?sizeof(LegacyCue):h.reserved==PROTOCOL?sizeof(Cue):h.reserved==10?sizeof(Score10Cue):sizeof(PriorCue);if(f.size()!=sizeof(h)+h.total*stride)return;
+  if(h.reserved!=0&&h.reserved!=8&&h.reserved!=9&&h.reserved!=10&&h.reserved!=11&&h.reserved!=PROTOCOL)return;
+  size_t stride=!h.reserved?sizeof(LegacyCue):h.reserved==PROTOCOL?sizeof(Cue):h.reserved==11?sizeof(Score11Cue):h.reserved==10?sizeof(Score10Cue):sizeof(PriorCue);if(f.size()!=sizeof(h)+h.total*stride)return;
   if(!h.reserved){
    std::vector<LegacyCue> old(h.total);if(f.read((uint8_t*)old.data(),old.size()*sizeof(LegacyCue))!=old.size()*sizeof(LegacyCue)||crc32(old.data(),old.size()*sizeof(LegacyCue))!=h.checksum)return;
    cues.assign(h.total,Cue{});for(size_t i=0;i<old.size();i++)memcpy(&cues[i],&old[i],sizeof(LegacyCue));
+  }else if(h.reserved==11){
+   std::vector<Score11Cue> old(h.total);if(f.read((uint8_t*)old.data(),old.size()*sizeof(Score11Cue))!=old.size()*sizeof(Score11Cue)||crc32(old.data(),old.size()*sizeof(Score11Cue))!=h.checksum)return;
+   cues.assign(h.total,Cue{});for(size_t i=0;i<old.size();i++)memcpy(&cues[i],&old[i],sizeof(Score11Cue));
   }else if(h.reserved==10){
    std::vector<Score10Cue> old(h.total);if(f.read((uint8_t*)old.data(),old.size()*sizeof(Score10Cue))!=old.size()*sizeof(Score10Cue)||crc32(old.data(),old.size()*sizeof(Score10Cue))!=h.checksum)return;
    cues.assign(h.total,Cue{});for(size_t i=0;i<old.size();i++)memcpy(&cues[i],&old[i],sizeof(Score10Cue));

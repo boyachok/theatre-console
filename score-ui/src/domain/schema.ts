@@ -9,6 +9,7 @@ export interface Parameter {
   relayMode?: 0 | 1 | 2;
 }
 export interface Device {
+  voice?: import('./voice.ts').VoiceBank;
   profile?: 'standard' | 'helmet';
   id: string;
   name: string;
@@ -65,6 +66,7 @@ export interface AudioCue {
   fadeOut: number | null;
 }
 export interface StripCue {
+  settings?: StripEffect;
   action: 'hold' | 'stop' | 'play';
   effectId: string | null;
 }
@@ -84,7 +86,17 @@ export interface Step {
 export interface StripEffect {
   id: string;
   name: string;
-  mode: 'wave' | 'fill' | 'static';
+  mode: 'wave' | 'fill' | 'static' | 'waiting' | 'disco' | 'alarm' | 'loading';
+  density?: number;
+  sparkles?: number;
+  noise?: number;
+  palette?: 0 | 1 | 2;
+  audioReactive?: boolean;
+  release?: number;
+  sensitivity?: number;
+  backgroundEnabled?: boolean;
+  backgroundBrightness?: number;
+  seed?: number;
   color: string;
   background: string;
   brightness: number;

@@ -33,22 +33,11 @@ export function DevicesDialog({
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const update = (id: string, patch: Partial<Device>) =>
     setDevices((list) => list.map((d) => (d.id === id ? { ...d, ...patch } : d)));
-  const parameterChange = async (
+  const parameterChange = (
     device: Device,
     parameter: Parameter,
     patch: Partial<Parameter>,
   ) => {
-    if (
-      parameter.id === acParameter(device).id &&
-      patch.enabled &&
-      !parameter.enabled &&
-      !(await ask({
-        message:
-          'Диммер220: GPIO41 — Z-C, GPIO40 — PSM. До включения необходимо проверить изолированную логику 3.3 В, входной ток PSM, защиту и охлаждение. ESP32 не выдерживает 5 В; GND не соединять с N/PE. Сначала испытайте без 220 В. В LIVE сохранение может сразу передать эту сцену. Включить канал?',
-        accept: 'Включить канал',
-      }))
-    )
-      return;
     const transform = (p: Parameter) => (p.id === parameter.id ? { ...p, ...patch } : p);
     update(device.id, {
       dimmers: device.dimmers.map(transform),
@@ -120,6 +109,10 @@ export function DevicesDialog({
           <Plus size={19} />
         </button>
       </div>
+      <p className="field-help">
+        Диммер220: GPIO41 — Z-C 3,3 В, GPIO40 — PSM. Работает по сцене без отдельного
+        разрешения. Нужна изолированная логика; GND не соединять с N/PE.
+      </p>
       <div className="feature-matrix-scroll">
         <table className="feature-matrix" aria-label="Состав приборов">
           <thead>

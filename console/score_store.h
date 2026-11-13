@@ -54,10 +54,12 @@ inline bool decodeCue(JsonVariantConst source,Cue &cue){
  if(audio.size()==7){if(!bounded(audio[6],1))return false;cue.audioLoop=audio[6];}
  auto s=source["s"].as<JsonArrayConst>();
  if(s.size()){
-  const uint32_t max[17]={1,2,2,1024,255,255,255,255,255,255,100,100,1,3600000,0xffffffffUL,1,1};
+  const uint32_t max[17]={1,2,6,1024,255,255,255,255,255,255,100,100,1,3600000,0xffffffffUL,1,1};
   if(s.size()!=17)return false;for(unsigned i=0;i<17;i++)if(!bounded(s[i],max[i]))return false;
   cue.strip={s[0],s[1],s[2],s[4],s[5],s[6],s[7],s[8],s[9],s[10],s[11],s[12],s[15],s[16],s[3],s[13],s[14]};
  }else{if(source["stripAction"].as<int>()==2)return false;cue.strip.action=source["stripAction"]|0;}
+ if(!source["x"].isNull()){auto x=source["x"].as<JsonArrayConst>();const uint32_t limits[]={100,100,100,2,1,1,100,100,3600000,0xffffffffUL};if(x.size()!=10)return false;for(int i=0;i<10;i++)if(!bounded(x[i],limits[i]))return false;cue.stripOptions={x[0],x[1],x[2],x[3],x[4],x[5],x[6],x[7],x[8],x[9]};}
+ if(!source["v"].isNull()){auto v=source["v"].as<JsonArrayConst>();const uint32_t limits[]={1,1,4,11,2,3,100};if(v.size()!=20)return false;for(int i=0;i<7;i++)if(!bounded(v[i],limits[i]))return false;for(int i=7;i<20;i++)if(!v[i].is<float>())return false;cue.voice={v[0],v[1],v[2],v[3],v[4],v[5],v[6],v[7],v[8],v[9],v[10],v[11],v[12],v[13],v[14],v[15],v[16],v[17],v[18],v[19]};}
  return valid(cue);
 }
 struct Plan {uint8_t mac[6]{};String id;std::vector<Cue> cues;uint32_t checksum=0;};

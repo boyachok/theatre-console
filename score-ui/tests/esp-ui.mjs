@@ -517,17 +517,14 @@ try {
     workspace.draft.steps[0].devices[project.devices[0].id].dimmers['pwm-1'].animation.period,
     2,
   );
-  // New mains channel is opt-in with a non-native, cancellable safety prompt; OFF edits store without execution.
+  // Mains remains explicitly authored, but no extra confirmation/ARM is needed; OFF edits do not execute.
   await page.getByRole('button', { name: 'Приборы', exact: true }).click();
   const mainsCheck = settings.getByRole('checkbox', { name: 'Прибор 1 · AC220', exact: true });
   assert.equal(await mainsCheck.isChecked(), false);
   await mainsCheck.click();
-  let confirmation = page.getByRole('dialog', { name: 'Подтверждение', exact: true });
-  await confirmation.getByText('Сначала испытайте без 220 В', { exact: false }).waitFor();
-  await confirmation.getByRole('button', { name: 'Отмена', exact: true }).click();
-  assert.equal(await mainsCheck.isChecked(), false);
-  await mainsCheck.click();
-  await confirmation.getByRole('button', { name: 'Включить канал', exact: true }).click();
+  await mainsCheck.waitFor({ state: 'visible' });
+  assert.equal(await mainsCheck.isChecked(), true);
+  assert.equal(await page.getByRole('dialog', { name: 'Подтверждение', exact: true }).count(), 0);
   await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
   const acCell = page
     .locator('.parameter-row[data-parameter="ac-220"]')
@@ -702,9 +699,80 @@ try {
   failBackupReservations = false;
   assert.equal(navigationCalls(), beforeBackup);
   assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 320);
+  // Complete helmet UI through the master, no direct helmet HTTP and no hidden GO.
+  status.nodes = [peer, helmet];
+  await page.waitForTimeout(800);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
+  await settings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
+  await settings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
+  await settings.getByLabel('Контроллер прибора', { exact: true }).selectOption(helmet.mac);
+  await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.getByRole('button', { name: 'Настройки шлема', exact: true }).click();
+  const voiceWindow = page.getByRole('dialog', { name: /Звук шлема/ });
+  const voiceNav = navigationCalls();
+  assert.equal(await voiceWindow.locator('details').getAttribute('open'), null);
+  await voiceWindow.getByText('Параметры звука', { exact: true }).click();
+  await voiceWindow.getByLabel('Алгоритм голоса', { exact: true }).selectOption('chip');
+  await voiceWindow.getByLabel('Высота голоса / частота', { exact: true }).fill('333');
+  await voiceWindow.getByRole('button', { name: 'Сохранить пресет', exact: true }).click();
+  await voiceWindow.getByRole('button', { name: 'Сохранить как новый', exact: true }).click();
+  await voiceWindow.getByLabel('Название голосового пресета', { exact: true }).fill('Шлем — чип');
+  await page.waitForTimeout(2000);
+  const helmetDevice = workspace.draft.devices[0];
+  assert.equal(helmetDevice.voice.presets.length, 2);
+  assert.equal(helmetDevice.voice.presets[1].name, 'Шлем — чип');
+  assert.equal(helmetDevice.voice.presets[1].settings.frequency, 333);
+  assert(draft.devices[0].cues.every((c) => c.v[2] === 4 && c.v[9] === 333));
+  assert.equal(navigationCalls(), voiceNav);
+  await page.setViewportSize({ width: 320, height: 844 });
+  console.log(
+    'Helmet mobile bounds',
+    await voiceWindow.evaluate((n) => ({
+      client: n.clientWidth,
+      scroll: n.scrollWidth,
+      children: [...n.querySelectorAll('*')]
+        .filter((e) => e.getBoundingClientRect().right > n.getBoundingClientRect().right + 1)
+        .map((e) => ({
+          tag: e.tagName,
+          cls: e.className,
+          w: e.getBoundingClientRect().width,
+          text: e.textContent?.slice(0, 55),
+        })),
+    })),
+  );
+  await page.screenshot({ path: '/tmp/theatre-0715-voice-debug.png' });
+  assert(await voiceWindow.evaluate((n) => n.scrollWidth <= n.clientWidth + 1));
+  await page.screenshot({ path: '/tmp/theatre-0715-voice-dialog-320.png' });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await voiceWindow.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+  const libraryMode = workspace.draft.effects[0].mode;
+  await page
+    .locator('.parameter-row[data-parameter="strip"]')
+    .first()
+    .locator('td')
+    .nth(status.console.step)
+    .locator('button')
+    .click();
+  await page
+    .getByLabel('Событие ленты', { exact: true })
+    .selectOption(workspace.draft.effects[0].id);
+  await page.getByRole('button', { name: 'Ожидание', exact: true }).click();
+  await page.getByLabel('Аудиореактивность', { exact: true }).check();
+  await page.getByLabel('Фейд после голоса', { exact: true }).fill('1.2');
+  await page.waitForTimeout(1900);
+  assert(
+    workspace.draft.steps.some(
+      (s) => s.devices[helmetDevice.id].strip.settings?.mode === 'waiting',
+    ),
+  );
+  assert.equal(workspace.draft.effects[0].mode, libraryMode);
+  await page.setViewportSize({ width: 320, height: 844 });
+  assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 320);
+  await page.screenshot({ path: '/tmp/theatre-0715-helmet-320.png' });
   assert.deepEqual(errors, []);
   console.log(
-    'MOCK ESP production UI: real/unknown firmware versions, 12-channel inversion/masks in LIVE, JSON dirty-only ten-minute reminders/snooze/manual series/download/reload/no GO, opt-in Диммер220/safety-confirm cancel+enable, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
+    'MOCK ESP production UI: helmet global presets/save/rename and per-scene reactive light/no hidden GO/mobile dialog, real/unknown firmware versions, 12-channel inversion/masks in LIVE, JSON dirty-only ten-minute reminders/snooze/manual series/download/reload/no GO, scene-driven Диммер220 without extra confirmation/ARM, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

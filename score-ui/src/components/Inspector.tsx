@@ -1,12 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { RotateCcw } from 'lucide-react';
 import type { CellSelection, Project, Step, Timings } from '../domain/schema.ts';
+import { StripEditor } from './StripEditor.tsx';
 import { acParameter, acCue } from '../domain/project.ts';
 import type { PreviewEngine } from '../domain/playback.ts';
 import { FieldPair, NumberField, Section } from './Fields.tsx';
 import { DevicePreview } from './DevicePreview.tsx';
 import { DimmerAnimationEditor, SliderField } from './DimmerAnimationEditor.tsx';
+import { voiceBank } from '../domain/voice.ts';
+import type { Device } from '../domain/schema.ts';
+import type { NetworkTransport } from '../transport/network.ts';
 interface Props {
+  onHelmet: (id: string) => void;
+  onDevice: (d: Device) => void;
+  network: NetworkTransport;
   project: Project;
   stepId: string;
   selection: CellSelection | null;
@@ -23,7 +30,11 @@ export function Inspector({
   engine,
   onChangeCell,
   onStep,
+  onDevice,
+  onHelmet,
+  network,
 }: Props) {
+  const networkState = useSyncExternalStore(network.subscribe, network.getSnapshot);
   const [tab, setTab] = useState<'step' | 'cell'>(selection ? 'cell' : 'step');
   useEffect(
     () => setTab(selection ? 'cell' : 'step'),
@@ -39,6 +50,10 @@ export function Inspector({
       )
     : null;
   const cue = step.devices[device.id];
+  const stripEffect =
+    cue.strip.action === 'play'
+      ? (cue.strip.settings ?? project.effects.find((f) => f.id === cue.strip.effectId))
+      : undefined;
   const light = selection?.kind === 'ac' ? acCue(cue) : cue.dimmers[selection?.parameterId ?? ''];
   const change = (patch: Record<string, unknown>) => {
     if (selection) onChangeCell(selection, patch);
@@ -186,8 +201,9 @@ export function Inspector({
               {selection.kind === 'ac' && (
                 <p className="muted">
                   220 В · GPIO41 Z-C → GPIO40 PSM. Только фазовое управление, не PWM. Нужны
-                  проверенные уровни 3.3 В, изоляция и охлаждение. Без Z-C выход блокируется; после
-                  ошибки — STOP, затем GO. Предпросмотр не измеряет сеть.
+                  проверенные уровни 3.3 В, изоляция и охлаждение. Без Z-C импульсов нет; после
+                  краткого сбоя синхронизация восстанавливается автоматически. Предпросмотр не
+                  измеряет сеть.
                 </p>
               )}
               <DimmerAnimationEditor
@@ -216,7 +232,8 @@ export function Inspector({
                 </button>
               </div>
               <p className="muted">
-                Только запрос состояния. Аудиомодуль пока не подключён; реального звука нет.
+                Живой голос INMP441 → локальный DSP → PCM5102A. Звуковой пресет общий для этого
+                шлема во всех сценах.
               </p>
             </Section>
           )}
@@ -310,34 +327,85 @@ export function Inspector({
             </>
           )}
           {selection.kind === 'strip' && (
-            <label className="field">
-              <span>Событие ленты</span>
-              <select
-                aria-label="Событие ленты"
-                value={
-                  cue.strip.action === 'play' ? (cue.strip.effectId ?? 'hold') : cue.strip.action
-                }
-                onChange={(e) =>
-                  change(
-                    e.target.value === 'hold' || e.target.value === 'stop'
-                      ? { action: e.target.value, effectId: null }
-                      : { action: 'play', effectId: e.target.value },
-                  )
-                }
-              >
-                <option value="hold">Продолжать</option>
-                <option value="stop">Стоп</option>
-                {project.effects.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <>
+              <label className="field">
+                <span>Событие ленты</span>
+                <select
+                  aria-label="Событие ленты"
+                  value={
+                    cue.strip.action === 'play' ? (cue.strip.effectId ?? 'hold') : cue.strip.action
+                  }
+                  onChange={(e) =>
+                    change(
+                      e.target.value === 'hold' || e.target.value === 'stop'
+                        ? { action: e.target.value, effectId: null }
+                        : {
+                            action: 'play',
+                            effectId: e.target.value,
+                            settings: structuredClone(
+                              project.effects.find((f) => f.id === e.target.value),
+                            ),
+                          },
+                    )
+                  }
+                >
+                  <option value="hold">Продолжать</option>
+                  <option value="stop">Стоп</option>
+                  {project.effects.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {stripEffect && (
+                <>
+                  <p className="muted">
+                    Параметры света только этой сцены; библиотечный эффект не меняется.
+                  </p>
+                  <StripEditor
+                    effect={stripEffect}
+                    onChange={(patch) => change({ settings: { ...stripEffect, ...patch } })}
+                  />
+                </>
+              )}
+            </>
           )}
         </>
       )}
-      <DevicePreview device={device} engine={engine} />
+      {device.profile === 'helmet' && (
+        <Section title="Звук шлема · все сцены">
+          <label className="field">
+            <span>Пресет голоса</span>
+            <select
+              aria-label="Пресет голоса"
+              value={voiceBank(device).selected}
+              onChange={(e) =>
+                onDevice({
+                  ...device,
+                  voice: { ...voiceBank(device), selected: e.target.value, working: undefined },
+                })
+              }
+            >
+              {voiceBank(device).presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button onClick={() => onHelmet(device.id)}>Настройки шлема</button>
+        </Section>
+      )}
+      <DevicePreview
+        device={device}
+        engine={engine}
+        audioLevel={
+          networkState.devices[(device.mac ?? '').toUpperCase()]?.voice?.ageMs! < 3000
+            ? networkState.devices[(device.mac ?? '').toUpperCase()]?.voice?.inputLevel
+            : undefined
+        }
+      />
     </div>
   );
 }

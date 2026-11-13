@@ -24,9 +24,12 @@ public:
  bool active=false;uint32_t run=0,sequence=0,lastCueCRC=0;uint16_t step=0;
  explicit Runner(Actors &a):actors(a){}
  Mains::State acStatus(){return ac.diagnostics();}
- void begin(){ac.begin();relayConfig.begin("stage-io",false);relayMode2=relayConfig.getUChar("relayMode2",0);if(relayMode2>2)relayMode2=0;writeRelay(1,false);strip.begin();}
+ void begin(){ac.begin();relayConfig.begin("stage-io",false);relayMode2=relayConfig.getUChar("relayMode2",0);if(relayMode2>2)relayMode2=0;writeRelay(1,false);strip.begin();ac.monitor();}
+#ifdef THEATRE_HOST_TEST
+ bool acZeroForTest(uint64_t at,Mains::Pulse &pulse){return ac.zeroForTest(at,pulse);}
+#endif
  void stopAudio(){targetLoop=loopUpdate=false;audioPending=audioStarting=stopPending=false;targetTrack=0;lastVolume=0;audioSceneAt=audioStartAt=audioDelayMs=0;volume=Ramp{};actors.player.stop();}
- void stop(){ac.stop();strip.stop();stopAudio();active=false;stopAt=0;for(int i=0;i<2;i++)relayPending[i]=false;writeRelay(1,false);actors.off();}
+ void stop(){ac.off();strip.stop();stopAudio();active=false;stopAt=0;for(int i=0;i<2;i++)relayPending[i]=false;writeRelay(1,false);actors.off();}
  bool apply(const Packet &p,uint32_t now,bool recovering=false){
   if(!valid(p.cue)||!p.transition)return false;
   if(run==p.run&&!newer(p.transition,sequence)&&!(recovering&&active&&p.transition==sequence))return true;
@@ -35,7 +38,7 @@ public:
   bool restart=p.reason!=0;bool fresh=p.run!=run||newer(p.transition,sequence);
   if(!actors.setDimmerInversions(c.invertedMask,c.inversionSet))return false;
   if(!ac.configure(c.ac.enabled,fresh&&(!active||p.step!=step||p.reason!=0)))return false;
-  if(!strip.apply(c.strip,now,restart))return false;
+  if(!strip.apply(c.strip,now,restart,c.stripOptions))return false;
   for(int i=0;i<12;i++){
    if(!active)lights[i].reset(actors.dimmerValue(i),now);
    lights[i].apply(c.dimmers[i],c.animations[i],c.dimmerMask&(1<<i),now,!active||restart||p.run!=run||p.step!=step,c.lightDelayMs[i]);

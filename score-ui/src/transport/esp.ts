@@ -84,6 +84,8 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const history = prior && n.sent >= prior.sent ? prior.history : [];
       devices[key] = {
         mac: key,
+        voice:
+          n.role === 'helmet' && n.voice && Number.isFinite(n.voice.inputLevel) ? n.voice : null,
         firmwareVersion: typeof n.firmwareVersion === 'string' ? n.firmwareVersion : null,
         dimmerInverted: n.pwmConfig?.inverted12 ?? n.pwmConfig?.inverted,
         role: n.role === 'remote' ? 'remote' : n.role === 'helmet' ? 'helmet' : 'slave',
@@ -146,7 +148,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
           devices: Object.fromEntries(
             Object.entries(this.snapshot.devices).map(([mac, info]) => [
               mac,
-              { ...info, online: null, confirmedStep: null, sceneStatus: undefined },
+              { ...info, voice: null, online: null, confirmedStep: null, sceneStatus: undefined },
             ]),
           ),
         };

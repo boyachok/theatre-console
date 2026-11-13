@@ -174,7 +174,7 @@ export class PreviewEngine {
         const strip = effectiveStrip(project, step, device.id);
         if (strip.action === 'stop') runtime.strip = null;
         if (strip.action === 'play') {
-          const effect = project.effects.find((e) => e.id === strip.effectId);
+          const effect = strip.settings ?? project.effects.find((e) => e.id === strip.effectId);
           if (effect) {
             const previous = runtime.strip;
             const changed =
