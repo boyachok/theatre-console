@@ -1,6 +1,7 @@
 # Общая версия и резервные копии
 
-**0.8.0 подготовлена, не прошита**: keyboard/mouse editor, multi-select/batch/undo,
+**0.8.0 установлена только на master A0:85:E3:E2:BC:D4**, остальные образы подготовлены:
+keyboard/mouse editor, multi-select/batch/undo,
 custom row/device order, cycle limits, optional precision bench builds. Schema1/score12,
 P16/P17 не меняются. Master0.8 понимает slave0.7.18/helmet0.7.19; baseline45bc3ea.
 Подробности: [EDITOR_080.md](EDITOR_080.md). Ниже история.
