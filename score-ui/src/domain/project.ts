@@ -58,7 +58,7 @@ export function createDevice(index: number): Device {
     id: uid(),
     name: `Прибор ${index + 1}`,
     ip: null,
-    acDimmer: { id: 'ac-220', name: 'Диммер220', color: 'warm', enabled: false },
+    acDimmer: { id: 'ac-220', name: 'Диммер220', color: 'warm', enabled: true },
     dimmers: Array.from({ length: 12 }, (_, i) => ({
       ...parameter(`pwm-${i + 1}`, `Диммер ${i + 1}`),
       inverted: false,

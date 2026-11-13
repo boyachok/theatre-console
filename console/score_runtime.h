@@ -11,7 +11,7 @@
 namespace Show {
 class Runner {
  Actors &actors;Preferences relayConfig;DimmerChannel lights[12],acLight;Ramp volume;Ws2811 strip;AcDimmer ac;bool targetLoop=false,loopUpdate=false;
- uint8_t written[12]{},relayMode2=0,lastVolume=255;bool relay2=false,relayTarget[2]{},relayPending[2]{};
+ float written[12]{};uint8_t relayMode2=0,lastVolume=255;bool relay2=false,relayTarget[2]{},relayPending[2]{};
  uint32_t relayDue[2]{},lastTick=0,lastVolumeAt=0,stopAt=0;
  uint16_t targetTrack=0;bool audioPending=false,audioStarting=false,stopPending=false;uint32_t expectedPlay=0;uint8_t targetVolume=0;uint32_t audioFadeIn=0,audioSceneAt=0,audioStartAt=0,audioDelayMs=0;
  void confirmAudioStart(){if(audioStarting&&actors.player.playSerial==expectedPlay){audioStarting=false;volume=Ramp{0.f,0.f,actors.player.playSentAt,0};volume.target(targetVolume,audioFadeIn,0,actors.player.playSentAt);}}
@@ -40,9 +40,9 @@ public:
   if(!ac.configure(c.ac.enabled,fresh&&(!active||p.step!=step||p.reason!=0)))return false;
   if(!strip.apply(c.strip,now,restart,c.stripOptions))return false;
   for(int i=0;i<12;i++){
-   if(!active)lights[i].reset(actors.dimmerValue(i),now);
+   if(!active)lights[i].reset(actors.dimmerFineValue(i),now);
    lights[i].apply(c.dimmers[i],c.animations[i],c.dimmerMask&(1<<i),now,!active||restart||p.run!=run||p.step!=step,c.lightDelayMs[i]);
-   written[i]=actors.dimmerValue(i);
+   written[i]=actors.dimmerFineValue(i);
   }
   if(!active)acLight.reset(0,now);
   acLight.apply(c.ac.dimmer,c.ac.animation,c.ac.enabled,now,!active||restart||p.run!=run||p.step!=step,c.ac.delayMs);
@@ -65,7 +65,7 @@ public:
  }
  void tick(uint32_t now,bool acLease=true){
   ac.tick(acLease);strip.tick(now);if(!active||now-lastTick<1)return;lastTick=now;
-  for(int i=0;i<12;i++){uint8_t v=(uint8_t)std::max(0.f,std::min(255.f,lights[i].value(now)));if(v!=written[i]){if(actors.setDimmer(i,v))written[i]=v;}}
+  for(int i=0;i<12;i++){float v=std::max(0.f,std::min(255.f,lights[i].value(now)));if(PWM_BITS==8)v=(uint8_t)v;if(v!=written[i]){if(actors.setDimmerFine(i,v))written[i]=v;}}
   ac.level((uint8_t)std::max(0.f,std::min(255.f,acLight.value(now))));
   for(int i=0;i<2;i++)if(relayPending[i]&&(int32_t)(now-relayDue[i])>=0){writeRelay(i,relayTarget[i]);relayPending[i]=false;}
   if(audioPending&&(int32_t)(now-audioStartAt)>=0&&actors.player.bootSettled()&&actors.player.freeSlots()>=3){

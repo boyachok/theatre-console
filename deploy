@@ -33,6 +33,23 @@ else
   OUT="$PWD/build/$PROFILE-$ROLE-ch$CHANNEL"
   LINK="ESP-NOW channel $CHANNEL"
 fi
+# Optional offline/bench slave variants; defaults stay byte-compatible 8-bit/25kHz.
+if [[ "$ROLE" == slave && "$PROFILE" == console && -n "${PWM_BITS:-}" ]]; then
+  [[ "$PWM_BITS" == 8 || "$PWM_BITS" == 10 || "$PWM_BITS" == 12 ]] || { echo 'PWM_BITS must be8,10 or12';exit 1; }
+  PWM_HZ="${PWM_HZ:-25000}"
+  python3 - "$PWM_BITS" "$PWM_HZ" <<'PY'
+import sys,re
+assert re.fullmatch(r'[0-9]+',sys.argv[2]);bits,hz=int(sys.argv[1]),int(sys.argv[2]);assert 4000<=hz<=25000 and 80000000%hz==0 and hz*(1<<bits)<=40000000,'PWM frequency/resolution unsupported'
+PY
+  PWM_GAMMA="${PWM_GAMMA:-1.0}"; PWM_GRAY="${PWM_GRAY:-0.5}"
+  python3 - "$PWM_GAMMA" "$PWM_GRAY" <<'PY'
+import sys,math,re
+for s,low,high in [(sys.argv[1],.5,3),(sys.argv[2],.05,.95)]:
+ assert re.fullmatch(r'[0-9]+(?:\.[0-9]+)?',s) and math.isfinite(float(s)) and low<=float(s)<=high,'Invalid PWM curve'
+PY
+  FLAGS="$FLAGS -DTHEATRE_PWM_BITS=$PWM_BITS -DTHEATRE_PWM_HZ=$PWM_HZ -DTHEATRE_PWM_GAMMA=$PWM_GAMMA -DTHEATRE_PWM_GRAY=$PWM_GRAY"
+  OUT="$OUT-pwm${PWM_BITS}-hz${PWM_HZ}-g${PWM_GAMMA}-gray${PWM_GRAY}"
+fi
 BIN="$SKETCH.ino"
 if [[ "$PROFILE" == console ]]; then
   python3 tools/release.py --check

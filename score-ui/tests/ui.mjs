@@ -46,30 +46,30 @@ try {
   await p.waitForSelector('.parameter-row');
   assert.equal(await p.locator('.step-heading').count(), 1);
   assert.equal(await p.locator('.device-group').count(), 10);
-  assert.equal(await p.locator('.parameter-row').count(), 160);
+  assert.equal(await p.locator('.parameter-row').count(), 170);
   assert((await p.locator('h1').innerText()).includes('Theatre console'));
   assert((await p.getByLabel('Название спектакля').boundingBox()).width >= 280);
   await p.getByRole('button', { name: 'Свернуть Прибор 1', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 144);
+  assert.equal(await p.locator('.parameter-row').count(), 153);
   await p.getByRole('button', { name: 'Развернуть Прибор 1', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 160);
-  await cell(p, 0, 'pwm-1').locator('button').click();
+  assert.equal(await p.locator('.parameter-row').count(), 170);
+  await cell(p, 0, 'pwm-1').locator('button').dblclick();
   assert.equal(await p.getByLabel('Яркость', { exact: true }).inputValue(), '100');
   assert.equal(await p.getByLabel('Вход', { exact: true }).getAttribute('type'), 'text');
   assert.equal(
     await p.locator('[data-live-parameter="pwm-1"]').getAttribute('data-live-value'),
     '0',
   );
-  await cell(p, 0, 'pwm-1').locator('button').click();
+  await cell(p, 0, 'pwm-1').locator('button').dblclick();
   assert.equal(await p.getByLabel('Яркость', { exact: true }).inputValue(), '0');
-  await cell(p, 0, 'audio').locator('button').click();
+  await cell(p, 0, 'audio').locator('button').dblclick();
   assert.equal(await p.getByLabel('Номер трека', { exact: true }).inputValue(), '1');
   await p.getByLabel('Номер трека', { exact: true }).fill('5');
-  await cell(p, 0, 'audio').locator('button').click();
+  await cell(p, 0, 'audio').locator('button').dblclick();
   assert.equal(await p.getByLabel('Номер трека', { exact: true }).inputValue(), '');
-  await cell(p, 0, 'audio').locator('button').click();
+  await cell(p, 0, 'audio').locator('button').dblclick();
   assert.equal(await p.getByLabel('Номер трека', { exact: true }).inputValue(), '5');
-  await cell(p, 0, 'audio').locator('button').click();
+  await cell(p, 0, 'audio').locator('button').dblclick();
   assert.equal(await p.locator('footer.step-player').count(), 0);
   assert(await p.locator('.app-header .step-player').isVisible());
   assert.equal(
@@ -156,7 +156,7 @@ try {
   const devices = p.getByRole('dialog', { name: 'Приборы', exact: true });
   assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
   assert.equal(await devices.locator('input[type=checkbox]').count(), 170);
-  assert.equal(await devices.locator('input[type=checkbox]:checked').count(), 160);
+  assert.equal(await devices.locator('input[type=checkbox]:checked').count(), 170);
   assert(await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).isDisabled());
   await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
   await p.getByRole('dialog', { name: 'Подтверждение', exact: true }).waitFor();
@@ -185,7 +185,7 @@ try {
   await devices.getByLabel('Цвет DIM1', { exact: true }).selectOption('red');
   await devices.getByLabel('Галерея · REL2', { exact: true }).uncheck();
   await devices.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 159);
+  assert.equal(await p.locator('.parameter-row').count(), 169);
   assert((await paramRow(p, 'pwm-1').innerText()).includes('Красный фронт'));
   await p.getByRole('button', { name: 'Эффекты ленты', exact: true }).click();
   const effects = p.getByRole('dialog', { name: 'Эффекты ленты' });
@@ -281,8 +281,15 @@ try {
   await big.goto(base);
   await big.waitForSelector('.step-heading:nth-of-type(101)');
   assert.equal(await big.locator('.step-heading').count(), 100);
-  assert.equal(await big.locator('.parameter-row td').count(), 16000);
+  assert.equal(await big.locator('.parameter-row td').count(), 17000);
   assert((await big.locator('.device-group').first().innerText()).includes('192.168.50.33'));
+  const cursorStart = Date.now(),
+    playingBefore = await current(big);
+  await big.keyboard.press('ArrowRight');
+  await big.keyboard.press('ArrowDown');
+  await big.locator('td.selected-cell').waitFor();
+  assert.equal(await current(big), playingBefore, 'Large-score cursor never navigates playback');
+  console.log('0.8 100-step/170-row keyboard navigation ms:', Date.now() - cursorStart);
   await big.screenshot({ path: '/tmp/theatre-score-100-v071.png', fullPage: true });
   await stress.close();
   for (const [width, height] of [
@@ -379,28 +386,28 @@ try {
   assert.equal(await helmetModal.locator('.parameter-config').count(), 2);
   await helmetModal.getByLabel('Точек WS2811', { exact: true }).fill('127');
   await helmetModal.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  assert.equal(await helmet.locator('.parameter-row').count(), 146);
+  assert.equal(await helmet.locator('.parameter-row').count(), 155);
   const voiceCell = helmet
     .locator('.parameter-row[data-parameter="audio"]')
     .first()
     .locator('td')
     .first()
     .locator('button');
-  await voiceCell.click();
+  await voiceCell.dblclick();
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'true');
   assert.equal(await helmet.getByLabel('Номер трека', { exact: true }).count(), 0);
   await helmet.getByText('Живой голос INMP441', { exact: false }).waitFor({ state: 'visible' });
-  await voiceCell.click();
+  await voiceCell.dblclick();
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'false');
   await pause(400);
   await helmet.reload();
   await helmet.waitForSelector('.parameter-row');
-  assert.equal(await helmet.locator('.parameter-row').count(), 146);
+  assert.equal(await helmet.locator('.parameter-row').count(), 155);
   await helmetContext.close();
   assert.equal(failures.length, 0, failures.join('\n'));
   assert.equal(externals.length, 0, externals.join('\n'));
   console.log(
-    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x160 cells, toggle light/audio, custom confirmations (native blocked / cancel / skip until reload / Escape / nested focus), 390/375/320px.',
+    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x170 cells, select/double-click light/audio, custom confirmations (native blocked / cancel / skip until reload / Escape / nested focus), 390/375/320px.',
   );
 } finally {
   await browser.close();

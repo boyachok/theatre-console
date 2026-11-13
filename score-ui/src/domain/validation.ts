@@ -36,8 +36,24 @@ export function validateProject(value: unknown): asserts value is Project {
   );
   ensure(Array.isArray(value.steps) && value.steps.length >= 1, 'Нужен хотя бы один шаг');
   ensure(Array.isArray(value.effects), 'Неверный список эффектов');
+  const order = (x: unknown, max: number) =>
+    Array.isArray(x) &&
+    x.length <= max &&
+    x.every((k) => typeof k === 'string' && k.length > 0 && k.length <= 400) &&
+    new Set(x).size === x.length;
+  ensure(
+    value.layout === undefined ||
+      (object(value.layout) &&
+        ['devices', 'custom'].includes(value.layout.mode) &&
+        order(value.layout.order, 200)),
+    'Неверная раскладка строк',
+  );
   for (const device of value.devices) {
     ensure(object(device) && text(device.id) && text(device.name), 'Неверный прибор');
+    ensure(
+      device.rowOrder === undefined || order(device.rowOrder, 17),
+      'Неверный порядок параметров',
+    );
     ensure(
       device.profile === undefined || ['standard', 'helmet'].includes(device.profile),
       'Неверный тип прибора',

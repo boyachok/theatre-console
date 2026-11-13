@@ -19,8 +19,9 @@ constexpr bool validSlavePinMap(){
  return true;
 }
 static_assert(validSlavePinMap(),"Slave PWM/relay/UART/strip/status GPIO overlap");
-constexpr uint32_t PWM_HZ=25000; // 40 MHz XTAL / (6.25 * 256), hardware LEDC
-constexpr uint8_t PWM_BITS=8;
+#include "pwm_curve.h"
+constexpr uint32_t PWM_HZ=THEATRE_PWM_HZ; // Default25kHz; lower rates are explicit bench builds only.
+constexpr uint8_t PWM_BITS=THEATRE_PWM_BITS;
 static_assert(PWM_HZ*(1UL<<PWM_BITS)<=40000000UL,"PWM frequency/resolution exceeds the 40 MHz XTAL clock");
 // Relay polarity: 0=not configured (GPIO input), 1=active HIGH, 2=active LOW.
 // No relay PWM. External hardware pull resistor is mandatory for a defined boot state.

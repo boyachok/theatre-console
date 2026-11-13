@@ -9,6 +9,7 @@ export interface Parameter {
   relayMode?: 0 | 1 | 2;
 }
 export interface Device {
+  rowOrder?: string[]; // presentation only; parameter IDs and physical channels never change
   voice?: import('./voice.ts').VoiceBank;
   profile?: 'standard' | 'helmet';
   id: string;
@@ -105,6 +106,7 @@ export interface StripEffect {
   direction: 'forward' | 'reverse';
 }
 export interface Project {
+  layout?: { mode: 'devices' | 'custom'; order: string[] };
   id: string;
   name: string;
   revision: number;

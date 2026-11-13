@@ -1,4 +1,5 @@
 #pragma once
+#include "pwm_curve.h"
 #ifdef THEATRE_HOST_TEST
 #include <extra_pwm_backend.h>
 #else
@@ -7,7 +8,7 @@
 class ExtraPwm {
  mcpwm_timer_handle_t timer=nullptr;mcpwm_oper_handle_t operators[2]{};
  mcpwm_cmpr_handle_t compare[4]{};mcpwm_gen_handle_t generators[4]{};bool ready=false;
- static constexpr uint32_t TICKS=3200;
+ static constexpr uint32_t TICKS=80000000UL/THEATRE_PWM_HZ;
 public:
  bool begin(const uint8_t *pins,uint8_t inactiveHigh=0){
   mcpwm_timer_config_t cfg{};cfg.group_id=0;cfg.clk_src=MCPWM_TIMER_CLK_SRC_DEFAULT;cfg.resolution_hz=80000000;cfg.period_ticks=TICKS;cfg.count_mode=MCPWM_TIMER_COUNT_MODE_UP;
@@ -23,6 +24,12 @@ public:
    }
   }
   ready=mcpwm_timer_enable(timer)==ESP_OK&&mcpwm_timer_start_stop(timer,MCPWM_TIMER_START_NO_STOP)==ESP_OK;return ready;
+ }
+ bool writeFine(uint8_t index,float value){
+  if(!ready||index>=4)return false;
+  uint32_t ticks=(uint32_t)(value*TICKS/255.f+.5f);
+  if(ticks==0||ticks>=TICKS)return mcpwm_generator_set_force_level(generators[index],ticks?1:0,true)==ESP_OK;
+  return mcpwm_comparator_set_compare_value(compare[index],ticks)==ESP_OK&&mcpwm_generator_set_force_level(generators[index],-1,true)==ESP_OK;
  }
  bool write(uint8_t index,uint8_t value){
   if(!ready||index>=4)return false;

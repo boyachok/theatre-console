@@ -8,7 +8,7 @@ for TEST in quality control lan remote ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors pwm_inversion firmware_info helmet_audio helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery remote_master; do
+for TEST in actors pwm_inversion pwm_precision firmware_info helmet_audio helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery remote_master; do
   c++ "${FLAGS[@]}" -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done

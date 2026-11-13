@@ -1,4 +1,5 @@
 import type { StripEffect } from '../domain/schema.ts';
+import { EFFECT_MIN_SECONDS, EFFECT_MAX_SECONDS } from '../domain/effect-range.ts';
 import { stripModes, stripLabels } from '../domain/strip.ts';
 import { SliderField } from './DimmerAnimationEditor.tsx';
 export function StripEditor({
@@ -24,6 +25,7 @@ export function StripEditor({
       min={min}
       max={max}
       step={step}
+      logarithmic={key === 'duration'}
       suffix={suffix}
       onChange={(v) => change({ [key]: v })}
     />
@@ -56,8 +58,8 @@ export function StripEditor({
           {n(
             'duration',
             e.mode === 'waiting' ? 'Полный цикл туда-обратно' : 'Время прохода',
-            0.04,
-            3600,
+            EFFECT_MIN_SECONDS,
+            EFFECT_MAX_SECONDS,
             2,
             0.01,
             'с',

@@ -2122,3 +2122,128 @@ select:focus {
     transform: scaleX(1);
   }
 }
+/* 0.8 keyboard/mouse editor. The toolbar scrolls locally on narrow screens. */
+.matrix-area {
+  display: flex;
+  flex-direction: column;
+}
+.matrix-scroll {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.quick-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 7px;
+  border-bottom: 1px solid #b8c8de;
+  background: #eef3fb;
+  flex-shrink: 0;
+}
+.quick-toolbar button,
+.quick-toolbar select {
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.quick-toolbar select {
+  max-width: 185px;
+}
+.quick-toolbar button[aria-pressed='true'] {
+  border-color: #3154ce;
+  background: #dce5ff;
+}
+.selection-count {
+  font-size: 11px;
+  color: #304d73;
+}
+kbd {
+  font: inherit;
+  font-size: 0.85em;
+  background: #dce5f2;
+  border: 1px solid #bdcbe0;
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+.shortcut-list > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) 2fr;
+  gap: 12px;
+  margin: 10px 0;
+}
+.shortcut-list dd {
+  margin: 0;
+}
+.quick-value-modal {
+  width: min(460px, calc(100vw - 20px));
+}
+.quick-value-modal input {
+  width: 100%;
+}
+.parameter-row > .parameter-column {
+  position: sticky;
+}
+.row-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  min-width: 0;
+}
+.row-header .drag-handle {
+  flex-shrink: 0;
+  width: 12px;
+  min-width: 12px;
+  padding: 0;
+}
+.row-header code {
+  flex: 0 0 30px;
+  width: 30px !important;
+}
+.row-header .channel-dot {
+  flex-shrink: 0;
+}
+.row-name {
+  flex: 1;
+  text-align: left;
+  font-size: 11px;
+}
+.row-header > .row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-order {
+  display: none;
+  gap: 1px;
+  margin-left: auto;
+  background: inherit;
+}
+.row-order button {
+  font-size: 11px;
+  min-width: 18px;
+  min-height: 22px;
+  padding: 0 3px;
+}
+.parameter-row:hover .row-order,
+.parameter-row:focus-within .row-order {
+  display: inline-flex;
+}
+@media (max-width: 600px) {
+  .quick-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  .quick-toolbar > * {
+    flex-shrink: 0;
+  }
+  .quick-toolbar select {
+    max-width: 155px;
+  }
+  .selection-count {
+    display: none;
+  }
+}

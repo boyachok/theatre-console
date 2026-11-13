@@ -1,6 +1,7 @@
 // Production ESP build against a MOCK HTTP master. No GPIO, RF or physical outputs.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
+import { editorChecks } from './editor-ui-steps.mjs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { INTERFACE_VERSION } from '../src/version.ts';
@@ -92,12 +93,16 @@ const calls = [],
 const backupSequences = new Map();
 let failBackupReservations = false;
 let draft = null,
-  lastSequence = 0;
+  lastSequence = 0,
+  lastClient = '';
 function command(form) {
   assert.equal(form.get('token'), status.token);
   const left = (Number(form.get('deadline')) - (Math.floor(performance.now()) >>> 0)) | 0;
   assert(left >= 0 && left <= 1000);
-  assert(Number(form.get('seq')) > lastSequence);
+  const client = form.get('client');
+  assert(client);
+  assert(Number(form.get('seq')) > (client === lastClient ? lastSequence : 0));
+  lastClient = client;
   lastSequence = Number(form.get('seq'));
   return Number(form.get('navigation')) === status.console.navigation;
 }
@@ -293,7 +298,7 @@ try {
   assert.equal(status.console.step, null);
   assert.equal(status.console.running, false); // Initial sync cannot execute.
   const cell = page.locator('.parameter-row[data-parameter="pwm-1"]').first().locator('td').first();
-  await cell.locator('button').click();
+  await cell.locator('button').dblclick();
   await page.getByLabel('Вход', { exact: true }).fill('0.2');
   assert.equal(
     calls.filter(
@@ -319,7 +324,7 @@ try {
   await page.getByLabel('Фаза', { exact: true }).fill('180');
   await page.getByLabel('Нижний уровень', { exact: true }).fill('25');
   await page.waitForTimeout(600);
-  assert.deepEqual(draft.devices[0].cues[0].d[0], [153, 200, 0, 1, 20, 1800, 25, 50, 0]);
+  assert.deepEqual(draft.devices[0].cues[0].d[0], [153, 200, 0, 1, 67, 1800, 25, 50, 0]);
   assert.deepEqual(draft.devices[0].cues[0].d[1], [0, 0, 0]);
   for (const [mode, code] of [
     ['square', 2],
@@ -345,7 +350,7 @@ try {
     .first()
     .locator('td')
     .first();
-  await audioCell.locator('button').click();
+  await audioCell.locator('button').dblclick();
   assert.equal(await page.getByLabel('Задержка старта трека', { exact: true }).inputValue(), '0');
   assert.equal(
     await page.getByLabel('Ползунок: Задержка старта трека', { exact: true }).inputValue(),
@@ -486,7 +491,7 @@ try {
   // In show mode edits synchronize storage, but never apply the edited current scene.
   const goes = calls.filter((c) => c.path.endsWith('/go') || c.path.endsWith('/navigate')).length,
     oldVersion = status.console.version;
-  await cell.locator('button').click();
+  await cell.locator('button').dblclick();
   await page.waitForTimeout(900);
   assert(status.console.version > oldVersion);
   assert.equal(
@@ -520,8 +525,10 @@ try {
   // Mains remains explicitly authored, but no extra confirmation/ARM is needed; OFF edits do not execute.
   await page.getByRole('button', { name: 'Приборы', exact: true }).click();
   const mainsCheck = settings.getByRole('checkbox', { name: 'Прибор 1 · AC220', exact: true });
+  assert.equal(await mainsCheck.isChecked(), true);
+  await mainsCheck.uncheck();
   assert.equal(await mainsCheck.isChecked(), false);
-  await mainsCheck.click();
+  await mainsCheck.check();
   await mainsCheck.waitFor({ state: 'visible' });
   assert.equal(await mainsCheck.isChecked(), true);
   assert.equal(await page.getByRole('dialog', { name: 'Подтверждение', exact: true }).count(), 0);
@@ -531,16 +538,17 @@ try {
     .first()
     .locator('td')
     .first();
-  await acCell.locator('button').click();
+  await acCell.locator('button').dblclick();
   await page.getByLabel('Задержка включения света', { exact: true }).fill('2.5');
   await page.getByLabel('Вход', { exact: true }).fill('1');
   await page.getByRole('checkbox', { name: 'Включить анимацию', exact: true }).check();
   await page.getByLabel('Период анимации', { exact: true }).fill('0.04');
+  await page.getByLabel('Период анимации', { exact: true }).blur();
   await page.waitForTimeout(1100);
   let lastPublish = () =>
     JSON.parse(calls.filter((c) => c.path.endsWith('/publish')).at(-1).raw).devices[0].cues[0];
   assert.equal(workspace.draft.steps[0].devices[project.devices[0].id].ac.startDelay, 2.5);
-  assert.deepEqual(lastPublish().ac, { enabled: 1, d: [255, 1000, 0, 1, 40, 0, 0, 50, 0, 2500] });
+  assert.deepEqual(lastPublish().ac, { enabled: 1, d: [255, 1000, 0, 1, 67, 0, 0, 50, 0, 2500] });
   await audioCell.locator('button').click();
   await page.getByRole('checkbox', { name: 'Зациклить трек', exact: true }).uncheck();
   await page.waitForTimeout(1000);
@@ -643,7 +651,7 @@ try {
   assert.equal(await backupPrompt.count(), 0);
   assert.equal(navigationCalls(), beforeBackup);
   await page.getByLabel('Название спектакля', { exact: true }).fill('Backup UI revised');
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(1200); // Let the real reminder interval observe dirty before moving its clock.
   await page.evaluate(() => (window.__backupOffset += 600001));
   await backupPrompt.waitFor();
   await backupPrompt.getByRole('button', { name: 'Через 10 минут', exact: true }).click();
@@ -673,7 +681,7 @@ try {
   assert.equal(navigationCalls(), beforeBackup);
   await page.setViewportSize({ width: 320, height: 844 });
   await page.getByLabel('Название спектакля', { exact: true }).fill('Mobile backup');
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(1200);
   await page.evaluate(() => {
     const previous = Date.now;
     Date.now = () => previous() + 600001;
@@ -699,6 +707,7 @@ try {
   failBackupReservations = false;
   assert.equal(navigationCalls(), beforeBackup);
   assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 320);
+  await editorChecks(page, navigationCalls, () => workspace);
   // Complete helmet UI through the master, no direct helmet HTTP and no hidden GO.
   status.nodes = [peer, helmet];
   await page.waitForTimeout(800);
@@ -751,7 +760,7 @@ try {
     .locator('.parameter-row[data-parameter="strip"]')
     .first()
     .locator('td')
-    .nth(status.console.step)
+    .nth(Math.max(0, (status.console.step ?? 1) - 1))
     .locator('button')
     .click();
   await page

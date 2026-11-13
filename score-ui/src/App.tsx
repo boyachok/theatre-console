@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -26,7 +26,6 @@ import {
   moveStep,
   replaceDevices,
   touch,
-  updateCell,
   updateStep,
 } from './domain/project.ts';
 import { PreviewEngine } from './domain/playback.ts';
@@ -44,6 +43,27 @@ import type { ScoreTransport } from './transport/preview.ts';
 import { EspConsoleTransport, useEspBackend } from './transport/esp.ts';
 import { DisconnectedNetworkTransport } from './transport/network.ts';
 import { Matrix } from './components/Matrix.tsx';
+import {
+  QuickToolbar,
+  QuickValueDialog,
+  ShortcutHelp,
+  type EditScope,
+} from './components/QuickEditor.tsx';
+import {
+  applyEdit,
+  cellKey,
+  columnCells,
+  editorRows,
+  moveCursor,
+  moveDevice,
+  moveEditorRow,
+  patchCells,
+  rectangle,
+  rowKey,
+  type EditField,
+  type Modifiers,
+} from './domain/editor.ts';
+import { historyReducer } from './domain/history.ts';
 import { Inspector } from './components/Inspector.tsx';
 import { HelmetDialog } from './components/HelmetDialog.tsx';
 import { DevicesDialog } from './components/DevicesDialog.tsx';
@@ -65,6 +85,11 @@ import { StepPlayer } from './components/StepPlayer.tsx';
 import { INTERFACE_VERSION, PRODUCT_NAME } from './version.ts';
 const previewSignature = (project: Project, step: Step) =>
   JSON.stringify([step.devices, step.timings, project.devices, project.effects]);
+function useEditorEvent<T extends (...args: any[]) => any>(fn: T): T {
+  const ref = useRef(fn);
+  ref.current = fn;
+  return useCallback(((...args: Parameters<T>) => ref.current(...args)) as T, []);
+}
 function startup() {
   try {
     return { workspace: loadWorkspace(), error: '' };
@@ -77,8 +102,21 @@ function startup() {
 }
 export default function App() {
   const ask = useConfirm();
-  const [initial] = useState(startup),
-    [workspace, setWorkspace] = useState<Workspace>(initial.workspace);
+  const [initial] = useState(startup);
+  const [history, dispatchHistory] = useReducer(historyReducer, {
+    workspace: initial.workspace,
+    past: [],
+    future: [],
+    at: 0,
+  });
+  const workspace = history.workspace;
+  const setWorkspace = useCallback(
+    (update: Workspace | ((w: Workspace) => Workspace)) =>
+      dispatchHistory({ type: 'set', update, at: Date.now() }),
+    [],
+  );
+  const undo = useCallback(() => dispatchHistory({ type: 'undo', at: Date.now() }), []);
+  const redo = useCallback(() => dispatchHistory({ type: 'redo', at: Date.now() }), []);
   const project = workspace.draft,
     latest = useRef(workspace);
   latest.current = workspace;
@@ -104,6 +142,24 @@ export default function App() {
     [activeId, setActiveId] = useState<string | null>(null);
   const [selectedStepId, setSelectedStepId] = useState(project.steps[0].id),
     [selection, setSelection] = useState<CellSelection | null>(null);
+  const [selectedCells, setSelectedCells] = useState<CellSelection[]>([]);
+  const [selectedStepIds, setSelectedStepIds] = useState<string[]>([]);
+  const [collapsedDevices, setCollapsedDevices] = useState<string[]>([]);
+  const selectedCellsRef = useRef(selectedCells);
+  selectedCellsRef.current = selectedCells;
+  const selectedStepIdsRef = useRef(selectedStepIds);
+  selectedStepIdsRef.current = selectedStepIds;
+  const anchorCell = useRef<CellSelection | null>(null),
+    anchorStep = useRef(selectedStepId);
+  const [editScope, setEditScope] = useState<EditScope>('selection');
+  const [quickEdit, setQuickEdit] = useState<{ field: EditField; cells: CellSelection[] } | null>(
+    null,
+  );
+  const [shortcutHelp, setShortcutHelp] = useState(false);
+  const visibleRows = useMemo(
+    () => editorRows(project, collapsedDevices),
+    [project, collapsedDevices],
+  );
   const [deviceId, setDeviceId] = useState(project.devices[0].id),
     [compact, setCompact] = useState(() => window.matchMedia('(max-width: 960px)').matches);
   const [inspectorOpen, setInspectorOpen] = useState(false),
@@ -153,9 +209,10 @@ export default function App() {
       const key = `${state.navigation ?? state.transition ?? ''}:${live}:${state.activeStepId ?? state.activeStep}`;
       if (authorityKey.current !== key) {
         authorityKey.current = key;
-        if (live) {
+        if (live && selectedCellsRef.current.length <= 1) {
           setSelectedStepId(target.id);
           setSelection((cell) => (cell ? { ...cell, stepId: target.id } : null));
+          setSelectedCells((cells) => cells.map((cell) => ({ ...cell, stepId: target.id })));
         }
       }
       if (state.running === false || (live && state.draftFingerprint !== fingerprint(source!)))
@@ -175,6 +232,9 @@ export default function App() {
         if (!mounted) return;
         if (saved) {
           setWorkspace(restoreBackupMetadata(saved, latest.current));
+          dispatchHistory({ type: 'clear' });
+          setSelectedCells([]);
+          setSelectedStepIds([]);
           setShowMode(!(network.getSnapshot().livePreview ?? false));
           setSelectedStepId(saved.draft.steps[0].id);
           setDeviceId(saved.draft.devices[0].id);
@@ -316,30 +376,89 @@ export default function App() {
   };
   const changeCell = useCallback(
     (cell: CellSelection, changes: Record<string, unknown>) =>
-      setWorkspace((w) => ({ ...w, draft: updateCell(w.draft, cell, changes) })),
+      setWorkspace((w) => ({
+        ...w,
+        draft: patchCells(
+          w.draft,
+          selectedCellsRef.current.some((c) => cellKey(c) === cellKey(cell))
+            ? selectedCellsRef.current
+            : [cell],
+          cell,
+          changes,
+        ),
+      })),
     [],
   );
   const changeStep = useCallback(
     (id: string, changes: Partial<Step>) =>
       setWorkspace((w) => ({
         ...w,
-        draft: updateStep(w.draft, id, (step) => ({ ...step, ...changes })),
+        draft: (() => {
+          const original = w.draft.steps.find((s) => s.id === id);
+          if (!changes.timings || !original || !selectedStepIdsRef.current.includes(id))
+            return updateStep(w.draft, id, (step) => ({ ...step, ...changes }));
+          const delta = Object.fromEntries(
+            Object.entries(changes.timings).filter(
+              ([key, value]) => value !== original.timings[key as keyof typeof original.timings],
+            ),
+          );
+          return touch(w.draft, {
+            steps: w.draft.steps.map((step) =>
+              step.id === id
+                ? { ...step, ...changes }
+                : selectedStepIdsRef.current.includes(step.id)
+                  ? { ...step, timings: { ...step.timings, ...delta } }
+                  : step,
+            ),
+          });
+        })(),
       })),
     [],
   );
-  const selectStep = useCallback((id: string) => {
+  const selectStep = (id: string, mods: Modifiers = {}) => {
+    anchorCell.current = null;
+    let ids = [id];
+    if (mods.shiftKey) {
+      const a = project.steps.findIndex((s) => s.id === anchorStep.current),
+        b = project.steps.findIndex((s) => s.id === id);
+      ids = project.steps.slice(Math.max(0, Math.min(a, b)), Math.max(a, b) + 1).map((s) => s.id);
+    } else if (mods.ctrlKey || mods.metaKey)
+      ids = selectedStepIds.includes(id)
+        ? selectedStepIds.filter((s) => s !== id)
+        : [...selectedStepIds, id];
+    else anchorStep.current = id;
     setSelectedStepId(id);
     setSelection(null);
-    setInspectorOpen(true);
-    setSelectionIntent((old) => ({ id, nonce: (old?.nonce ?? 0) + 1 }));
-  }, []);
-  const selectCell = useCallback((cell: CellSelection) => {
+    setSelectedStepIds(ids);
+    setSelectedCells(columnCells(project, visibleRows, ids));
+    if (compact && !mods.shiftKey && !mods.ctrlKey && !mods.metaKey) setInspectorOpen(true);
+    if (!mods.shiftKey && !mods.ctrlKey && !mods.metaKey)
+      setSelectionIntent((old) => ({ id, nonce: (old?.nonce ?? 0) + 1 }));
+  };
+  const focusCell = (cell: CellSelection, mods: Modifiers = {}, human = false) => {
+    const anchor = anchorCell.current ?? cell;
+    const cells = mods.shiftKey
+      ? rectangle(project, visibleRows, anchor, cell)
+      : mods.ctrlKey || mods.metaKey
+        ? selectedCells.some((c) => cellKey(c) === cellKey(cell))
+          ? selectedCells.filter((c) => cellKey(c) !== cellKey(cell))
+          : [...selectedCells, cell]
+        : [cell];
+    if (!mods.shiftKey) anchorCell.current = cell;
     setSelectedStepId(cell.stepId);
     setDeviceId(cell.deviceId);
     setSelection(cell);
-    setInspectorOpen(true);
-    setSelectionIntent((old) => ({ id: cell.stepId, nonce: (old?.nonce ?? 0) + 1 }));
-  }, []);
+    setSelectedStepIds([]);
+    setSelectedCells(cells);
+    if (human) {
+      if (compact && !mods.shiftKey && !mods.ctrlKey && !mods.metaKey) setInspectorOpen(true);
+      if (!mods.shiftKey && !mods.ctrlKey && !mods.metaKey)
+        setSelectionIntent((old) => ({ id: cell.stepId, nonce: (old?.nonce ?? 0) + 1 }));
+    }
+  };
+  const selectCell = (cell: CellSelection, mods: Modifiers = {}) => focusCell(cell, mods, true);
+  const handleSelectCell = useEditorEvent(selectCell),
+    handleSelectStep = useEditorEvent(selectStep);
   const reorder = useCallback(
     (id: string, index: number) =>
       setWorkspace((w) => ({ ...w, draft: moveStep(w.draft, id, index) })),
@@ -349,6 +468,8 @@ export default function App() {
     const w = latest.current,
       result = duplicateStep(w.draft, selectedRef.current);
     setWorkspace({ ...w, draft: result.project });
+    setSelectedCells([]);
+    setSelectedStepIds([]);
     setSelectedStepId(result.id);
     setSelectionIntent((old) => ({ id: result.id, nonce: (old?.nonce ?? 0) + 1 }));
     setSelection(null);
@@ -377,6 +498,8 @@ export default function App() {
     if (index < 0 || current.steps.length <= 1) return;
     const steps = current.steps.filter((s) => s.id !== id);
     setWorkspace((w) => ({ ...w, draft: touch(w.draft, { steps }) }));
+    setSelectedCells([]);
+    setSelectedStepIds([]);
     setSelectedStepId(steps[Math.min(index, steps.length - 1)].id);
     setSelection(null);
   };
@@ -433,7 +556,8 @@ export default function App() {
     if (!backendReady || saveBlocked) return;
     if (!(network instanceof EspConsoleTransport)) {
       if (!showMode) {
-        const step = project.steps.find((s) => s.id === selectedStepId);
+        const step =
+          project.steps.find((s) => s.id === engine.getSnapshot().stepId) ?? project.steps[0];
         if (step) {
           engine.apply(project, step, 'select', ++transition.current);
           setActiveId(step.id);
@@ -555,6 +679,9 @@ export default function App() {
       if (!(await ask({ message: 'Заменить текущую партитуру из JSON?', accept: 'Заменить' })))
         return;
       setWorkspace({ ...importedBackup(next), interfaceVersion: INTERFACE_VERSION });
+      dispatchHistory({ type: 'clear' });
+      setSelectedCells([]);
+      setSelectedStepIds([]);
       setSaveBlocked(false);
       setSelectedStepId(next.draft.steps[0].id);
       setSelection(null);
@@ -573,6 +700,8 @@ export default function App() {
   };
   const saveDevices = (devices: Device[]) => {
     setWorkspace((w) => ({ ...w, draft: replaceDevices(w.draft, devices) }));
+    setSelectedCells([]);
+    setSelectedStepIds([]);
     if (!devices.some((d) => d.id === deviceId)) setDeviceId(devices[0].id);
     setSelection(null);
   };
@@ -582,6 +711,145 @@ export default function App() {
     setDeviceDialogId(id);
     setDialog('devices');
   }, []);
+  const scopedCells = (): CellSelection[] => {
+    const cells = selectedCells.length ? selectedCells : selection ? [selection] : [];
+    if (editScope === 'selection' || !cells.length) return cells;
+    const rows = editorRows(project);
+    if (editScope === 'allSteps') {
+      const keys = new Set(cells.map(rowKey));
+      return columnCells(
+        project,
+        rows.filter((r) => keys.has(rowKey(r))),
+        project.steps.map((s) => s.id),
+      );
+    }
+    return columnCells(
+      project,
+      editScope === 'device'
+        ? rows.filter((r) => r.device.id === (selection?.deviceId ?? deviceId))
+        : rows,
+      [selectedStepId],
+    );
+  };
+  const applyQuick = (field: EditField, value: number | null, cells = scopedCells()) => {
+    const result = applyEdit(latest.current.draft, cells, field, value);
+    if (result.count) setWorkspace((w) => ({ ...w, draft: result.project }));
+    setToast(
+      result.count ? `Изменено ячеек: ${result.count}` : 'Нет подходящих параметров в выделении',
+    );
+    setQuickEdit(null);
+  };
+  const openQuick = (field: EditField) => {
+    const cells = scopedCells();
+    if (cells.length) setQuickEdit({ field, cells });
+    else setToast('Сначала выдели ячейки или шаги');
+  };
+  const moveRow = (source: string, target: string) =>
+    setWorkspace((w) => ({ ...w, draft: moveEditorRow(w.draft, source, target) }));
+  useEffect(() => {
+    const keydown = (e: KeyboardEvent) => {
+      if (!backendReady) return;
+      const el = e.target instanceof Element ? e.target : null;
+      if (
+        el?.closest('input,textarea,select,[contenteditable="true"]') ||
+        document.querySelector('[role="dialog"]')
+      )
+        return;
+      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if (e.key === '?' || e.code === 'F1') {
+        e.preventDefault();
+        setShortcutHelp(true);
+        return;
+      }
+      const arrows: Record<string, [number, number]> = {
+        ArrowLeft: [-1, 0],
+        ArrowRight: [1, 0],
+        ArrowUp: [0, -1],
+        ArrowDown: [0, 1],
+      };
+      if (arrows[e.key]) {
+        e.preventDefault();
+        const [dx, dy] = arrows[e.key];
+        if (!selection && selectedStepIds.length && e.shiftKey && dx) {
+          const i = project.steps.findIndex((s) => s.id === selectedStepId);
+          selectStep(project.steps[Math.max(0, Math.min(project.steps.length - 1, i + dx))].id, {
+            shiftKey: true,
+          });
+          return;
+        }
+        if (e.altKey && dy && selection) {
+          const i = visibleRows.findIndex((r) => rowKey(r) === rowKey(selection)),
+            target = visibleRows[i + dy];
+          if (target) moveRow(rowKey(selection), rowKey(target));
+          return;
+        }
+        const next = moveCursor(
+          project,
+          visibleRows,
+          selection ??
+            (visibleRows[0]
+              ? {
+                  stepId: selectedStepId,
+                  deviceId: visibleRows[0].device.id,
+                  parameterId: visibleRows[0].parameter.id,
+                  kind: visibleRows[0].kind,
+                }
+              : null),
+          dx,
+          dy,
+        );
+        if (next) {
+          focusCell(next, { shiftKey: e.shiftKey });
+          requestAnimationFrame(() => {
+            const td = document.querySelector<HTMLElement>(
+              `td[data-step-id="${CSS.escape(next.stepId)}"][data-device="${CSS.escape(next.deviceId)}"][data-parameter="${CSS.escape(next.parameterId)}"]`,
+            );
+            td?.querySelector('button')?.focus({ preventScroll: true });
+            td?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          });
+        }
+        return;
+      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === 'Enter' && el?.closest('.matrix-cell')) {
+        e.preventDefault();
+        openQuick('level');
+        return;
+      }
+      if (/^Digit[0-9]$/.test(e.code) || /^Numpad[0-9]$/.test(e.code)) {
+        e.preventDefault();
+        applyQuick('level', Number(e.code.slice(-1)) * 10);
+        return;
+      }
+      if (e.code === 'Equal' || e.code === 'NumpadAdd') {
+        e.preventDefault();
+        applyQuick('level', 100);
+        return;
+      }
+      const fields: Record<string, EditField> = {
+        KeyI: 'fadeIn',
+        KeyO: 'fadeOut',
+        KeyD: 'startDelay',
+        KeyV: 'level',
+      };
+      if (fields[e.code]) {
+        e.preventDefault();
+        openQuick(fields[e.code]);
+      }
+      if (e.key === 'Escape') {
+        setSelectedCells([]);
+        setSelectedStepIds([]);
+        setSelection(null);
+      }
+    };
+    window.addEventListener('keydown', keydown);
+    return () => window.removeEventListener('keydown', keydown);
+  });
   const selectedIndex = project.steps.findIndex((s) => s.id === selectedStepId),
     published = workspace.published;
   const draftFingerprint = useMemo(() => fingerprint(project), [project]),
@@ -623,6 +891,7 @@ export default function App() {
             </h1>
             <input
               className="project-name"
+              disabled={!backendReady}
               aria-label="Название спектакля"
               maxLength={120}
               value={project.name}
@@ -639,7 +908,7 @@ export default function App() {
             />
           </div>
         </div>
-        <div className="step-control-strip">
+        <div className="step-control-strip" inert={!backendReady}>
           <StepPlayer
             steps={
               showMode && workspace.published && !preload.pending
@@ -699,18 +968,21 @@ export default function App() {
           </label>
           {useEspBackend && (
             <span className="sync-chip" role="status">
-              {publishing || editorSyncing
-                ? 'Синхронизация…'
-                : preload.pending
-                  ? `Память ${preload.stored}/${preload.total}`
-                  : !showMode
-                    ? 'Черновик · LIVE'
-                    : 'Память контроллеров'}
+              {!backendReady
+                ? 'Чтение партитуры…'
+                : publishing || editorSyncing
+                  ? 'Синхронизация…'
+                  : preload.pending
+                    ? `Память ${preload.stored}/${preload.total}`
+                    : !showMode
+                      ? 'Черновик · LIVE'
+                      : 'Память контроллеров'}
             </span>
           )}
           <button
             className="icon-button"
             aria-label="Приборы"
+            disabled={!backendReady}
             title="Приборы"
             onClick={() => openDevices()}
           >
@@ -727,6 +999,7 @@ export default function App() {
           <button
             className="icon-button"
             aria-label="Эффекты ленты"
+            disabled={!backendReady}
             title="Эффекты ленты"
             onClick={() => setDialog('effects')}
           >
@@ -816,17 +1089,53 @@ export default function App() {
           }}
         />
       )}
-      <main className="workspace">
+      <main className="workspace" inert={!backendReady} aria-busy={!backendReady}>
         <section className="matrix-area">
+          <QuickToolbar
+            count={selectedCells.length || (selection ? 1 : 0)}
+            scope={editScope}
+            onScope={setEditScope}
+            onEdit={openQuick}
+            onLevel={(n) => applyQuick('level', n)}
+            onHelp={() => setShortcutHelp(true)}
+            custom={project.layout?.mode === 'custom'}
+            onLayout={() =>
+              setWorkspace((w) => ({
+                ...w,
+                draft: touch(w.draft, {
+                  layout: {
+                    mode: w.draft.layout?.mode === 'custom' ? 'devices' : 'custom',
+                    order: w.draft.layout?.order ?? editorRows(w.draft).map(rowKey),
+                  },
+                }),
+              }))
+            }
+            canUndo={!!history.past.length}
+            canRedo={!!history.future.length}
+            onUndo={undo}
+            onRedo={redo}
+          />
           <Matrix
             network={network}
             project={project}
             selectedStepId={selectedStepId}
             activeStepId={activeId}
             selection={selection}
+            selectedCells={selectedCells}
+            selectedStepIds={selectedStepIds}
+            collapsedDevices={collapsedDevices}
+            onToggleDevice={(id) =>
+              setCollapsedDevices((old) =>
+                old.includes(id) ? old.filter((x) => x !== id) : [...old, id],
+              )
+            }
+            onMoveRow={moveRow}
+            onMoveDevice={(id, index) =>
+              setWorkspace((w) => ({ ...w, draft: moveDevice(w.draft, id, index) }))
+            }
             compact={compact}
-            onSelectStep={selectStep}
-            onSelectCell={selectCell}
+            onSelectStep={handleSelectStep}
+            onSelectCell={handleSelectCell}
             onChangeCell={changeCell}
             onMove={reorder}
             onDevices={openDevices}
@@ -872,6 +1181,17 @@ export default function App() {
       )}
       {dialog === 'network' && (
         <NetworkDialog project={project} transport={network} onClose={() => setDialog(null)} />
+      )}
+      {shortcutHelp && <ShortcutHelp onClose={() => setShortcutHelp(false)} />}
+      {quickEdit && (
+        <QuickValueDialog
+          field={quickEdit.field}
+          count={quickEdit.cells.length}
+          devices={new Set(quickEdit.cells.map((c) => c.deviceId)).size}
+          steps={new Set(quickEdit.cells.map((c) => c.stepId)).size}
+          onApply={(n) => applyQuick(quickEdit.field, n, quickEdit.cells)}
+          onClose={() => setQuickEdit(null)}
+        />
       )}
       {toast && (
         <div className="toast" role="status" onClick={() => setToast('')}>

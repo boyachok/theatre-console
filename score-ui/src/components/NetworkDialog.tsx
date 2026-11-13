@@ -244,14 +244,14 @@ export function NetworkDialog({
                         : r?.online !== true
                           ? 'Нет связи'
                           : {
-                            idle: '—',
-                            upgrade: 'Обновить прошивку',
-                            loading: 'Загрузка плана',
-                            ready: 'План готов',
-                            waiting_ack: 'Ожидаем ACK',
-                            applied: 'Применена',
-                            rejected: 'Ошибка / не готов',
-                          }[r?.sceneStatus ?? 'idle']}
+                              idle: '—',
+                              upgrade: 'Обновить прошивку',
+                              loading: 'Загрузка плана',
+                              ready: 'План готов',
+                              waiting_ack: 'Ожидаем ACK',
+                              applied: 'Применена',
+                              rejected: 'Ошибка / не готов',
+                            }[r?.sceneStatus ?? 'idle']}
                     </td>
                     <td
                       data-firmware-version

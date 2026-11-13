@@ -33,11 +33,7 @@ export function DevicesDialog({
   const [selected, setSelected] = useState<string | null>(initialId ?? null);
   const update = (id: string, patch: Partial<Device>) =>
     setDevices((list) => list.map((d) => (d.id === id ? { ...d, ...patch } : d)));
-  const parameterChange = (
-    device: Device,
-    parameter: Parameter,
-    patch: Partial<Parameter>,
-  ) => {
+  const parameterChange = (device: Device, parameter: Parameter, patch: Partial<Parameter>) => {
     const transform = (p: Parameter) => (p.id === parameter.id ? { ...p, ...patch } : p);
     update(device.id, {
       dimmers: device.dimmers.map(transform),
@@ -110,8 +106,8 @@ export function DevicesDialog({
         </button>
       </div>
       <p className="field-help">
-        Диммер220: GPIO41 — Z-C 3,3 В, GPIO40 — PSM. Работает по сцене без отдельного
-        разрешения. Нужна изолированная логика; GND не соединять с N/PE.
+        Диммер220: GPIO41 — Z-C 3,3 В, GPIO40 — PSM. Работает по сцене без отдельного разрешения.
+        Нужна изолированная логика; GND не соединять с N/PE.
       </p>
       <div className="feature-matrix-scroll">
         <table className="feature-matrix" aria-label="Состав приборов">

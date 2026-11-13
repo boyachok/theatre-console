@@ -7,7 +7,7 @@
 #include "player.h"
 #include "extra_pwm.h"
 class Actors {
-  uint16_t duty[DIMMER_COUNT]{};PwmSettings settings;ExtraPwm extra;uint16_t invertedMask=0;
+  float duty[DIMMER_COUNT]{};PwmSettings settings;ExtraPwm extra;uint16_t invertedMask=0;
   uint8_t relayMode=0,fault=0;uint16_t onMask=0;uint32_t configRevision=1;
   bool linkReady=false,relayOn=false,pwmReady=true;
   Preferences config;
@@ -16,9 +16,10 @@ class Actors {
     if(!relayMode){pinMode(RELAY_PIN,INPUT);relayOn=false;return;}
     digitalWrite(RELAY_PIN,(on==(relayMode==1))?HIGH:LOW);pinMode(RELAY_PIN,OUTPUT);relayOn=on;
   }
-  bool writePWM(uint8_t index,uint8_t value){
-    uint8_t physical=physicalPWM(value,invertedMask&(1<<index));
-    bool ok=index<PWM_COUNT?ledcWrite(PWM_PINS[index],physical):extra.write(index-PWM_COUNT,physical);
+  bool writePWM(uint8_t index,float value){
+    bool inverse=invertedMask&(1<<index);float shaped=PwmCurve::shape(value);if(inverse)shaped=1.f-shaped;
+    bool ok=index<PWM_COUNT?ledcWrite(PWM_PINS[index],PwmCurve::duty(value,inverse)):
+      (PWM_BITS==8&&THEATRE_PWM_GAMMA==1.f&&THEATRE_PWM_GRAY==.5f?extra.write(index-PWM_COUNT,physicalPWM((uint8_t)value,inverse)):extra.writeFine(index-PWM_COUNT,shaped*255.f));
     if(!ok)return false;
     duty[index]=value;return true;
   }
@@ -51,7 +52,9 @@ public:
     bool ok=pwmReady;for(int i=0;i<DIMMER_COUNT;i++)if(changed&(1<<i))ok=writePWM(i,duty[i])&&ok;
     if(!ok)off(5);return ok;
   }
-  uint8_t dimmerValue(uint8_t index)const{return index<DIMMER_COUNT?duty[index]:0;}
+  uint8_t dimmerValue(uint8_t index)const{return index<DIMMER_COUNT?(uint8_t)duty[index]:0;}
+  float dimmerFineValue(uint8_t index)const{return index<DIMMER_COUNT?duty[index]:0;}
+  bool setDimmerFine(uint8_t index,float value){if(index>=DIMMER_COUNT||!pwmReady||!std::isfinite(value)||value<0||value>255||!writePWM(index,value))return false;if(value>0)onMask|=1U<<index;else onMask&=~(1U<<index);return true;}
   bool setDimmer(uint8_t index,uint8_t value){if(index>=DIMMER_COUNT||!pwmReady||!writePWM(index,value))return false;if(value)onMask|=1U<<index;else onMask&=~(1U<<index);return true;}
   uint32_t pwmFrequency()const{return pwmReady?ledcReadFreq(PWM_PINS[0]):0;}
   PwmStatus pwmStatus()const{

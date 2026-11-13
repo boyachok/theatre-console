@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { DimmerAnimation, DimmerCue } from '../domain/schema.ts';
 import { defaultDimmerAnimation, dimmerFactor } from '../domain/dimmer.ts';
 import { Section } from './Fields.tsx';
+import { EFFECT_MIN_SECONDS, EFFECT_MAX_SECONDS, effectPeriod } from '../domain/effect-range.ts';
 function Slider({
   label,
   value,
@@ -88,7 +89,7 @@ export { Slider as SliderField };
 export function DimmerAnimationEditor({
   cue,
   onChange,
-  minPeriod = 0.02,
+  minPeriod = EFFECT_MIN_SECONDS,
 }: {
   cue: DimmerCue;
   minPeriod?: number;
@@ -139,11 +140,11 @@ export function DimmerAnimationEditor({
             <Slider
               label="Период анимации"
               value={a.period}
-              min={minPeriod}
-              max={3600}
+              min={Math.max(minPeriod, EFFECT_MIN_SECONDS)}
+              max={EFFECT_MAX_SECONDS}
               logarithmic
               suffix="с"
-              onChange={(period) => patch({ period })}
+              onChange={(period) => patch({ period: effectPeriod(period) })}
             />
             <p className="muted">
               {1 / a.period >= 1 ? (1 / a.period).toFixed(2) : (1 / a.period).toPrecision(2)} Гц ·

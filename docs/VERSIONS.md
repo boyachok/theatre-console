@@ -1,8 +1,13 @@
 # Общая версия и резервные копии
 
+**0.8.0 подготовлена, не прошита**: keyboard/mouse editor, multi-select/batch/undo,
+custom row/device order, cycle limits, optional precision bench builds. Schema1/score12,
+P16/P17 не меняются. Master0.8 понимает slave0.7.18/helmet0.7.19; baseline45bc3ea.
+Подробности: [EDITOR_080.md](EDITOR_080.md). Ниже история.
+
 Название проекта: **Theatre console**. Источник версии: `version.json`.
-Веб, master, slave, remote и helmet активного профиля имеют версию исходников
-**0.7.18**: установлен только USB helmet C0:4E:30:36:C6:88, рабочий legacy chip154
+Веб, master, slave, remote и helmet активного профиля имеют версию исходников0.8.0.
+Историческая запись **0.7.18**: установлен только USB helmet C0:4E:30:36:C6:88, рабочий legacy chip154
 перенесён в автономный профиль, не RAM-тест. Wire score12 совместим с0.7.15–17.
 Архивная история: **0.7.16**: автономный startup шлема с NVS-памятью; USB C0:4E:30:36:C6:88
 установлена/проверена, остальные платы не менялись. Wire score12 совместим с0.7.15.

@@ -26,10 +26,12 @@ function fixture() {
     runtime = () => e.getSnapshot().devices[d.id];
   return { p, d, s, cue, e, runtime };
 }
-test('Диммер220 is separate, opt-in, absent on helmets and never rewrites old publications', () => {
+test('Диммер220 defaults available at ZERO, absent on helmets and never rewrites old publications', () => {
   const { p, d, s, cue } = fixture();
-  assert.equal(acParameter(d).enabled, false);
-  assert.equal(columnsFor(p, 'all').filter((c) => c.kind === 'ac').length, 0);
+  assert.equal(acParameter(d).enabled, true);
+  assert.equal(columnsFor(p, 'all').filter((c) => c.kind === 'ac').length, 1);
+  assert.deepEqual(compileDevices(p, [s])[0].cues[0].ac, { enabled: 1, d: [0, 0, 0] });
+  d.acDimmer!.enabled = false;
   assert.equal(compileDevices(p, [s])[0].cues[0].ac, undefined);
   d.acDimmer!.enabled = true;
   cue.ac!.value = 35;
