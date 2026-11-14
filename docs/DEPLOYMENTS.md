@@ -1,5 +1,18 @@
 # Проверенные записи на платы
 
+## USB helmet0.8.1 с OTA — C0:4E:30:36:C6:88
+
+По явному запросу пользователя установлен0.8.1,1057488B SHA
+`fd7ca359b9a79a242183a735edab127d4e518a38a5f7d5aff3d10c16ac5f2b0d`.
+Новый app-only USB helper: explicitMAC, полный16MBbackup, текущий app0 выбран поOTAdata,
+образverify успешен; bootloader/table/NVS/OTAdata до reboot побайтно прежние, FSнеписалась.
+RuntimeMAC/helmet/0.8.1/новый boot/token/appAddress/OTAavailable проверены поUSB.
+HTTP192.168.50.21/api/status и реальнаяOTAстраница проверены; правильные MAC/role/версия,
+исходные savedSound до/после совпали. Это НЕ физический тест upload поWiFi или звука.
+Master/slave/PWM не менялись. Приватные логи/полныйflash/до-после700/600:
+`~/Theatre-console-backups/usb-helmet-ota-C04E3036C688-20261114-142245/`.
+
+
 ## Master0.8.0 установлен — A0:85:E3:E2:BC:D4
 
 Пользователь разрешил обновить только master, PWM отложен до0.8.1.
