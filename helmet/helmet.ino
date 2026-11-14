@@ -6,7 +6,14 @@
 #include "slave_score_store.h"
 #include "show_filesystem.h"
 #include "runtime.h"
-// Dedicated helmet: local I2S DSP + RMT strip; no PWM/relay/MP3/HTTP/OTA.
+#include "control_web.h"
+#include "ota_guard.h"
+// Dedicated helmet: local I2S DSP + RMT strip; HTTP is maintenance/OTA only.
+ControlWebServer web(80);
+bool httpReady=false,otaLocked=false,otaWriting=false,otaOK=false,uploadSeen=false,otaImageComplete=false;
+uint32_t firmwareBoot=1,restartAt=0,lastUploadAt=0;char otaToken[33]{};const char *otaError="none";
+HelmetOta::ImageGuard otaImage;
+void helmetWebBegin();void helmetWebTick();String helmetOtaStatusJSON();
 uint32_t voiceReportAt=0;
 // Published RUN is a 44B local-plan reference; draft PREVIEW remains explicit.
 WifiTransport network;Helmet::Runner runner;Show::SlaveStore scoreStore;
@@ -46,8 +53,8 @@ void receiveHelmet(){
    if((indexed&&p.type!=Show::RUN)||(!indexed&&p.type!=Show::STORE&&p.type!=Show::PREVIEW)){network.rxInvalid++;continue;}
    masterSeen=lastHeartbeat=now;hasHeartbeat=true;grade=p.health<=OFFLINE?(Health)p.health:BAD;
    bool accepted=false,missing=false;
-   if(p.type==Show::STORE)accepted=storageReady&&Helmet::supported(p.cue)&&scoreStore.accept(p);
-   else if(p.reserved==Show::ACTIVE&&p.run&&p.transition){
+   if(p.type==Show::STORE)accepted=!otaLocked&&storageReady&&Helmet::supported(p.cue)&&scoreStore.accept(p);
+   else if(!otaLocked&&p.reserved==Show::ACTIVE&&p.run&&p.transition){
     if(indexed){auto lookup=scoreStore.resolve(Show::reference(p),p.cue);missing=lookup==Show::SlaveStore::Lookup::MISSING;
      if(lookup==Show::SlaveStore::Lookup::READY)accepted=runner.apply(p,now,recovery&&runner.active);
     }else accepted=runner.apply(p,now,recovery&&runner.active);
@@ -91,19 +98,20 @@ void receiveHelmet(){
 void legacyStatus(){
  Serial.printf("{\"role\":\"helmet\",\"version\":\"%s\",\"mac\":\"%02X:%02X:%02X:%02X:%02X:%02X\",\"ip\":\"%s\",\"connected\":%s,\"masterReady\":%s,\"stripPin\":%u,\"stripReady\":%s,\"storageReady\":%s,\"scoreVersion\":%lu,\"step\":%u,\"active\":%s,\"voiceRequested\":%s,\"voiceAvailable\":%s,\"voiceApplied\":%s}\n",RADIO_VERSION,network.mac[0],network.mac[1],network.mac[2],network.mac[3],network.mac[4],network.mac[5],WiFi.localIP().toString().c_str(),network.ready()?"true":"false",linkFresh()?"true":"false",HELMET_STRIP_PIN,runner.ready?"true":"false",storageReady?"true":"false",(unsigned long)scoreStore.version,runner.step+1,runner.active?"true":"false",runner.voice.requested()?"true":"false",runner.voice.available()?"true":"false",runner.voice.available()?(runner.voice.diagnostics().enabled?"true":"false"):"null");
 }
-void status(){
+String helmetStatusJSON(){
  auto a=runner.voice.diagnostics();auto live=runner.voice.appliedProfile();const auto &b=runner.defaults.settings();char mac[18];snprintf(mac,sizeof(mac),"%02X:%02X:%02X:%02X:%02X:%02X",network.mac[0],network.mac[1],network.mac[2],network.mac[3],network.mac[4],network.mac[5]);String j;
  j="{\"role\":\"helmet\",\"version\":\""+String(RADIO_VERSION)+"\",\"mac\":\""+String(mac)+"\",\"boot\":"+String(selfBoot)+",\"ip\":\""+WiFi.localIP().toString()+"\",\"connected\":"+String(network.ready()?"true":"false")+",\"masterReady\":"+String(linkFresh()?"true":"false")+",\"standalone\":"+String(runner.standalone?"true":"false")+",\"active\":"+String(runner.active?"true":"false")+",\"step\":"+(runner.active&&!runner.standalone?String(runner.step+1):String("null"));
  j+=",\"voiceRequested\":"+String(runner.voice.requested()?"true":"false")+",\"voiceAvailable\":"+String(a.ready?"true":"false")+",\"voiceApplied\":"+String(a.enabled?"true":"false")+",\"storageReady\":"+String(storageReady?"true":"false")+",\"scoreVersion\":"+String(scoreStore.version)+",\"defaultsSaved\":"+String(runner.defaults.saved?"true":"false")+",\"defaultsSource\":\""+String(runner.defaults.source)+"\",\"defaultsWrites\":"+String(runner.defaults.writes);
- j+=",\"sound\":{\"algorithm\":"+String(live.algorithm)+",\"mode\":"+String(live.mode)+",\"frequency\":"+String(live.frequency,2)+",\"gain\":"+String(live.gain,2)+",\"volume\":"+String(live.volume,3)+",\"gateDb\":"+String(live.gateDb,1)+"},\"diagnostic\":"+String(runner.diagnostic?"true":"false")+",\"savedSound\":{\"frequency\":"+String(b.voice.frequency,2)+",\"gain\":"+String(b.voice.gain,2)+",\"volume\":"+String(b.voice.volume,3)+",\"gateDb\":"+String(b.voice.gateDb,1)+"},\"strip\":{\"mode\":"+String(b.strip.mode)+",\"count\":"+String(b.strip.count)+",\"brightness\":"+String(b.strip.brightness)+",\"pin\":47},\"audio\":{\"captured\":"+String(a.captured)+",\"played\":"+String(a.played)+",\"errors\":"+String(a.errors)+",\"late\":"+String(a.late)+",\"load\":"+String(a.load,2)+",\"inputLevel\":"+String(a.inputLevel,6)+",\"outputLevel\":"+String(a.outputLevel,6)+",\"core\":"+String(a.audioCore)+"}}";Serial.println(j);
+ j+=",\"sound\":{\"algorithm\":"+String(live.algorithm)+",\"mode\":"+String(live.mode)+",\"frequency\":"+String(live.frequency,2)+",\"gain\":"+String(live.gain,2)+",\"volume\":"+String(live.volume,3)+",\"gateDb\":"+String(live.gateDb,1)+"},\"diagnostic\":"+String(runner.diagnostic?"true":"false")+",\"savedSound\":{\"frequency\":"+String(b.voice.frequency,2)+",\"gain\":"+String(b.voice.gain,2)+",\"volume\":"+String(b.voice.volume,3)+",\"gateDb\":"+String(b.voice.gateDb,1)+"},\"strip\":{\"mode\":"+String(b.strip.mode)+",\"count\":"+String(b.strip.count)+",\"brightness\":"+String(b.strip.brightness)+",\"pin\":47},\"audio\":{\"captured\":"+String(a.captured)+",\"played\":"+String(a.played)+",\"errors\":"+String(a.errors)+",\"late\":"+String(a.late)+",\"load\":"+String(a.load,2)+",\"inputLevel\":"+String(a.inputLevel,6)+",\"outputLevel\":"+String(a.outputLevel,6)+",\"core\":"+String(a.audioCore)+"},"+helmetOtaStatusJSON()+"}";return j;
 }
+void status(){Serial.println(helmetStatusJSON());}
 void serviceHelmet();
 #ifndef THEATRE_HOST_TEST
 void controlTask(void*){for(;;)serviceHelmet();}
 #endif
 void setup(){
- Serial.begin(115200);selfBoot=randomId();const char *fsLabel=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_ANY,"storage")?"storage":"spiffs";storageReady=mountShowFS(fsLabel);if(storageReady)scoreStore.begin();runner.begin();
- network.begin(false,"stage-helmet-",false);generation=network.generation;
+ Serial.begin(115200);selfBoot=firmwareBoot=randomId();snprintf(otaToken,sizeof(otaToken),"%08lx%08lx%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random(),(unsigned long)esp_random());const char *fsLabel=esp_partition_find_first(ESP_PARTITION_TYPE_DATA,ESP_PARTITION_SUBTYPE_ANY,"storage")?"storage":"spiffs";storageReady=mountShowFS(fsLabel);if(storageReady)scoreStore.begin();runner.begin();
+ network.begin(false,"stage-helmet-",true);generation=network.generation;helmetWebBegin();
  Serial.printf("\nTheatre console %s role=helmet DATA=GPIO%u I2S4/5/6/7; i/j=status\n",RADIO_VERSION,HELMET_STRIP_PIN);
 #ifndef THEATRE_HOST_TEST
  if(xTaskCreatePinnedToCore(controlTask,"helmet-control",12288,nullptr,1,nullptr,0)!=pdPASS){runner.stop();Serial.println("Helmet control task failed");}
@@ -115,11 +123,12 @@ void serviceHelmet(){
  if(hasHeartbeat&&now-lastHeartbeat>=OFFLINE_MS)resetLink(false);
  receiveHelmet();now=millis();
  if(network.ready()&&masterKnown&&helloAt&&(int32_t)(now-helloAt)>=0){helloAt=0;Packet p=message(HELLO);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));sendFirmwareReport();}
- runner.tick(now);if(linkFresh()&&now-voiceReportAt>=250){voiceReportAt=now;sendVoiceReport();}
+ helmetWebTick();now=millis();runner.tick(now);if(linkFresh()&&now-voiceReportAt>=250){voiceReportAt=now;sendVoiceReport();}
  bool identify=identifyUntil&&(int32_t)(identifyUntil-now)>0;
  uint32_t color=networkLedColor(linkFresh()?grade:OFFLINE,now,identify,false);static uint32_t previous=0xffffffff;
  if(color!=previous){rgbLedWrite(HELMET_STATUS_PIN,(color>>16)&255,(color>>8)&255,color&255);previous=color;}
- while(Serial.available()){char c=Serial.read();if(c=='i'||c=='j')status();else if(c=='!')runner.stop();else if(c=='d')runner.dryTest();else if(c=='b')runner.endTest();else if(c=='L'){bool ok=runner.importLegacy();Serial.println(ok?"Legacy voice imported and saved":"Legacy import rejected");}}
+ while(Serial.available()){char c=Serial.read();if(c=='i'||c=='j')status();else if(c=='!')runner.stop();else if(c=='d'&&!otaLocked)runner.dryTest();else if(c=='b'&&!otaLocked)runner.endTest();else if(c=='L'&&!otaLocked){bool ok=runner.importLegacy();Serial.println(ok?"Legacy voice imported and saved":"Legacy import rejected");}}
+ if(restartAt&&(int32_t)(millis()-restartAt)>=0)ESP.restart();
  delay(1);
 }
 void loop(){
@@ -129,3 +138,4 @@ void loop(){
  delay(1000);
 #endif
 }
+#include "helmet_web.h"

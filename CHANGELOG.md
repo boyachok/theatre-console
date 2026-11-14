@@ -1,5 +1,16 @@
 # Изменения Theatre console
 
+## 0.8.1 — helmet maintenance HTTP/OTA (подготовлено)
+
+- Отдельная служебная страница/status/OTA наhelmet, HTTP-worker не обслуживает DSP.
+- Token/targetMAC/role/Origin, S3header/helmetmarker и размер фактического OTAслота.
+- Сохранение pending startup-настроек до обновления; STOP звука/света, блокировка
+  RUN/PREVIEW/STORE на время upload, коммит после всего multipart, обрыв не включает выходы.
+- USBhelmet app-only installer: явныйMAC, полныйbackup16MB, OTAdata CRC/current-slot,
+  защита разметки и размера, digest verify/new boot; старый factory USB write убран дляhelmet.
+- OTA/native и USB-layout тесты, SDKсборка проходят. Реальные платы не прошиты.
+
+
 ## 0.8.0 — быстрый редактор, подготовлен без прошивки плат
 
 - Ячейки/столбцы: Shift диапазон, Cmd/Ctrl отдельные; стрелки только курсор, безGO.

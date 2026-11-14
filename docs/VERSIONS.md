@@ -1,5 +1,9 @@
 # Общая версия и резервные копии
 
+**0.8.1 подготовлена**: helmet HTTP/OTA, первая установка app-onlyUSB. Score12/P16/P17
+прежние; master0.8.0 совместим. Actual hardware не обновлялось в этой подготовке.
+PWM-эксперименты не разворачивались. [Helmet](HELMET.md).
+
 **0.8.0 установлена только на master A0:85:E3:E2:BC:D4**, остальные образы подготовлены:
 keyboard/mouse editor, multi-select/batch/undo,
 custom row/device order, cycle limits, optional precision bench builds. Schema1/score12,

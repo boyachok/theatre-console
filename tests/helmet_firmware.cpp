@@ -15,7 +15,7 @@ int main(){
  setup();assert(HELMET_STRIP_PIN==47&&mockRmtPin==47&&runner.ready&&storageReady&&runner.active&&runner.standalone);
  assert(WiFi.ssid=="YOUR_WIFI_SSID"&&WiFi.password=="YOUR_WIFI_PASSWORD"&&WiFi.host.find("stage-helmet-")==0);
  assert(runner.voice.available()&&runner.voice.requested()&&mockUARTOut.empty());
- WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,65);tick(1000);assert(MDNS.services==0);
+ WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,65);tick(1000);assert(MDNS.services==1&&httpReady);web.request("/api/status",HTTP_GET);assert(web.code==200&&web.response.find("\"otaSupported\":true")!=std::string::npos);
  inject(packet(DISCOVER,77));tick(1001);tick(1500);assert(helmetTag(last(HELLO))&&last(HELLO).deviceBoot==selfBoot);
  Packet probe=packet(PROBE,77,1);probe.nodeId=9;probe.health=EXCELLENT;inject(probe);tick(1501);assert(helmetTag(last(ECHO))&&last(ECHO).nodeId==9&&linkFresh());
  auto p=scene(1);p.cue.audio.enabled=1;inject(p);tick(1510);assert(runner.active&&runner.sequence==1&&runner.voice.requested()&&runner.voice.available());
@@ -44,5 +44,5 @@ int main(){
  auto next=scene(5);inject(next);tick(2421);assert(runner.active);inject(stop);tick(2422);assert(runner.active); // Cached OFF must not stop a later scene.
  for(auto v:mockPWMFrequency)assert(v==0);assert(mockLEDCClock==0&&mockUARTOut.empty());
  for(int pin=0;pin<49;pin++)if(pin!=47&&pin!=48)assert(mockModes[pin]==INPUT);
- puts("Actual helmet firmware: GPIO47 WS2811/configurable count, no PWM/relay/UART/HTTP, voice control through a mocked backend (real DSP tested separately), master binding/ACK/dedup/stale protection, local animation/recovery, CRC score persistence and non-erasing FS guard passed");
+ puts("Actual helmet firmware: GPIO47 WS2811/configurable count, no PWM/relay/UART, maintenance HTTP/OTA, voice control through a mocked backend (real DSP tested separately), master binding/ACK/dedup/stale protection, local animation/recovery, CRC score persistence and non-erasing FS guard passed");
 }

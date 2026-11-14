@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 OUT="$(mktemp -d /tmp/stage-tests.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 FLAGS=(-std=c++17 -Wall -Wextra -pedantic -fsanitize=address,undefined)
+python3 tests/helmet_usb_layout.py
 for TEST in quality control lan remote ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
@@ -27,7 +28,7 @@ for TEST in http console_http; do
   c++ "${FLAGS[@]}" -pthread -Itests/http_mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in wifi remote_firmware remote_ota remote_buttons helmet_firmware; do
+for TEST in wifi remote_firmware remote_ota remote_buttons helmet_firmware helmet_ota; do
   c++ "${FLAGS[@]}" -Itests/net_mock -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done

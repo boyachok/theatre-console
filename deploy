@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 CLI='/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli'
 ESPROOT="$HOME/Library/Arduino15/packages/esp32"
 FQBN='esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,FlashMode=dio,PSRAM=opi,PartitionScheme=custom'
-usage(){ echo 'Usage: ./deploy {master|slave|remote|helmet} [USB_PORT] | ./deploy build {master|slave|remote|helmet} | ./deploy ota {master|slave|remote} IP'; }
+usage(){ echo 'Usage: ./deploy {master|slave|remote|helmet} [USB_PORT] | ./deploy build {master|slave|remote|helmet} | ./deploy ota {master|slave|remote|helmet} IP'; }
 ACTION=usb
 case "${1:-}" in
   build|ota) ACTION="$1"; shift ;;
@@ -17,7 +17,6 @@ case "$PROFILE" in console|control|wifi04|espnow|radio) ;; *) echo 'PROFILE must
 SKETCH="$PROFILE"
 if [[ "$ROLE" == remote || "$ROLE" == helmet ]]; then
   [[ "$PROFILE" == console ]] || { echo "$ROLE is supported only by PROFILE=console";exit 1; }
-  if [[ "$ROLE" == helmet && "$ACTION" == ota ]]; then echo 'helmet has no HTTP/OTA server: use USB';exit 1;fi
   SKETCH="$ROLE"
 fi
 FLAGS="-DRADIO_MASTER=$MASTER"
@@ -64,6 +63,7 @@ check_mac(){
   local mac expected
   mac="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
   expected="$(printf '%s' "${EXPECTED_MAC:-}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "$ROLE" == helmet && -z "$expected" ]]; then echo 'Helmet updates require EXPECTED_MAC=...; IP/USB port is not identity.';exit 1;fi
   if [[ "$ROLE" == master && -z "$expected" ]]; then expected='A0:85:E3:E2:BC:D4';fi
   if [[ "$ROLE" != remote && "$mac" == '30:30:F9:1B:FD:6C' ]]; then echo 'Refusing to replace the known physical remote with another role.' >&2;exit 1;fi
   if [[ -n "$expected" && "$mac" != "$expected" ]]; then echo "Refusing to flash: MAC $mac != expected $expected" >&2;exit 1;fi
@@ -74,7 +74,7 @@ case "$ACTION" in
  ota)
    IP="${1:?Specify the device IP}"
    STATUS="$(curl --noproxy '*' --fail --silent --show-error --connect-timeout 3 --max-time 8 "http://$IP/api/status")"
-   IDENTITY="$(printf '%s' "$STATUS" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["role"]==sys.argv[1], "Wrong target role";assert sys.argv[1]!="remote" or d.get("otaSupported"), "Old remote needs initial USB update";print(d["mac"].upper(),d["token"])' "$ROLE")"
+   IDENTITY="$(printf '%s' "$STATUS" | python3 -c 'import sys,json;d=json.load(sys.stdin);assert d["role"]==sys.argv[1], "Wrong target role";assert sys.argv[1]not in ("remote","helmet")or d.get("otaSupported"), "This firmware needs an initial USB OTA-capable update";print(d["mac"].upper(),d["token"])' "$ROLE")"
    read -r MAC TOKEN <<< "$IDENTITY";check_mac "$MAC"
    curl --noproxy '*' --fail --show-error --connect-timeout 3 --max-time 120 -F "firmware=@$OUT/$BIN.bin" "http://$IP/update?token=$TOKEN&target=$MAC&role=$ROLE"
    EXPECTED_VERSION='';if [[ "$PROFILE" == console ]]; then EXPECTED_VERSION="$(python3 -c 'import json;print(json.load(open("version.json"))["version"])')";fi
@@ -90,6 +90,11 @@ if [[ -z "$PORT" ]]; then
   PORTS=(/dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.wchusbserial*)
   if [[ ${#PORTS[@]} -ne 1 ]]; then echo 'Connect exactly one board or specify USB_PORT explicitly.';printf '%s\n' "${PORTS[@]}";exit 1;fi
   PORT="${PORTS[0]}"
+fi
+if [[ "$ROLE" == helmet ]]; then
+  [[ -n "${EXPECTED_MAC:-}" ]] || { echo 'Specify EXPECTED_MAC for helmet app-only USB update';exit 1; }
+  python3 tools/helmet_usb_update.py --port "$PORT" --image "$OUT/$BIN.bin" --expected-mac "$EXPECTED_MAC" --version "$(python3 -c 'import json;print(json.load(open("version.json"))["version"])')"
+  exit 0
 fi
 INFO="$("$ESPROOT/tools/esptool_py/5.3.1/esptool" --chip esp32s3 --port "$PORT" --baud 115200 --before usb-reset --after no-reset read-mac)"
 printf '%s\n' "$INFO"
