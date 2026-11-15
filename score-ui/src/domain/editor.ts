@@ -108,6 +108,34 @@ export function columnCells(project: Project, rows: Column[], ids: string[]): Ce
       })),
   );
 }
+export type RowDropPosition = 'before' | 'after';
+// Stable block move: input selection order/duplicates never change visual row order.
+// Grouped mode cannot transfer physical channels between devices.
+export function moveEditorRows(
+  project: Project,
+  sources: readonly string[],
+  target: string,
+  position: RowDropPosition,
+): Project {
+  const rows = editorRows(project),
+    selected = new Set(sources),
+    moved = rows.filter((r) => selected.has(rowKey(r))),
+    to = rows.find((r) => rowKey(r) === target);
+  if (!to || !moved.length || selected.has(target)) return project;
+  const custom = project.layout?.mode === 'custom';
+  if (!custom && moved.some((r) => r.device.id !== to.device.id)) return project;
+  const own = custom ? rows : rows.filter((r) => r.device.id === to.device.id),
+    remaining = own.filter((r) => !selected.has(rowKey(r))),
+    at = remaining.findIndex((r) => rowKey(r) === target) + (position === 'after' ? 1 : 0);
+  remaining.splice(at, 0, ...moved);
+  if (own.every((r, i) => rowKey(r) === rowKey(remaining[i]))) return project;
+  if (custom) return touch(project, { layout: { mode: 'custom', order: remaining.map(rowKey) } });
+  return touch(project, {
+    devices: project.devices.map((d) =>
+      d.id === to.device.id ? { ...d, rowOrder: remaining.map((r) => r.parameter.id) } : d,
+    ),
+  });
+}
 export function moveEditorRow(project: Project, source: string, target: string): Project {
   const rows = editorRows(project);
   const from = rows.find((r) => rowKey(r) === source),
@@ -132,7 +160,7 @@ export function moveEditorRow(project: Project, source: string, target: string):
 export function moveDevice(project: Project, id: string, destination: number): Project {
   const devices = [...project.devices],
     index = devices.findIndex((d) => d.id === id);
-  if (index < 0) return project;
+  if (index < 0 || index === Math.max(0, Math.min(devices.length - 1, destination))) return project;
   const [d] = devices.splice(index, 1);
   devices.splice(Math.max(0, Math.min(devices.length, destination)), 0, d);
   return touch(project, { devices });

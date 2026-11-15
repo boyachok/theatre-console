@@ -75,7 +75,7 @@ export async function editorChecks(page, navigationCalls, workspace) {
     .dispatchEvent('dragstart', { dataTransfer: transfer });
   await page
     .locator(`tr[data-device-group="${deviceIds[1]}"]`)
-    .dispatchEvent('drop', { dataTransfer: transfer });
+    .dispatchEvent('drop', { dataTransfer: transfer, clientY: 100000 });
   await page.waitForTimeout(800);
   assert.equal(workspace().draft.devices[1].id, deviceIds[0]);
   assert.deepEqual(
@@ -90,6 +90,106 @@ export async function editorChecks(page, navigationCalls, workspace) {
     workspace().draft.devices.map((d) => d.id),
     deviceIds,
   );
+  // Real mouse drag by channel name, not just synthetic DataTransfer events.
+  const rowFor = (parameter, device = deviceIds[0]) =>
+    page.locator(`.parameter-row[data-device="${device}"][data-parameter="${parameter}"]`);
+  const dragAfter = async (source, target) => {
+    const box = await target.boundingBox();
+    assert(box);
+    await source.dragTo(target, { targetPosition: { x: 90, y: box.height - 2 } });
+  };
+  // Whole device blocks can be grabbed by their title, including when collapsed.
+  for (const id of deviceIds.slice(0, 2))
+    await page.locator(`[data-device-group="${id}"] .collapse-device`).click();
+  await dragAfter(
+    page.locator(`[data-device-group="${deviceIds[0]}"] .device-name`),
+    page.locator(`[data-device-group="${deviceIds[1]}"]`),
+  );
+  await page.waitForTimeout(800);
+  assert.equal(
+    workspace().draft.devices[1].id,
+    deviceIds[0],
+    'Native device-title drag must move the whole block',
+  );
+  assert.deepEqual(
+    workspace()
+      .draft.devices.map((d) => [d.id, d.mac])
+      .sort(),
+    [...bindings].sort(),
+  );
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(800);
+  for (const id of deviceIds.slice(0, 2))
+    await page.locator(`[data-device-group="${id}"] .collapse-device`).click();
+  const channelBefore = await page
+    .locator(`.parameter-row[data-device="${deviceIds[0]}"]`)
+    .evaluateAll((rs) => rs.map((r) => r.dataset.parameter));
+  await dragAfter(rowFor('pwm-1').locator('.row-select'), rowFor('pwm-3'));
+  await page.waitForTimeout(800);
+  const channelAfter = await page
+    .locator(`.parameter-row[data-device="${deviceIds[0]}"]`)
+    .evaluateAll((rs) => rs.map((r) => r.dataset.parameter));
+  assert.notDeepEqual(channelAfter, channelBefore, 'Native channel-name drag must reorder rows');
+  assert.deepEqual(channelAfter.slice(0, 3), ['pwm-2', 'pwm-3', 'pwm-1']);
+  assert.equal(navigationCalls(), nav, 'Row-name selection/drag must not GO');
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(800);
+  assert.deepEqual(
+    await page
+      .locator(`.parameter-row[data-device="${deviceIds[0]}"]`)
+      .evaluateAll((rs) => rs.map((r) => r.dataset.parameter)),
+    channelBefore,
+  );
+  await page.getByRole('button', { name: 'По приборам', exact: true }).click();
+  await rowFor('pwm-1').locator('.row-select').click();
+  await rowFor('pwm-2')
+    .locator('.row-select')
+    .click({ modifiers: ['Shift'] });
+  await rowFor('pwm-4')
+    .locator('.row-select')
+    .click({ modifiers: [process.platform === 'darwin' ? 'Meta' : 'Control'] });
+  assert.equal(
+    await page.locator('tr.selected-row').count(),
+    3,
+    JSON.stringify(
+      await page.locator('tr.selected-row').evaluateAll((rs) => rs.map((r) => r.dataset.parameter)),
+    ),
+  );
+  const beforeGroup = workspace().draft,
+    cuesBeforeGroup = JSON.stringify(beforeGroup.steps);
+  const allKeys = await page
+    .locator('.parameter-row')
+    .evaluateAll((rs) => rs.map((r) => JSON.stringify([r.dataset.device, r.dataset.parameter])));
+  const wanted = ['pwm-1', 'pwm-2', 'pwm-4'].map((p) => JSON.stringify([deviceIds[0], p]));
+  const moving = allKeys.filter((k) => wanted.includes(k));
+  await dragAfter(rowFor('pwm-2').locator('.row-select'), rowFor('pwm-5'));
+  await page.waitForTimeout(800);
+  const expected = allKeys.filter((k) => !moving.includes(k)),
+    target = JSON.stringify([deviceIds[0], 'pwm-5']);
+  expected.splice(expected.indexOf(target) + 1, 0, ...moving);
+  assert.deepEqual(
+    workspace().draft.layout.order,
+    expected,
+    'Native drag moves selected channels as one stable group',
+  );
+  assert.equal(JSON.stringify(workspace().draft.steps), cuesBeforeGroup);
+  assert.equal(navigationCalls(), nav, 'Group drag must not GO');
+  assert.equal(await page.locator('tr.selected-row').count(), 3);
+  assert.deepEqual(
+    workspace().draft.devices,
+    beforeGroup.devices,
+    'Group layout must not reassign MACs or channel IDs',
+  );
+  // JSON contains the order and undo restores it with one operation.
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(800);
+  assert.deepEqual(
+    await page
+      .locator('.parameter-row')
+      .evaluateAll((rs) => rs.map((r) => JSON.stringify([r.dataset.device, r.dataset.parameter]))),
+    allKeys,
+  );
+  await page.getByRole('button', { name: 'Своя партитура', exact: true }).click();
   // Headers select entire step ranges without navigation when Shift is held.
   const beforeHeader = navigationCalls();
   await page
@@ -102,7 +202,7 @@ export async function editorChecks(page, navigationCalls, workspace) {
   await page.waitForTimeout(400);
   assert.equal(navigationCalls(), beforeHeader);
   await page.keyboard.press('Escape');
-  await page.screenshot({ path: '/tmp/theatre-080-editor-desktop.png', fullPage: true });
+  await page.screenshot({ path: '/tmp/theatre-082-editor-desktop.png', fullPage: true });
   for (const width of [320, 375, 390]) {
     await page.setViewportSize({ width, height: 844 });
     assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= width);
@@ -137,12 +237,30 @@ export async function editorChecks(page, navigationCalls, workspace) {
   await page.waitForTimeout(800);
   assert.equal(navigationCalls(), liveNav);
   assert.equal(await page.locator('#playing-step').inputValue(), playing);
+  const liveCues = JSON.stringify(workspace().draft.steps);
+  await page.getByRole('button', { name: 'По приборам', exact: true }).click();
+  await rowFor('pwm-1').locator('.row-select').click();
+  await rowFor('pwm-2')
+    .locator('.row-select')
+    .click({ modifiers: ['Shift'] });
+  await dragAfter(rowFor('pwm-2').locator('.row-select'), rowFor('pwm-4'));
+  await page.waitForTimeout(800);
+  assert.equal(
+    JSON.stringify(workspace().draft.steps),
+    liveCues,
+    'LIVE layout drag never changes cue values',
+  );
+  assert.equal(navigationCalls(), liveNav, 'LIVE header selection/group drag must not GO');
+  assert.equal(await page.locator('#playing-step').inputValue(), playing);
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(800);
+  await page.getByRole('button', { name: 'Своя партитура', exact: true }).click();
   await preview.click();
   await page.waitForFunction(
     () => document.querySelector('[aria-label="Предпросмотр"]')?.checked === false,
   );
   await page.waitForTimeout(800);
   console.log(
-    '0.8 editor MOCK ESP: arrows/Shift no GO; percent/fades batch; clear field; undo/redo; help; custom row order JSON; full-step selection;320/375/390 bounds passed',
+    '0.8.2 editor MOCK ESP: native device-title/channel-name/group drag, stable visual order and MAC/cue preservation, discrete undo; header Shift/Cmd selection and LIVE drag without GO; keyboard/batch/JSON/320/375/390 passed',
   );
 }

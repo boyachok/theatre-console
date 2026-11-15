@@ -57,6 +57,7 @@ import {
   moveCursor,
   moveDevice,
   moveEditorRow,
+  moveEditorRows,
   patchCells,
   rectangle,
   rowKey,
@@ -111,8 +112,8 @@ export default function App() {
   });
   const workspace = history.workspace;
   const setWorkspace = useCallback(
-    (update: Workspace | ((w: Workspace) => Workspace)) =>
-      dispatchHistory({ type: 'set', update, at: Date.now() }),
+    (update: Workspace | ((w: Workspace) => Workspace), discrete = false) =>
+      dispatchHistory({ type: 'set', update, at: Date.now(), discrete }),
     [],
   );
   const undo = useCallback(() => dispatchHistory({ type: 'undo', at: Date.now() }), []);
@@ -456,12 +457,44 @@ export default function App() {
         setSelectionIntent((old) => ({ id: cell.stepId, nonce: (old?.nonce ?? 0) + 1 }));
     }
   };
+  const selectRow = (key: string, mods: Modifiers = {}) => {
+    const row = visibleRows.find((r) => rowKey(r) === key);
+    if (!row) return;
+    const cell = {
+      stepId: selectedStepId,
+      deviceId: row.device.id,
+      parameterId: row.parameter.id,
+      kind: row.kind,
+    };
+    let keys = new Set([key]);
+    if (mods.shiftKey && anchorCell.current) {
+      const a = visibleRows.findIndex((r) => rowKey(r) === rowKey(anchorCell.current!)),
+        b = visibleRows.findIndex((r) => rowKey(r) === key);
+      if (a >= 0) keys = new Set(visibleRows.slice(Math.min(a, b), Math.max(a, b) + 1).map(rowKey));
+    } else if (mods.ctrlKey || mods.metaKey) {
+      keys = new Set(selectedCells.map(rowKey));
+      if (keys.has(key)) keys.delete(key);
+      else keys.add(key);
+    }
+    if (!mods.shiftKey) anchorCell.current = cell;
+    setSelection(keys.size ? cell : null);
+    setDeviceId(row.device.id);
+    setSelectedStepIds([]);
+    setSelectedCells(
+      columnCells(
+        project,
+        visibleRows.filter((r) => keys.has(rowKey(r))),
+        project.steps.map((s) => s.id),
+      ),
+    );
+    // Header selection is presentation-only: never set selectionIntent / GO.
+  };
   const selectCell = (cell: CellSelection, mods: Modifiers = {}) => focusCell(cell, mods, true);
   const handleSelectCell = useEditorEvent(selectCell),
     handleSelectStep = useEditorEvent(selectStep);
   const reorder = useCallback(
     (id: string, index: number) =>
-      setWorkspace((w) => ({ ...w, draft: moveStep(w.draft, id, index) })),
+      setWorkspace((w) => ({ ...w, draft: moveStep(w.draft, id, index) }), true),
     [],
   );
   const duplicate = useCallback(() => {
@@ -745,7 +778,7 @@ export default function App() {
     else setToast('Сначала выдели ячейки или шаги');
   };
   const moveRow = (source: string, target: string) =>
-    setWorkspace((w) => ({ ...w, draft: moveEditorRow(w.draft, source, target) }));
+    setWorkspace((w) => ({ ...w, draft: moveEditorRow(w.draft, source, target) }), true);
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
       if (!backendReady) return;
@@ -1100,15 +1133,18 @@ export default function App() {
             onHelp={() => setShortcutHelp(true)}
             custom={project.layout?.mode === 'custom'}
             onLayout={() =>
-              setWorkspace((w) => ({
-                ...w,
-                draft: touch(w.draft, {
-                  layout: {
-                    mode: w.draft.layout?.mode === 'custom' ? 'devices' : 'custom',
-                    order: w.draft.layout?.order ?? editorRows(w.draft).map(rowKey),
-                  },
+              setWorkspace(
+                (w) => ({
+                  ...w,
+                  draft: touch(w.draft, {
+                    layout: {
+                      mode: w.draft.layout?.mode === 'custom' ? 'devices' : 'custom',
+                      order: w.draft.layout?.order ?? editorRows(w.draft).map(rowKey),
+                    },
+                  }),
                 }),
-              }))
+                true,
+              )
             }
             canUndo={!!history.past.length}
             canRedo={!!history.future.length}
@@ -1130,8 +1166,18 @@ export default function App() {
               )
             }
             onMoveRow={moveRow}
+            onSelectRow={selectRow}
+            onMoveRows={(sources, target, position) =>
+              setWorkspace(
+                (w) => ({
+                  ...w,
+                  draft: moveEditorRows(w.draft, sources, target, position),
+                }),
+                true,
+              )
+            }
             onMoveDevice={(id, index) =>
-              setWorkspace((w) => ({ ...w, draft: moveDevice(w.draft, id, index) }))
+              setWorkspace((w) => ({ ...w, draft: moveDevice(w.draft, id, index) }), true)
             }
             compact={compact}
             onSelectStep={handleSelectStep}

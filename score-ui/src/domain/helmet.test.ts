@@ -125,6 +125,56 @@ test('ESP transport distinguishes helmet from ordinary slaves and rejects wrong-
     globalThis.fetch = original;
   }
 });
+test('unseen offline helmet after master restart has unknown role, not a false standard/helmet mismatch', async () => {
+  const original = globalThis.fetch,
+    mac = 'C0:4E:30:36:C6:88';
+  let protocol = 0,
+    deviceBoot = 0,
+    posts = 0;
+  globalThis.fetch = async (input, options) => {
+    if (options?.method === 'POST') posts++;
+    return String(input).endsWith('/status')
+      ? Response.json({
+          role: 'master',
+          version: INTERFACE_VERSION,
+          token: 'mock',
+          serverMs: 1,
+          console: { version: 0, ready: false },
+          nodes: [
+            {
+              role: 'slave',
+              protocol,
+              deviceBoot,
+              mac,
+              ip: null,
+              ageMs: null,
+              localScoreSupported: false,
+              sent: 0,
+              received: 0,
+              timeouts: 0,
+            },
+          ],
+        })
+      : Response.json(null);
+  };
+  try {
+    const p = createProject();
+    p.devices[0] = deviceProfile(p.devices[0], 'helmet');
+    p.devices[0].mac = mac;
+    const transport = new EspConsoleTransport();
+    await transport.loadWorkspace();
+    assert.equal(transport.getSnapshot().devices[mac].role, undefined);
+    assert.equal(transport.getSnapshot().publicationReady, false);
+    await transport.publish(p, null);
+    assert.equal(posts, 1);
+    protocol = 4;
+    deviceBoot = 123;
+    await assert.rejects(() => transport.publish(p, null), /C0:4E:30:36:C6:88.*не совпадают/);
+    assert.equal(posts, 1, 'Offline but confirmed wrong-role controller still rejected');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 test('helmet cannot enable unsupported modules or invent local audio playback', () => {
   const p = createProject();
   p.devices[0] = deviceProfile(p.devices[0], 'helmet');

@@ -8,6 +8,7 @@ import {
   rectangle,
   moveCursor,
   moveEditorRow,
+  moveEditorRows,
   rowKey,
   moveDevice,
   patchCells,
@@ -94,6 +95,73 @@ test('editor: local/global row order and device order preserve stable physical b
   assert.equal(JSON.stringify(q.steps), before);
   validateProject(q);
 });
+test('editor: group drop preserves visual order, deduplicates and inserts before/after the target', () => {
+  const p = fixture();
+  p.layout = { mode: 'custom', order: [] };
+  const keys = editorRows(p).map(rowKey),
+    sources = [keys[3], keys[0], keys[3], 'missing'];
+  const q = moveEditorRows(p, sources, keys[5], 'after');
+  const expected = keys.filter((k) => k !== keys[0] && k !== keys[3]);
+  expected.splice(expected.indexOf(keys[5]) + 1, 0, keys[0], keys[3]);
+  assert.deepEqual(editorRows(q).map(rowKey), expected);
+  const up = moveEditorRows(q, [keys[3], keys[0]], keys[1], 'before');
+  assert.deepEqual(editorRows(up).map(rowKey), [
+    keys[0],
+    keys[3],
+    ...keys.filter((k) => k !== keys[0] && k !== keys[3]),
+  ]);
+  assert.equal(moveEditorRows(q, [keys[0], keys[3]], keys[3], 'after'), q);
+  assert.equal(moveEditorRows(q, ['missing'], keys[1], 'before'), q);
+  assert.equal(moveEditorRows(q, [keys[0]], 'missing', 'after'), q);
+  assert.equal(moveEditorRows(q, [], keys[1], 'before'), q);
+  validateProject(q);
+});
+test('editor: group drag spans devices only in custom layout, never reassigns physical channels/cues', () => {
+  const p = fixture(),
+    rows = editorRows(p),
+    own = rows.filter((r) => r.device.id === p.devices[0].id),
+    foreign = rows.find((r) => r.device.id === p.devices[1].id)!;
+  p.devices[0].mac = 'C0:4E:30:27:69:98';
+  p.devices[1].mac = '30:30:F9:32:02:30';
+  const sources = [rowKey(own[2]), rowKey(own[0])];
+  assert.equal(moveEditorRows(p, sources, rowKey(foreign), 'after'), p);
+  const q = moveEditorRows(p, sources, rowKey(own[4]), 'after');
+  assert.deepEqual(q.devices[0].rowOrder?.slice(0, 5), [
+    own[1].parameter.id,
+    own[3].parameter.id,
+    own[4].parameter.id,
+    own[0].parameter.id,
+    own[2].parameter.id,
+  ]);
+  assert.equal(q.steps, p.steps);
+  assert.equal(q.devices[1], p.devices[1]);
+  const custom = { ...p, layout: { mode: 'custom' as const, order: [] } };
+  const mixed = moveEditorRows(
+    custom,
+    [rowKey(foreign), rowKey(own[0])],
+    rowKey(rows.at(-1)!),
+    'after',
+  );
+  assert.deepEqual(editorRows(mixed).slice(-2).map(rowKey), [rowKey(own[0]), rowKey(foreign)]);
+  assert.equal(mixed.steps, p.steps);
+  assert.equal(mixed.devices, p.devices);
+  const workspace = {
+    format: 'theatre-score' as const,
+    schemaVersion: 1 as const,
+    interfaceVersion: '0.8.1',
+    draft: custom,
+    published: null,
+  };
+  const history = historyReducer(
+    { workspace, past: [], future: [], at: 0 },
+    { type: 'set', at: 1000, update: (w) => ({ ...w, draft: mixed }) },
+  );
+  assert.equal(history.past.length, 1);
+  const undone = historyReducer(history, { type: 'undo', at: 2000 }).workspace.draft;
+  assert.deepEqual(editorRows(undone).map(rowKey), editorRows(custom).map(rowKey));
+  assert.equal(undone.steps, custom.steps);
+  assert.equal(moveDevice(p, p.devices[0].id, 0), p);
+});
 test('editor: layout JSON roundtrip, corrupt order rejected, collapsed rows excluded only in grouped mode', () => {
   const p = fixture();
   p.layout = { mode: 'custom', order: editorRows(p).map(rowKey).reverse() };
@@ -147,6 +215,33 @@ test('editor: undo/redo restores draft only, keeps latest publication, clearing 
   assert.equal(s.workspace.draft.name, 'Changed');
   s = historyReducer(s, { type: 'clear' });
   assert.equal(s.past.length, 0);
+});
+test('editor: a drag is one undo transaction, not coalesced with preceding layout or following fader edits', () => {
+  const workspace = {
+    format: 'theatre-score' as const,
+    schemaVersion: 1 as const,
+    interfaceVersion: '0.8.2',
+    draft: fixture(),
+    published: null,
+  };
+  let state: Parameters<typeof historyReducer>[0] = { workspace, past: [], future: [], at: 0 };
+  const change = (name: string, at: number, discrete = false) => {
+    state = historyReducer(state, {
+      type: 'set',
+      at,
+      discrete,
+      update: (w) => ({ ...w, draft: { ...w.draft, name } }),
+    });
+  };
+  change('layout', 100);
+  change('drag', 110, true);
+  change('fader1', 120);
+  change('fader2', 130);
+  assert.equal(state.past.length, 3);
+  state = historyReducer(state, { type: 'undo', at: 140 });
+  assert.equal(state.workspace.draft.name, 'drag');
+  state = historyReducer(state, { type: 'undo', at: 150 });
+  assert.equal(state.workspace.draft.name, 'layout');
 });
 test('editor: header selection covers only intended steps; helmet percentage never changes global preset', () => {
   const p = fixture();

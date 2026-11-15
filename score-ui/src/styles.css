@@ -2210,11 +2210,56 @@ kbd {
   text-align: left;
   font-size: 11px;
 }
-.row-header > .row-name {
+.row-select .row-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.row-select {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: grab;
+}
+.parameter-row > th[draggable],
+.device-group > th[draggable] {
+  cursor: grab;
+}
+.parameter-row.selected-row > .parameter-column {
+  background: #e7ecff;
+}
+.drag-source {
+  opacity: 0.5;
+}
+.drop-before > th,
+.drop-before > td {
+  box-shadow: inset 0 3px 0 var(--accent) !important;
+}
+.drop-after > th,
+.drop-after > td {
+  box-shadow: inset 0 -3px 0 var(--accent) !important;
+}
+.matrix-drag-status {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 150;
+  max-width: calc(100vw - 24px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #20305d;
+  color: white;
+  pointer-events: none;
 }
 .row-order {
   display: none;

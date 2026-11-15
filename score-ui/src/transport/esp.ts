@@ -88,7 +88,16 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
           n.role === 'helmet' && n.voice && Number.isFinite(n.voice.inputLevel) ? n.voice : null,
         firmwareVersion: typeof n.firmwareVersion === 'string' ? n.firmwareVersion : null,
         dimmerInverted: n.pwmConfig?.inverted12 ?? n.pwmConfig?.inverted,
-        role: n.role === 'remote' ? 'remote' : n.role === 'helmet' ? 'helmet' : 'slave',
+        // Before first contact after a master restart, protocol/deviceBoot=0 and
+        // the server's default "slave" is not an observed hardware role.
+        role:
+          n.role === 'remote'
+            ? 'remote'
+            : n.protocol === 0 && !n.deviceBoot
+              ? undefined
+              : n.role === 'helmet'
+                ? 'helmet'
+                : 'slave',
         name: n.name,
         ip: n.ip,
         online: n.ageMs !== null && n.ageMs < 3000,
@@ -229,8 +238,10 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const state = this.snapshot.devices[device.mac];
       if (state?.role === 'remote') throw new Error('remote — пульт: его нельзя назначить прибору');
       const authored = project.devices.find((d) => d.id === device.id)!;
-      if (state && (authored.profile === 'helmet') !== (state.role === 'helmet'))
-        throw new Error('Тип прибора и прошивки контроллера не совпадают: Helmet / стандартный');
+      if (state?.role && (authored.profile === 'helmet') !== (state.role === 'helmet'))
+        throw new Error(
+          `Тип прибора «${authored.name}» (${device.mac}) и прошивки контроллера не совпадают: Helmet / стандартный`,
+        );
       if (state?.online && !state.localScoreSupported)
         throw new Error(
           `Обновите прошивку ${state.name ?? device.mac}: нужен протокол сцен, совместимый с Theatre console ${INTERFACE_VERSION}`,

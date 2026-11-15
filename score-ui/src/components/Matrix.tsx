@@ -1,5 +1,13 @@
-import { Fragment, memo, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
-import type { CSSProperties } from 'react';
+import {
+  Fragment,
+  memo,
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import type { CSSProperties, DragEvent } from 'react';
 import {
   ChevronDown,
   ChevronRight,
@@ -15,7 +23,18 @@ import {
 import type { CellSelection, Column, DeviceCue, Project, StripEffect } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
 import { parameterCode, acCue } from '../domain/project.ts';
-import { cellKey, editorRows, rowKey, type Modifiers } from '../domain/editor.ts';
+import {
+  cellKey,
+  editorRows,
+  rowKey,
+  type Modifiers,
+  type RowDropPosition,
+} from '../domain/editor.ts';
+const ROW_MIME = 'application/x-theatre-row',
+  ROWS_MIME = 'application/x-theatre-rows',
+  DEVICE_MIME = 'application/x-theatre-device';
+type Dragging = { kind: 'rows'; keys: string[] } | { kind: 'device'; id: string };
+type DropTarget = { kind: 'rows' | 'device'; key: string; position: RowDropPosition };
 import type { NetworkTransport } from '../transport/network.ts';
 const DeviceIP = ({
   mac,
@@ -41,6 +60,8 @@ interface Props {
   collapsedDevices: string[];
   onToggleDevice: (id: string) => void;
   onMoveRow: (source: string, target: string) => void;
+  onMoveRows: (sources: string[], target: string, position: RowDropPosition) => void;
+  onSelectRow: (key: string, mods: Modifiers) => void;
   onMoveDevice: (id: string, index: number) => void;
   onSelectStep: (id: string, mods?: Modifiers) => void;
   onSelectCell: (c: CellSelection, mods?: Modifiers) => void;
@@ -167,6 +188,115 @@ export function Matrix(p: Props) {
     [project.devices, project.layout, p.collapsedDevices],
   );
   const selected = new Set(p.selectedCells.map(cellKey));
+  const selectedRows = new Set(p.selectedCells.map(rowKey));
+  const [dragging, setDragging] = useState<Dragging | null>(null);
+  const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+  const endDrag = () => {
+    setDragging(null);
+    setDropTarget(null);
+  };
+  const startRow = (e: DragEvent, row: Column) => {
+    e.stopPropagation();
+    const key = rowKey(row),
+      keys =
+        custom && selectedRows.has(key)
+          ? rows.filter((r) => selectedRows.has(rowKey(r))).map(rowKey)
+          : [key];
+    e.dataTransfer.setData(ROW_MIME, key);
+    e.dataTransfer.setData(ROWS_MIME, JSON.stringify(keys));
+    e.dataTransfer.effectAllowed = 'move';
+    setDragging({ kind: 'rows', keys });
+    if (!selectedRows.has(key)) p.onSelectRow(key, {});
+  };
+  const startDevice = (e: DragEvent, id: string) => {
+    e.stopPropagation();
+    e.dataTransfer.setData(DEVICE_MIME, id);
+    e.dataTransfer.effectAllowed = 'move';
+    setDragging({ kind: 'device', id });
+  };
+  const targetAt = (
+    e: DragEvent<HTMLTableRowElement>,
+    deviceId: string,
+    key?: string,
+  ): DropTarget | null => {
+    if (!custom && e.dataTransfer.types.includes(DEVICE_MIME)) {
+      if (dragging?.kind === 'device' && dragging.id === deviceId) return null;
+      const body = e.currentTarget.parentElement,
+        group = body?.querySelector(`[data-device-group="${CSS.escape(deviceId)}"]`),
+        last = body?.querySelectorAll(`.parameter-row[data-device="${CSS.escape(deviceId)}"]`),
+        top = (group ?? e.currentTarget).getBoundingClientRect().top,
+        bottom = (
+          last?.length ? last[last.length - 1] : (group ?? e.currentTarget)
+        ).getBoundingClientRect().bottom;
+      return {
+        kind: 'device',
+        key: deviceId,
+        position: e.clientY > (top + bottom) / 2 ? 'after' : 'before',
+      };
+    }
+    if (!key || !e.dataTransfer.types.includes(ROW_MIME)) return null;
+    if (
+      dragging?.kind === 'rows' &&
+      (dragging.keys.includes(key) ||
+        (!custom &&
+          dragging.keys.some(
+            (k) => !rows.some((r) => rowKey(r) === k && r.device.id === deviceId),
+          )))
+    )
+      return null;
+    const box = e.currentTarget.getBoundingClientRect();
+    return {
+      kind: 'rows',
+      key,
+      position: e.clientY > box.top + box.height / 2 ? 'after' : 'before',
+    };
+  };
+  const dragOver = (e: DragEvent<HTMLTableRowElement>, deviceId: string, key?: string) => {
+    const target = targetAt(e, deviceId, key);
+    if (!target) {
+      setDropTarget(null);
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setDropTarget((old) =>
+      old?.kind === target.kind && old.key === target.key && old.position === target.position
+        ? old
+        : target,
+    );
+  };
+  const dropRows = (e: DragEvent<HTMLTableRowElement>, deviceId: string, key?: string) => {
+    const target = targetAt(e, deviceId, key);
+    if (target) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (target.kind === 'device') {
+        const id = e.dataTransfer.getData(DEVICE_MIME),
+          from = project.devices.findIndex((d) => d.id === id);
+        let to =
+          project.devices.findIndex((d) => d.id === target.key) +
+          (target.position === 'after' ? 1 : 0);
+        if (from >= 0) {
+          if (from < to) to--;
+          p.onMoveDevice(id, to);
+        }
+      } else {
+        try {
+          const keys: unknown = e.dataTransfer.getData(ROWS_MIME)
+            ? JSON.parse(e.dataTransfer.getData(ROWS_MIME))
+            : [e.dataTransfer.getData(ROW_MIME)];
+          if (Array.isArray(keys) && keys.every((k) => typeof k === 'string'))
+            p.onMoveRows(keys, target.key, target.position);
+        } catch {
+          /* Ignore an unrelated/malformed drag, never mutate cues. */
+        }
+      }
+    }
+    endDrag();
+  };
+  const indicator = (kind: DropTarget['kind'], key: string, position: RowDropPosition) =>
+    dropTarget?.kind === kind && dropTarget.key === key && dropTarget.position === position;
   const latest = useRef({ steps: project.steps, onMove: p.onMove });
   latest.current = { steps: project.steps, onMove: p.onMove };
   const drop = useCallback((index: number, after: boolean, id: string) => {
@@ -185,41 +315,47 @@ export function Matrix(p: Props) {
     return (
       <tr
         key={key}
-        className="parameter-row"
+        className={`parameter-row ${selectedRows.has(key) ? 'selected-row' : ''} ${(dragging?.kind === 'rows' && dragging.keys.includes(key)) || (dragging?.kind === 'device' && dragging.id === row.device.id) ? 'drag-source' : ''} ${indicator('rows', key, 'before') ? 'drop-before' : ''} ${indicator('rows', key, 'after') || (!custom && down?.device.id !== row.device.id && indicator('device', row.device.id, 'after')) ? 'drop-after' : ''}`}
+        aria-selected={selectedRows.has(key)}
         data-device={row.device.id}
         data-parameter={row.parameter.id}
-        onDragOver={(e) => {
-          if (e.dataTransfer.types.includes('application/x-theatre-row')) e.preventDefault();
-        }}
-        onDrop={(e) => {
-          const source = e.dataTransfer.getData('application/x-theatre-row');
-          if (source) {
-            e.preventDefault();
-            e.stopPropagation();
-            p.onMoveRow(source, key);
-          }
-        }}
+        onDragOver={(e) => dragOver(e, row.device.id, key)}
+        onDrop={(e) => dropRows(e, row.device.id, key)}
       >
-        <th className="parameter-column">
+        <th className="parameter-column" draggable onDragStart={(e) => startRow(e, row)}>
           <div className="row-header">
             <button
               className="drag-handle"
               draggable
               aria-label={`Переместить параметр ${row.device.name} · ${row.parameter.name}`}
-              title="Перетащи строку; Alt+↑/↓"
-              onDragStart={(e) => {
-                e.dataTransfer.setData('application/x-theatre-row', key);
-                e.dataTransfer.effectAllowed = 'move';
-              }}
+              title={
+                custom
+                  ? 'Перетащи выделенные каналы группой; Alt+↑/↓ — одна строка'
+                  : 'Перетащи канал внутри прибора; Alt+↑/↓'
+              }
+              onDragStart={(e) => startRow(e, row)}
             >
               <GripVertical size={12} />
             </button>
-            <span className="channel-dot" style={{ background: COLORS[row.parameter.color].hex }} />
-            <code>{parameterCode(row.device, row.parameter)}</code>
-            <span className="row-name" title={`${row.device.name} · ${row.parameter.name}`}>
-              {custom ? `${row.device.name} · ` : ''}
-              {row.parameter.name}
-            </span>
+            <button
+              className="row-select"
+              draggable
+              onDragStart={(e) => startRow(e, row)}
+              aria-label={`Выделить канал ${row.device.name} · ${row.parameter.name}`}
+              aria-pressed={selectedRows.has(key)}
+              title="Выделить канал во всех шагах; Shift — диапазон, ⌘/Ctrl — несколько каналов. Перетаскивай за название."
+              onClick={(e) => p.onSelectRow(key, e)}
+            >
+              <span
+                className="channel-dot"
+                style={{ background: COLORS[row.parameter.color].hex }}
+              />
+              <code>{parameterCode(row.device, row.parameter)}</code>
+              <span className="row-name">
+                {custom ? `${row.device.name} · ` : ''}
+                {row.parameter.name}
+              </span>
+            </button>
             <span className="row-order">
               <button
                 aria-label={`Строка выше: ${row.device.name} · ${row.parameter.name}`}
@@ -269,7 +405,20 @@ export function Matrix(p: Props) {
     );
   };
   return (
-    <div className="matrix-scroll">
+    <div
+      className="matrix-scroll"
+      onDragEnd={endDrag}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropTarget(null);
+      }}
+    >
+      {dragging && (
+        <div className="matrix-drag-status" role="status">
+          {dragging.kind === 'rows'
+            ? `Перенос каналов: ${dragging.keys.length}`
+            : 'Перенос прибора целиком'}
+        </div>
+      )}
       <table className="score-matrix" aria-label="Партитура">
         <colgroup>
           <col className="parameter-column" />
@@ -329,34 +478,27 @@ export function Matrix(p: Props) {
         <tbody>
           {custom
             ? rows.map(renderRow)
-            : project.devices.map((device, index) => (
+            : project.devices.map((device) => (
                 <Fragment key={device.id}>
                   <tr
-                    className="device-group"
+                    className={`device-group ${dragging?.kind === 'device' && dragging.id === device.id ? 'drag-source' : ''} ${indicator('device', device.id, 'before') ? 'drop-before' : ''} ${!rows.some((r) => r.device.id === device.id) && indicator('device', device.id, 'after') ? 'drop-after' : ''}`}
                     data-device-group={device.id}
-                    onDragOver={(e) => {
-                      if (e.dataTransfer.types.includes('application/x-theatre-device'))
-                        e.preventDefault();
-                    }}
-                    onDrop={(e) => {
-                      const id = e.dataTransfer.getData('application/x-theatre-device');
-                      if (id) {
-                        e.preventDefault();
-                        p.onMoveDevice(id, index);
-                      }
-                    }}
+                    onDragOver={(e) => dragOver(e, device.id)}
+                    onDrop={(e) => dropRows(e, device.id)}
                   >
-                    <th className="parameter-column">
+                    <th
+                      className="parameter-column"
+                      draggable
+                      onDragStart={(e) => startDevice(e, device.id)}
+                      title="Перетащи блок прибора целиком"
+                    >
                       <div>
                         <button
                           className="drag-handle"
                           draggable
                           aria-label={`Переместить прибор ${device.name}`}
                           title="Перетащи прибор целиком"
-                          onDragStart={(e) => {
-                            e.dataTransfer.setData('application/x-theatre-device', device.id);
-                            e.dataTransfer.effectAllowed = 'move';
-                          }}
+                          onDragStart={(e) => startDevice(e, device.id)}
                         >
                           <GripVertical size={12} />
                         </button>
@@ -372,7 +514,12 @@ export function Matrix(p: Props) {
                             <ChevronDown size={14} />
                           )}
                         </button>
-                        <button className="device-name" onClick={() => p.onDevices(device.id)}>
+                        <button
+                          className="device-name"
+                          draggable
+                          onDragStart={(e) => startDevice(e, device.id)}
+                          onClick={() => p.onDevices(device.id)}
+                        >
                           {device.name}
                         </button>
                         <button

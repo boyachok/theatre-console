@@ -6,7 +6,12 @@ export interface HistoryState {
   at: number;
 }
 export type HistoryAction =
-  | { type: 'set'; update: Workspace | ((w: Workspace) => Workspace); at: number }
+  | {
+      type: 'set';
+      update: Workspace | ((w: Workspace) => Workspace);
+      at: number;
+      discrete?: boolean;
+    }
   | { type: 'undo' | 'redo'; at: number }
   | { type: 'clear' };
 export function historyReducer(s: HistoryState, a: HistoryAction): HistoryState {
@@ -15,8 +20,10 @@ export function historyReducer(s: HistoryState, a: HistoryAction): HistoryState 
     const workspace = typeof a.update === 'function' ? a.update(s.workspace) : a.update;
     if (workspace.draft === s.workspace.draft) return { ...s, workspace };
     const past =
-      a.at - s.at < 350 && s.past.length ? s.past : [...s.past, s.workspace.draft].slice(-80);
-    return { workspace, past, future: [], at: a.at };
+      !a.discrete && s.at > 0 && a.at - s.at < 350 && s.past.length
+        ? s.past
+        : [...s.past, s.workspace.draft].slice(-80);
+    return { workspace, past, future: [], at: a.discrete ? 0 : a.at };
   }
   const source = a.type === 'undo' ? s.past : s.future;
   if (!source.length) return s;
