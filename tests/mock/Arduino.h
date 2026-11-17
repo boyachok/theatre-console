@@ -19,6 +19,7 @@ inline size_t mockWriteLimit=1000;
 inline std::deque<uint8_t> mockUARTIn;
 inline std::vector<uint8_t> mockUARTOut;
 inline uint32_t millis(){return mockNow;}
+inline uint32_t micros(){return mockNow*1000u;}
 inline void delay(uint32_t ms){mockNow+=ms;}
 inline uint32_t mockRgbColor=0;
 inline void rgbLedWrite(uint8_t,uint8_t r,uint8_t g,uint8_t b){mockRgbColor=((uint32_t)r<<16)|((uint32_t)g<<8)|b;}

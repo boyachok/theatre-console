@@ -58,9 +58,11 @@ public:
     const bool pitchEngine = active == 2 || active == 3;
     // Gate source audio before its delay, so the ends of words and consonants
     // travel through the gate and the pitch shifter on the same time line.
-    const float source = active >= 0 ? clean * gate : clean;
+    // Gate the original path as well: DRY and robot mix=0 used to bypass it.
+    // The diagnostic TEST oscillator below intentionally does not use the mic gate.
+    const float source = clean * gate;
     const float tuned = rvat_tick(&tune, source, pitchEngine);
-    float signal = clean;
+    float signal = source;
     mix += .004f * ((active >= 0 ? processor.mix : 0) - mix);
     drive += .004f * ((active >= 0 ? processor.drive : 0) - drive);
     if(active >= 0) {

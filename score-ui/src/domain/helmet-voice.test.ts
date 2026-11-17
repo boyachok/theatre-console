@@ -50,6 +50,24 @@ test('helmet global voice bank compiles identically in every scene, independent 
   broken.steps[0].devices[d.id].strip.settings!.density = 101;
   assert.throws(() => validateProject(broken));
 });
+test('helmet working gate is compiled for every scene without overwriting the saved preset', () => {
+  const p = createProject();
+  p.devices = [deviceProfile(p.devices[0], 'helmet')];
+  const d = p.devices[0];
+  d.mac = 'C0:4E:30:36:C6:88';
+  d.voice = defaultVoiceBank();
+  const saved = clone(d.voice.presets);
+  d.voice.working = { ...voiceSettings(d), mode: 'dry', mix: 0, gateDb: -25 };
+  p.steps = [createStep(p.devices), createStep(p.devices)];
+  for (const cue of compileDevices(p, p.steps)[0].cues) {
+    assert.equal(cue.v![12], -25);
+    assert.equal(cue.v![1], 0);
+    assert.equal(cue.v![10], 0);
+  }
+  assert.deepEqual(d.voice.presets, saved);
+  d.voice.working.gateDb = -90;
+  assert.equal(compileDevices(p, p.steps)[0].cues[0].v![12], -90);
+});
 test('voice bank bounds, complete settings and eight presets reject corrupt or unsupported profiles', () => {
   const b = defaultVoiceBank();
   assert(validVoiceBank(b));

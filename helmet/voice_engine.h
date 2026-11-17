@@ -7,7 +7,7 @@
 #include "voice/inmp441_decode.h"
 namespace Helmet {
 inline Settings soundSettings(const Show::VoiceProfile &p,bool enabled){Settings s;s.enabled=enabled;if(!p.configured)return s;s.mode=p.mode?ROBOT:DRY;s.vocoder=p.algorithm==1;s.autotune=p.algorithm==2;s.monotone=p.algorithm==3;s.speechChip=p.algorithm==4;s.gain=p.gain;s.volume=p.volume;s.frequency=p.frequency;s.mix=p.mix;s.drive=p.drive;s.gateDb=p.gateDb;s.notch=p.flags&1;s.reduceThumps=p.flags&2;s.breathReduction=p.breath;s.wave=p.wave;s.toneHz=p.toneHz;s.formant=p.formant;s.clarity=p.clarity;s.tuneKey=p.key;s.tuneScale=p.scale;s.retuneMs=p.retuneMs;s.tuneStrength=p.strength;s.transpose=p.transpose;return s;}
-struct VoiceStats {bool ready=false,enabled=false;uint8_t audioCore=255;uint32_t captured=0,played=0,errors=0,late=0,limited=0,workMax=0;float inputLevel=0,outputLevel=0,pitch=0,target=0,load=0;};
+struct VoiceStats {bool ready=false,enabled=false;uint8_t audioCore=255;uint32_t captured=0,played=0,errors=0,late=0,limited=0,workMax=0;float inputLevel=0,outputLevel=0,pitch=0,target=0,load=0,gateEnvelopeDb=-180,gateGain=0,gateDb=-90;};
 // Large DSP buffers are members of a static/global Runner, never audio task stack.
 class VoiceProcessor {
  VoiceEffects effects;InputLowCut lowCut;OutputPeakLimiter limiter;
@@ -24,6 +24,7 @@ public:
    float signal=limiter.tick(effects.tick(lp*gain,gate)*volume);if(limiter.limiting())stats.limited++;if(!std::isfinite(signal)){signal=0;stats.errors++;}signal=fmaxf(-.98f,fminf(.98f,signal));outPower+=signal*signal;
    output[2*i]=output[2*i+1]=(int32_t)(signal*2147483647.f);
   }
+  stats.gateEnvelopeDb=20*log10f(fmaxf(envelope,1e-9f));stats.gateGain=gate;stats.gateDb=c.gateDb;
   stats.inputLevel=sqrtf(power/frames)*c.gain;stats.outputLevel=sqrtf(outPower/frames);stats.pitch=effects.tune.pitchHz;stats.target=effects.tune.targetHz;stats.enabled=c.enabled;
  }
 };

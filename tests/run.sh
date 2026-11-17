@@ -9,10 +9,12 @@ for TEST in quality control lan remote ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors pwm_inversion pwm_precision firmware_info helmet_audio helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery remote_master; do
+for TEST in actors pwm_inversion pwm_precision firmware_info helmet_audio helmet_gate helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery remote_master pulse_diagnostics; do
   c++ "${FLAGS[@]}" -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
+c++ "${FLAGS[@]}" -DTHEATRE_PLAYER_POLL_MS=1300 -Itests/mock -Iconsole tests/pulse_diagnostics.cpp -o "$OUT/pulse_diagnostics_1300"
+"$OUT/pulse_diagnostics_1300"
 c++ "${FLAGS[@]}" -Itests/ac_mock -Itests/mock tests/ac_backend.cpp -o "$OUT/ac_backend"
 "$OUT/ac_backend"
 c++ "${FLAGS[@]}" -Itests/rom_mock tests/workspace_inflate.cpp -lz -o "$OUT/workspace_inflate"

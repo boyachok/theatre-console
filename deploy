@@ -49,6 +49,12 @@ PY
   FLAGS="$FLAGS -DTHEATRE_PWM_BITS=$PWM_BITS -DTHEATRE_PWM_HZ=$PWM_HZ -DTHEATRE_PWM_GAMMA=$PWM_GAMMA -DTHEATRE_PWM_GRAY=$PWM_GRAY"
   OUT="$OUT-pwm${PWM_BITS}-hz${PWM_HZ}-g${PWM_GAMMA}-gray${PWM_GRAY}"
 fi
+# Explicit diagnostic slave image: playback stays enabled; only background query cadence changes.
+if [[ "$ROLE" == slave && "$PROFILE" == console && -n "${UART_POLL_MS:-}" ]]; then
+  [[ "$UART_POLL_MS" =~ ^[0-9]+$ ]] && (( UART_POLL_MS >= 250 && UART_POLL_MS <= 2000 )) || { echo 'UART_POLL_MS must be250..2000';exit 1; }
+  FLAGS="$FLAGS -DTHEATRE_PLAYER_POLL_MS=$UART_POLL_MS"
+  OUT="$OUT-uartpoll$UART_POLL_MS"
+fi
 BIN="$SKETCH.ino"
 if [[ "$PROFILE" == console ]]; then
   python3 tools/release.py --check

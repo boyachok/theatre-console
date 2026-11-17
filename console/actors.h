@@ -11,8 +11,14 @@ class Actors {
   uint8_t relayMode=0,fault=0;uint16_t onMask=0;uint32_t configRevision=1;
   bool linkReady=false,relayOn=false,pwmReady=true;
   Preferences config;
+  // Controller-owned RAM trace: records software writes, NOT a GPIO waveform.
+  struct OutputEvent {uint32_t atUs=0;uint8_t kind=0,channel=0;float value=0;};
+  OutputEvent outputEvents[32]{};uint8_t outputHead=0,outputCount=0;
+  uint32_t pwmWrites=0,relayWrites[2]{},offCalls=0;
+  void recordOutput(uint8_t kind,uint8_t channel,float value){outputEvents[outputHead]={micros(),kind,channel,value};outputHead=(outputHead+1)%32;if(outputCount<32)outputCount++;}
   bool saveDimSettings(const PwmSettings &next,uint16_t inverse){DimSettings saved;saved.inverted=inverse;memcpy(saved.level,next.level,PWM_COUNT);return config.putBytes("dimConfig",&saved,sizeof(saved))==sizeof(saved);}
   void relayWrite(bool on){
+    relayWrites[0]++;recordOutput(2,1,on);
     if(!relayMode){pinMode(RELAY_PIN,INPUT);relayOn=false;return;}
     digitalWrite(RELAY_PIN,(on==(relayMode==1))?HIGH:LOW);pinMode(RELAY_PIN,OUTPUT);relayOn=on;
   }
@@ -21,10 +27,16 @@ class Actors {
     bool ok=index<PWM_COUNT?ledcWrite(PWM_PINS[index],PwmCurve::duty(value,inverse)):
       (PWM_BITS==8&&THEATRE_PWM_GAMMA==1.f&&THEATRE_PWM_GRAY==.5f?extra.write(index-PWM_COUNT,physicalPWM((uint8_t)value,inverse)):extra.writeFine(index-PWM_COUNT,shaped*255.f));
     if(!ok)return false;
-    duty[index]=value;return true;
+    duty[index]=value;pwmWrites++;recordOutput(1,index+1,value);return true;
   }
 public:
   Player player;
+  void recordRelay2(bool on){relayWrites[1]++;recordOutput(2,2,on);}
+  uint32_t pwmWriteCount()const{return pwmWrites;}
+  uint32_t relayWriteCount(uint8_t index)const{return index<2?relayWrites[index]:0;}
+  uint32_t allOffCount()const{return offCalls;}
+  uint8_t outputEventCount()const{return outputCount;}
+  const auto &outputEvent(uint8_t i)const{return outputEvents[(outputHead+32-outputCount+i)%32];}
   void begin(){
     config.begin("stage-io",false);relayMode=config.getUChar("relayMode",0);if(relayMode>2)relayMode=0;
     PwmSettings loaded;
@@ -62,6 +74,7 @@ public:
     s.inverted=settings.inverted;s.reserved=0xd000|((invertedMask>>8)&15);s.onMask=onMask;s.revision=configRevision;return s;
   }
   void off(uint8_t reason=0){
+    offCalls++;recordOutput(3,0,reason);
     relayWrite(false);for(int i=0;i<DIMMER_COUNT;i++){writePWM(i,0);duty[i]=0;}onMask=0;
     player.stop();fault=pwmReady?reason:5;
   }

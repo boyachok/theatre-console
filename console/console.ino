@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#ifndef THEATRE_HOST_TEST
+#include <esp_system.h>
+#endif
 #include <WiFi.h>
 #include "control_web.h"
 #include <Preferences.h>
@@ -25,6 +28,7 @@
 // Local WLAN control; see hardware.h for GPIO and PWM timing.
 constexpr uint8_t BROADCAST[6] = {255,255,255,255,255,255};
 WifiTransport network;
+String statusJSON(bool history,bool outputs=false);
 Actors actors;
 Show::Runner showRunner(actors);Show::SlaveStore showStore;Show::MasterStore showMaster;bool showRecovery=false,showFSReady=false;
 void consoleRoutes();void showMasterTick();void consoleButtons();bool handleShowMessage(const LanMessage &message);
@@ -459,7 +463,14 @@ String uartJSON(const UartStats &s,const PlayerDebug &player) {
   if(player.family==1)j+=",\"playerAcks\":"+String(player.acks)+",\"playerErrors\":"+String(player.errors)+",\"playerEnds\":"+String(player.ends)+",\"lastPlayerError\":"+String(player.lastError);
   j+=",\"lastTx\":"+jsonString(hexString(fullTx,std::min(s.txLen,(uint8_t)(player.family==1?10:8))))+",\"lastRx\":"+jsonString(hexString(s.lastRx,std::min(s.rxLen,(uint8_t)16)))+"}";return j;
 }
-String statusJSON(bool history) {
+String outputTraceJSON(bool events){
+ String j="{\"pwmWrites\":"+String(actors.pwmWriteCount())+",\"relay1Writes\":"+String(actors.relayWriteCount(0))+",\"relay2Writes\":"+String(actors.relayWriteCount(1))+",\"allOffCalls\":"+String(actors.allOffCount());
+ if(!events)return j+"}";
+ j+=",\"events\":[";
+ for(uint8_t i=0;i<actors.outputEventCount();i++){if(i)j+=',';const auto &e=actors.outputEvent(i);j+="{\"atUs\":"+String(e.atUs)+",\"kind\":"+String(e.kind)+",\"channel\":"+String(e.channel)+",\"value\":"+String(e.value,3)+"}";}
+ return j+"]}";
+}
+String statusJSON(bool history,bool outputs) {
   String j;j.reserve(history?90000:10000);
   j="{\"serverMs\":"+String(millis())+",\"loopGapMaxMs\":"+String(loopGapMaxUs/1000.0f,2)+",\"version\":"+jsonString(RADIO_VERSION)+",\"role\":"+jsonString(RADIO_MASTER?"master":"slave")+",\"transport\":\"wifi\",\"channel\":"+String(WiFi.channel())+",\"ap\":"+jsonString(STAGE_WIFI_SSID)+",\"ssid\":"+jsonString(STAGE_WIFI_SSID)+",\"ip\":"+jsonString(WiFi.localIP().toString())+",\"hostname\":"+jsonString(network.hostname)+",\"mac\":"+jsonString(macString(network.mac))+",\"connected\":"+String(network.ready()?"true":"false")+",\"rxInvalid\":"+String(network.rxInvalid)+",\"token\":"+jsonString(csrfToken)+",\"rxDrops\":"+String(rxDrops.load())+",\"txErrors\":"+String(txErrors)+",\"testSeconds\":"+String(((measurementStoppedAt?measurementStoppedAt:millis())-testStart)/1000.0f,1);
   j+=",\"measuring\":"+String(measurementsRunning?"true":"false")+",\"resetting\":"+String(networkResetActive?"true":"false")+",\"pwmPins\":[";
@@ -494,6 +505,10 @@ String statusJSON(bool history) {
   j+="]";
   if(!RADIO_MASTER){j+=",\"hardwareProfile\":\"s3-yx6300-rx1-tx2-v1\",\"dimmerPins\":[";for(int i=0;i<DIMMER_COUNT;i++){if(i)j+=',';j+=PWM_PINS[i];}j+="],\"relayPins\":["+String(RELAY_PIN)+","+String(RELAY2_PIN)+"],\"stripPin\":"+String(STRIP_PIN);}
   if(!RADIO_MASTER){auto a=showRunner.acStatus();j+=",\"acDimmer\":{\"zcPin\":41,\"gatePin\":40,\"enabled\":"+String(a.enabled?"true":"false")+",\"qualified\":"+String(a.qualified?"true":"false")+",\"latched\":"+String(a.latched?"true":"false")+",\"fault\":"+jsonString(Mains::faultName(a.fault))+",\"requested\":"+String(a.requested)+",\"paired\":"+String(a.paired)+",\"goodZero\":"+String(a.good)+",\"rejectedZero\":"+String(a.rejected)+",\"halfUs\":"+String(a.halfUs)+",\"scheduled\":"+String(a.scheduled)+",\"late\":"+String(a.late)+",\"duplicateEdges\":"+String(a.duplicateEdges)+",\"ignoredWindow\":"+String(a.ignoredWindow)+",\"syncLosses\":"+String(a.syncLosses)+",\"recoveries\":"+String(a.recoveries)+",\"skippedPulses\":"+String(a.skippedPulses)+",\"staleClockSamples\":"+String(a.staleClockSamples)+"}";}
+#ifndef THEATRE_HOST_TEST
+  j+=",\"resetReason\":"+String((uint32_t)esp_reset_reason());
+#endif
+  if(!RADIO_MASTER)j+=",\"uartPollMs\":"+String(PLAYER_POLL_MS)+",\"outputWrites\":"+outputTraceJSON(outputs);
   if(!RADIO_MASTER)j+=",\"pwmBits\":"+String(PWM_BITS)+",\"pwmHzConfigured\":"+String(PWM_HZ)+",\"pwmGamma\":"+String((float)THEATRE_PWM_GAMMA,3)+",\"pwmGray\":"+String((float)THEATRE_PWM_GRAY,3)+",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics(),actors.player.debug());
   if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.cursorValid?String(showMaster.step+1):String("null"))+",\"stepId\":"+jsonString(showMaster.cursorId())+",\"livePreview\":"+String(showMaster.livePreview?"true":"false")+",\"running\":"+String(showMaster.active?"true":"false")+",\"syncing\":"+String((showMaster.syncPending||(!showMaster.livePreview&&showMaster.draftUnsaved()))?"true":"false")+",\"navigation\":"+String(showMaster.navigation)+",\"draftFingerprint\":"+jsonString(showMaster.draftFingerprint)+",\"syncFingerprint\":"+jsonString(showMaster.syncFingerprint)+",\"draftRevision\":"+String(showMaster.draftRevision)+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
   if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
@@ -565,7 +580,7 @@ void routes() {
     int count=0;for(int i=0;i<MAX_NODES;i++)if(queueCommand(i,ALL_OFF))count++;
     web.send(202,"text/plain","ALL OFF: "+String(count));
   });
-  web.on("/api/status",HTTP_GET,[] {web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",statusJSON(web.hasArg("history")));});
+  web.on("/api/status",HTTP_GET,[] {web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",statusJSON(web.hasArg("history"),web.hasArg("outputs")));});
   web.on("/reset",HTTP_POST,[] {if(!validForm())return;resetStats();web.send(200,"text/plain","OK");});
   web.on("/name",HTTP_POST,[] {
     if(!validForm())return;int i=targetNode();String name=web.arg("name");name.trim();

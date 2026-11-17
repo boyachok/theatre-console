@@ -17,6 +17,7 @@ class Runner {
  void confirmAudioStart(){if(audioStarting&&actors.player.playSerial==expectedPlay){audioStarting=false;volume=Ramp{0.f,0.f,actors.player.playSentAt,0};volume.target(targetVolume,audioFadeIn,0,actors.player.playSentAt);}}
  void writeRelay(uint8_t index,bool on){
   if(index==0){actors.apply(RELAY,0,on,true);return;}
+  actors.recordRelay2(on);
   if(!relayMode2){pinMode(RELAY2_PIN,INPUT);relay2=false;return;}
   digitalWrite(RELAY2_PIN,(on==(relayMode2==1))?HIGH:LOW);pinMode(RELAY2_PIN,OUTPUT);relay2=on;
  }

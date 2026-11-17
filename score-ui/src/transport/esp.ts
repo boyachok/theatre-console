@@ -6,6 +6,8 @@ import type { ScoreTransport } from './preview.ts';
 import type { NetworkSnapshot, NetworkTransport, NetworkDeviceStatus } from './network.ts';
 import { INTERFACE_VERSION } from '../version.ts';
 import { compileDraft, draftDelta, type DraftPlan } from '../domain/programming.ts';
+// Retry only idempotent editor reconciliation; never automatically replay GO or I/O commands.
+class TransientRequestError extends Error {}
 export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
   readonly kind = 'esp' as const;
   private snapshot: NetworkSnapshot = { connected: false, testEnabled: false, devices: {} };
@@ -53,9 +55,28 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       timer = setTimeout(() => controller.abort(), timeout);
     try {
       const r = await fetch(path, { ...options, signal: controller.signal, cache: 'no-store' });
-      if (!r.ok) throw new Error((await r.text()) || `HTTP ${r.status}`);
+      if (!r.ok) {
+        const message = (await r.text()) || `HTTP ${r.status}`;
+        if (r.status === 408 || r.status === 429 || r.status >= 500)
+          throw new TransientRequestError(message);
+        throw new Error(message);
+      }
       if (options.method === 'POST') this.acceptedStatus = ++this.statusRequest;
       return r;
+    } catch (error) {
+      if (controller.signal.aborted)
+        throw new TransientRequestError(
+          options.method === 'POST'
+            ? 'HTTP: нет подтверждения, результат запроса неизвестен'
+            : 'Истекло время ожидания ответа мастера',
+        );
+      if (error instanceof TypeError)
+        throw new TransientRequestError(
+          options.method === 'POST'
+            ? 'Нет HTTP-связи с мастером; результат запроса неизвестен'
+            : 'Нет HTTP-связи с мастером',
+        );
+      throw error;
     } finally {
       clearTimeout(timer);
     }
@@ -331,10 +352,22 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
   reconcile(project: Project): Promise<PublishedScore | null> {
     const revision = ++this.editorRevision;
     return this.enqueue(async () => {
+      for (let attempt = 0; ; attempt++) {
+        if (revision !== this.editorRevision) return null;
+        try {
+          await this.status();
+          if (revision !== this.editorRevision) return null;
+          await this.uploadDraft(project);
+          break;
+        } catch (error) {
+          if (!(error instanceof TransientRequestError) || attempt >= 3) throw error;
+          // Fresh status resolves an uncertain committed POST before any retry.
+          // A newer edit/STOP invalidates this revision while waiting.
+          await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+        }
+      }
       if (revision !== this.editorRevision) return null;
-      await this.status();
-      await this.uploadDraft(project);
-      // Preview updates only RAM/current scene. Show edits sync flash, never execute a scene.
+      // Do not automatically repeat persistent publication, GO or I/O commands.
       if (!this.manifest.livePreview && this.manifest.fingerprint !== fingerprint(project))
         return this.publish(project, null);
       await this.status();

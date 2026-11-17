@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { editorChecks } from './editor-ui-steps.mjs';
+import { helmetDialogChecks } from './helmet-dialog-checks.mjs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { INTERFACE_VERSION } from '../src/version.ts';
@@ -722,8 +723,12 @@ try {
   const voiceNav = navigationCalls();
   assert.equal(await voiceWindow.locator('details').getAttribute('open'), null);
   await voiceWindow.getByText('Параметры звука', { exact: true }).click();
+  await helmetDialogChecks(page, voiceWindow);
+  assert.equal(navigationCalls(), voiceNav);
   await voiceWindow.getByLabel('Алгоритм голоса', { exact: true }).selectOption('chip');
   await voiceWindow.getByLabel('Высота голоса / частота', { exact: true }).fill('333');
+  await voiceWindow.getByLabel('Порог отсечения шума', { exact: true }).fill('-40');
+  await voiceWindow.getByLabel('Порог отсечения шума', { exact: true }).blur();
   await voiceWindow.getByRole('button', { name: 'Сохранить пресет', exact: true }).click();
   await voiceWindow.getByRole('button', { name: 'Сохранить как новый', exact: true }).click();
   await voiceWindow.getByLabel('Название голосового пресета', { exact: true }).fill('Шлем — чип');
@@ -732,7 +737,7 @@ try {
   assert.equal(helmetDevice.voice.presets.length, 2);
   assert.equal(helmetDevice.voice.presets[1].name, 'Шлем — чип');
   assert.equal(helmetDevice.voice.presets[1].settings.frequency, 333);
-  assert(draft.devices[0].cues.every((c) => c.v[2] === 4 && c.v[9] === 333));
+  assert(draft.devices[0].cues.every((c) => c.v[2] === 4 && c.v[9] === 333 && c.v[12] === -40));
   assert.equal(navigationCalls(), voiceNav);
   await page.setViewportSize({ width: 320, height: 844 });
   console.log(

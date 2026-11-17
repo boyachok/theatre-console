@@ -10,6 +10,11 @@ static_assert(PWM_COUNT==8,"ESP32-S3 provides eight LEDC channels");
 constexpr uint8_t RELAY_PIN=39;
 constexpr uint8_t PLAYER_TX=2; // ESP TX -> YX6300 module RX (not the board's COM TX label)
 constexpr uint8_t PLAYER_RX=1; // ESP RX <- YX6300 module TX, 3.3 V ONLY
+#ifndef THEATRE_PLAYER_POLL_MS
+#define THEATRE_PLAYER_POLL_MS 400
+#endif
+constexpr uint32_t PLAYER_POLL_MS=THEATRE_PLAYER_POLL_MS;
+static_assert(PLAYER_POLL_MS>=250&&PLAYER_POLL_MS<=2000,"Diagnostic UART polling must remain below the 3s reply age limit");
 constexpr uint8_t RGB_PIN=48;
 constexpr uint8_t AC_ZC_PIN=41,AC_GATE_PIN=40; // Isolated 3.3V Z-C input; active-HIGH optotriac gate, external pulldown required.
 constexpr bool validSlavePinMap(){

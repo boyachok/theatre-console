@@ -110,7 +110,7 @@ public:
    else if(f.cmd==YX::NEXT||f.cmd==YX::PREVIOUS||f.cmd==YX::RESUME){requestedTrack=0;switchPending=false;}
   }else if(autoPoll&&!initializing&&(int32_t)(now-nextPoll)>=0){
    static const uint8_t queries[]={YX::STATUS,YX::QUERY_VOLUME,YX::TRACK,YX::FILES};
-   enqueue(queries[queryIndex++%4]);nextPoll=now+400;
+   enqueue(queries[queryIndex++%4]);nextPoll=now+PLAYER_POLL_MS;
   }
  }
 };
