@@ -15,7 +15,7 @@
 #define THEATRE_PWM_GRAY 0.5f
 #endif
 static_assert(THEATRE_PWM_BITS==8||THEATRE_PWM_BITS==10||THEATRE_PWM_BITS==12,"Supported PWM precision:8,10 or12");
-static_assert(THEATRE_PWM_HZ>=4000&&THEATRE_PWM_HZ<=25000&&80000000UL%THEATRE_PWM_HZ==0,"Invalid bench PWM frequency");
+static_assert(THEATRE_PWM_HZ>=2000&&THEATRE_PWM_HZ<=25000&&80000000UL%THEATRE_PWM_HZ==0,"Invalid bench PWM frequency");
 namespace PwmCurve {
 inline float shape(float nominal,float gamma=THEATRE_PWM_GAMMA,float gray=THEATRE_PWM_GRAY){
  if(!std::isfinite(nominal)||nominal<=0)return 0;if(nominal>=255)return 1;
