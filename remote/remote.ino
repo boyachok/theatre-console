@@ -8,8 +8,10 @@
 #include "network_led.h"
 #include "control_web.h"
 #include "ota_guard.h"
+#include "battery_io.h"
 // Dedicated remote: maintenance HTTP/OTA only. No filesystem/PWM/relays/audio.
 constexpr uint8_t FORWARD_PIN=13,BACK_PIN=14,STATUS_PIN=48;
+static_assert(RemoteBattery::PIN!=FORWARD_PIN&&RemoteBattery::PIN!=BACK_PIN&&RemoteBattery::PIN!=STATUS_PIN,"Battery ADC must not overlap buttons/LED");
 WifiTransport network;Remote::Buttons buttons;Remote::Outbox outbox;ControlWebServer web(80);
 uint8_t masterMAC[6]{};bool masterKnown=false,hasPing=false,masterWantsFirmware=false;
 uint32_t selfBoot=1,firmwareBoot=1,masterSession=0,generation=0,masterSeen=0,lastPing=0,lastPingSeq=0,helloAt=0;
@@ -72,7 +74,7 @@ void receiveRemote(){
 }
 void status(){Serial.printf("%s\n",remoteStatusJSON().c_str());}
 void setup(){
- Serial.begin(115200);pinMode(FORWARD_PIN,INPUT_PULLUP);pinMode(BACK_PIN,INPUT_PULLUP);selfBoot=randomId();firmwareBoot=randomId();cancelInputs();
+ Serial.begin(115200);batteryBegin();pinMode(FORWARD_PIN,INPUT_PULLUP);pinMode(BACK_PIN,INPUT_PULLUP);selfBoot=randomId();firmwareBoot=randomId();cancelInputs();
  diagnosticPrefs.begin("remote-diag",false);uint8_t testFlag=1; // First boot/read failure stays safely in commissioning mode.
  if(diagnosticPrefs.getBytesLength("buttonTest")==1)diagnosticPrefs.getBytes("buttonTest",&testFlag,1);
  buttonTest=testFlag!=0;buttonProbe.reset(digitalRead(FORWARD_PIN)==LOW,digitalRead(BACK_PIN)==LOW,millis());
@@ -81,7 +83,7 @@ void setup(){
  Serial.printf("\nTheatre console %s role=remote; GPIO13 forward/GPIO14 back; maintenance HTTP/OTA; i/j=status, l=white LED, t=safe TX test\n",RADIO_VERSION);
 }
 void loop(){
- network.tick();uint32_t now=millis();if(generation!=network.generation){generation=network.generation;cancelLink(true);}
+ network.tick();uint32_t now=millis();if(!otaLocked)batteryTick(now);if(generation!=network.generation){generation=network.generation;cancelLink(true);}
  if(hasPing&&now-lastPing>Remote::LEASE_MS)cancelLink(false);
  receiveRemote();now=millis();
  if(network.ready()&&masterKnown&&helloAt&&(int32_t)(now-helloAt)>=0){helloAt=0;Packet hello=message(REMOTE_HELLO);network.send(masterMAC,(const uint8_t*)&hello,sizeof(hello));sendFirmwareReport();}
@@ -89,8 +91,10 @@ void loop(){
  bool live=canOperate(now),forward=digitalRead(FORWARD_PIN)==LOW,back=digitalRead(BACK_PIN)==LOW;
  uint32_t released=buttonProbe.releases[0]+buttonProbe.releases[1];buttonProbe.tick(forward,back,now);
  if(buttonTest&&released!=buttonProbe.releases[0]+buttonProbe.releases[1])diagnosticTX();
- auto action=buttons.tick(forward,back,live&&!otaLocked&&!buttonTest,now);
- if(!live||otaLocked||buttonTest)outbox.clear();
+ linkDiagnostic.tick(forward,back,now,!otaLocked&&!buttonTest);
+ bool inputBlocked=otaLocked||buttonTest||linkDiagnostic.active(now)||linkDiagnostic.suppress();
+ auto action=buttons.tick(forward,back,live&&!inputBlocked,now);
+ if(!live||inputBlocked)outbox.clear();
  else {
   if(action!=Remote::NONE)outbox.push(action,token,clockMaster+(uint32_t)(now-clockAt),now);
   if(auto *event=outbox.due(now)){
@@ -102,7 +106,15 @@ void loop(){
  remoteWebTick();receiveRemote();now=millis();live=canOperate(now);
  bool identify=identifyUntil&&(int32_t)(identifyUntil-now)>0,pulse=whiteUntil&&(int32_t)(whiteUntil-now)>0;
  bool longWhite=false;if(longAckAt&&(int32_t)(now-longAckAt)>=0){uint32_t phase=now-longAckAt;if(phase>=360)longAckAt=0;else longWhite=phase<120||phase>=240;}
- uint32_t color=buttonTest&&!identify?buttonProbe.color(pulse):!identify&&longWhite?0x606060:networkLedColor(live?grade:OFFLINE,now,identify,pulse);static uint32_t previous=0xffffffff;
+ uint32_t color;
+ if(buttonTest&&!identify)color=buttonProbe.color(pulse);
+ else if(identify)color=networkLedColor(live?grade:OFFLINE,now,true,false);
+ else if(pulse)color=0x141414;
+ else if(longWhite)color=0x606060;
+ else if(linkDiagnostic.active(now))color=diagnosticLinkColor(live?grade:OFFLINE,now);
+ else if(battery.enabled())color=battery.color(now);
+ else color=networkLedColor(live?grade:OFFLINE,now); // Unwired/uncalibrated units keep the old indication.
+ static uint32_t previous=0xffffffff;
  if(color!=previous){rgbLedWrite(STATUS_PIN,(color>>16)&255,(color>>8)&255,color&255);previous=color;}
  while(Serial.available()){char c=Serial.read();if(c=='i'||c=='j')status();else if(c=='l')whitePulse(millis());else if(c=='t')diagnosticTX();}
  if(restartAt&&(int32_t)(now-restartAt)>=0)ESP.restart();

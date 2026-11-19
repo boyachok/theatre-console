@@ -5,7 +5,7 @@ OUT="$(mktemp -d /tmp/stage-tests.XXXXXX)"
 trap 'rm -rf "$OUT"' EXIT
 FLAGS=(-std=c++17 -Wall -Wextra -pedantic -fsanitize=address,undefined)
 python3 tests/helmet_usb_layout.py
-for TEST in quality control lan remote ac_phase; do
+for TEST in quality control lan remote remote_battery ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
@@ -30,13 +30,14 @@ for TEST in http console_http; do
   c++ "${FLAGS[@]}" -pthread -Itests/http_mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in wifi remote_firmware remote_ota remote_buttons helmet_firmware helmet_ota; do
+for TEST in wifi remote_firmware remote_ota remote_buttons remote_battery_firmware helmet_firmware helmet_ota; do
   c++ "${FLAGS[@]}" -Itests/net_mock -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
-  "$OUT/$TEST"
+  if [[ "$TEST" == remote_battery_firmware ]]; then BATTERY_HTML_DUMP="$OUT/remote-battery.html" "$OUT/$TEST";else "$OUT/$TEST";fi
 done
 if [[ -n "${PLAYWRIGHT_PATH:-}" ]]; then
   node tests/ui.cjs
   node tests/yx_uart_ui.cjs
+  BATTERY_HTML_DUMP="$OUT/remote-battery.html" node tests/remote_battery_ui.mjs
 else
   echo 'UI test skipped: set PLAYWRIGHT_PATH to an installed playwright package.'
 fi

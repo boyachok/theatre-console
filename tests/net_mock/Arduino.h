@@ -18,6 +18,12 @@ public:
 struct FakeUSB {void begin(int){}int available(){return 0;}int read(){return -1;}template<class... T>void printf(const char*,T...) {}template<class T>void println(const T&) {}};
 inline uint32_t esp_random(){static uint32_t id=123;return ++id;}
 inline FakeUSB Serial;
+constexpr int ADC_11db=3;
+inline uint32_t mockAnalogMv[64]{},mockAnalogReads=0;
+inline int mockAnalogResolution=0,mockAnalogAttenuation[64]{};
+inline void analogReadResolution(int bits){mockAnalogResolution=bits;}
+inline void analogSetPinAttenuation(uint8_t pin,int attenuation){mockAnalogAttenuation[pin]=attenuation;}
+inline uint32_t analogReadMilliVolts(uint8_t pin){mockAnalogReads++;return mockAnalogMv[pin];}
 inline unsigned mockRestartCalls=0;
 struct FakeESP {void restart(){mockRestartCalls++;}};
 inline FakeESP ESP;
