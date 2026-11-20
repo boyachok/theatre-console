@@ -4,13 +4,14 @@
 #include "control_types.h"
 #include "hardware.h"
 #include "pwm_settings.h"
+#include "pwm_frequency.h"
 #include "player.h"
 #include "extra_pwm.h"
 class Actors {
   float duty[DIMMER_COUNT]{};PwmSettings settings;ExtraPwm extra;uint16_t invertedMask=0;
   uint8_t relayMode=0,fault=0;uint16_t onMask=0;uint32_t configRevision=1;
   bool linkReady=false,relayOn=false,pwmReady=true;
-  Preferences config;
+  Preferences config;uint16_t activeHz=PWM_HZ,savedHz=PWM_HZ;bool frequencyRecordFault=false;
   // Controller-owned RAM trace: records software writes, NOT a GPIO waveform.
   struct OutputEvent {uint32_t atUs=0;uint8_t kind=0,channel=0;float value=0;};
   OutputEvent outputEvents[32]{};uint8_t outputHead=0,outputCount=0;
@@ -39,6 +40,8 @@ public:
   const auto &outputEvent(uint8_t i)const{return outputEvents[(outputHead+32-outputCount+i)%32];}
   void begin(){
     config.begin("stage-io",false);relayMode=config.getUChar("relayMode",0);if(relayMode>2)relayMode=0;
+    bool frequencyFault=false;
+    if(config.getBytesLength("pwm-freq")){PwmFrequency::Record f;if(config.getBytesLength("pwm-freq")!=sizeof(f)||config.getBytes("pwm-freq",&f,sizeof(f))!=sizeof(f)||!f.validRecord())frequencyFault=true;else activeHz=savedHz=f.hz;}
     PwmSettings loaded;
     if(config.getBytesLength("pwmConfig")==sizeof(loaded)&&config.getBytes("pwmConfig",&loaded,sizeof(loaded))==sizeof(loaded)&&loaded.valid())settings=loaded;
     invertedMask=settings.inverted;DimSettings migrated;
@@ -48,12 +51,12 @@ public:
     for(int i=0;i<PWM_COUNT;i++){
       uint8_t pin=PWM_PINS[i],inactive=physicalPWM(0,invertedMask&(1<<i));
       digitalWrite(pin,inactive?HIGH:LOW);pinMode(pin,OUTPUT);
-      if(!ledcAttach(pin,PWM_HZ,PWM_BITS)||!writePWM(i,0))pwmReady=false;
+      if(!ledcAttach(pin,activeHz,PWM_BITS)||!writePWM(i,0))pwmReady=false;
     }
     for(int i=PWM_COUNT;i<DIMMER_COUNT;i++){digitalWrite(PWM_PINS[i],(invertedMask&(1<<i))?HIGH:LOW);pinMode(PWM_PINS[i],OUTPUT);}
-    if(!extra.begin(PWM_PINS+PWM_COUNT,(invertedMask>>PWM_COUNT)&15))pwmReady=false;
+    if(!extra.begin(PWM_PINS+PWM_COUNT,(invertedMask>>PWM_COUNT)&15,activeHz))pwmReady=false;
     for(int i=PWM_COUNT;i<DIMMER_COUNT;i++)if(!writePWM(i,0))pwmReady=false;
-    if(!pwmReady)fault=5;player.begin();
+    frequencyRecordFault=frequencyFault;if(frequencyFault)pwmReady=false;if(!pwmReady)fault=5;player.begin();
   }
   uint16_t dimmerInversions()const{return invertedMask;}
   bool setDimmerInversions(uint16_t inverse,uint16_t configured){
@@ -68,7 +71,15 @@ public:
   float dimmerFineValue(uint8_t index)const{return index<DIMMER_COUNT?duty[index]:0;}
   bool setDimmerFine(uint8_t index,float value){if(index>=DIMMER_COUNT||!pwmReady||!std::isfinite(value)||value<0||value>255||!writePWM(index,value))return false;if(value>0)onMask|=1U<<index;else onMask&=~(1U<<index);return true;}
   bool setDimmer(uint8_t index,uint8_t value){if(index>=DIMMER_COUNT||!pwmReady||!writePWM(index,value))return false;if(value)onMask|=1U<<index;else onMask&=~(1U<<index);return true;}
-  uint32_t pwmFrequency()const{return pwmReady?ledcReadFreq(PWM_PINS[0]):0;}
+  uint32_t pwmFrequency()const{uint32_t f=pwmReady?ledcReadFreq(PWM_PINS[0]):0;return pwmReady?(f?f:activeHz):0;} // Core3.3 returns0 at duty0; fallback is configured, not a waveform measurement.
+  PwmFrequency::Report frequencyStatus()const{PwmFrequency::Report r;r.active=activeHz;r.saved=savedHz;r.periodTicks=PwmFrequency::ticks(activeHz);return r;}
+  Result saveFrequency(uint16_t hz){
+    if(!PwmFrequency::valid(hz))return INVALID;if(onMask)return NOT_READY;
+    if(hz==savedHz&&!frequencyRecordFault)return APPLIED;
+    PwmFrequency::Record f;f.hz=hz;f.seal();
+    if(config.putBytes("pwm-freq",&f,sizeof(f))!=sizeof(f))return IO_ERROR;
+    savedHz=hz;frequencyRecordFault=false;configRevision++;return APPLIED; // Hardware unchanged until a separate reboot.
+  }
   PwmStatus pwmStatus()const{
     PwmStatus s{};for(int i=0;i<PWM_COUNT;i++)s.level[i]=settings.level[i];
     s.inverted=settings.inverted;s.reserved=0xd000|((invertedMask>>8)&15);s.onMask=onMask;s.revision=configRevision;return s;
@@ -91,6 +102,7 @@ public:
     linkReady=heartbeatFresh;
     if(op==ALL_OFF){off();return APPLIED;}
     if(needsLiveLink(op,value)&&!heartbeatFresh)return LEASE_EXPIRED;
+    if(op==PWM_FREQUENCY)return saveFrequency(value);
     if(op==PWM||op==PWM_SWITCH){
       uint8_t i=channel-1,v=op==PWM?value:(value?settings.level[i]:0);
       if(!pwmReady||!writePWM(i,v)){off(5);return IO_ERROR;}

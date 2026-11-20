@@ -15,6 +15,15 @@ export interface NetworkDeviceStatus {
     limited: number;
     ageMs: number;
   } | null;
+  pwmFrequency?: {
+    activeHz: number;
+    savedHz: number;
+    mcpwmHzCalculated: number;
+    bits: number;
+    minHz: number;
+    maxHz: number;
+    rebootRequired: boolean;
+  } | null;
   firmwareVersion?: string | null;
   dimmerInverted?: number;
   role?: 'slave' | 'remote' | 'helmet';
@@ -69,6 +78,7 @@ export interface NetworkTransport {
   getSnapshot(): NetworkSnapshot;
   setMeasurement(enabled: boolean): void | Promise<void>;
   identify?(mac: string): Promise<void>;
+  setPwmFrequency?(mac: string, hz: number): Promise<void>;
   resetNetwork?(): Promise<void>;
 }
 // Editor-only adapter: changing the switch never invents packets or RF measurements.

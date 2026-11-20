@@ -128,7 +128,7 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost'),
       path = url.pathname;
-    if (path.startsWith('/api/console/')) {
+    if (path.startsWith('/api/console/') || path === '/command') {
       let raw = '';
       for await (const data of req) raw += data;
       calls.push({ path, raw, url });
@@ -136,6 +136,23 @@ const server = createServer(async (req, res) => {
       if (path.endsWith('/status')) {
         status.serverMs = Math.floor(performance.now()) >>> 0;
         res.end(JSON.stringify(status));
+        return;
+      }
+      if (path === '/command') {
+        const form = new URLSearchParams(raw);
+        command(form);
+        assert.equal(form.get('op'), '23');
+        assert.equal(form.get('channel'), '0');
+        assert.equal(form.get('mac'), peer.mac);
+        assert.equal(form.get('id'), String(peer.id));
+        assert.equal(status.console.editorLocked, false);
+        assert.equal(status.console.running, false);
+        peer.pwmFrequency.savedHz = Number(form.get('value'));
+        peer.pwmFrequency.rebootRequired = peer.pwmFrequency.savedHz !== peer.pwmFrequency.activeHz;
+        peer.requestId = (peer.requestId ?? 0) + 1;
+        peer.commandPending = false;
+        peer.commandStatus = 'applied';
+        res.end(JSON.stringify({ requestId: peer.requestId }));
         return;
       }
       if (path.endsWith('/edit-lock')) {
@@ -366,6 +383,71 @@ try {
     0,
     'Unlock itself does not stop/recompile/restart show',
   );
+  Object.assign(peer, {
+    id: 1,
+    role: 'slave',
+    protocol: 4,
+    deviceBoot: 42,
+    pwmFrequency: {
+      activeHz: 25000,
+      savedHz: 25000,
+      mcpwmHzCalculated: 25000,
+      bits: 8,
+      minHz: 2000,
+      maxHz: 25000,
+      rebootRequired: false,
+    },
+  });
+  await page.waitForTimeout(1100);
+  const beforeFrequency = calls.length;
+  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
+  let frequencyDialog = page.getByRole('dialog', { name: 'Приборы', exact: true });
+  await frequencyDialog
+    .getByRole('button', { name: /^Настроить / })
+    .first()
+    .click();
+  const frequencyField = frequencyDialog.getByLabel('Частота PWM DIM1–12', { exact: true });
+  for (const text of ['', '0', '1999', '2000.5', '25001']) {
+    await frequencyField.fill(text);
+    assert(
+      await frequencyDialog
+        .getByRole('button', { name: 'Сохранить частоту PWM', exact: true })
+        .isDisabled(),
+    );
+  }
+  await frequencyField.fill('2001');
+  await frequencyDialog.getByRole('button', { name: 'Сохранить частоту PWM', exact: true }).click();
+  await page.getByRole('button', { name: 'Сохранить частоту', exact: true }).click();
+  await frequencyDialog
+    .getByText('Сохранено. Применится после отдельного перезапуска платы.', { exact: true })
+    .waitFor();
+  assert.equal(peer.pwmFrequency.activeHz, 25000);
+  assert.equal(peer.pwmFrequency.savedHz, 2001);
+  assert.equal(peer.pwmFrequency.rebootRequired, true);
+  assert.equal(calls.slice(beforeFrequency).filter((c) => c.path === '/command').length, 1);
+  assert(
+    !calls
+      .slice(beforeFrequency)
+      .some(
+        (c) =>
+          c.path.endsWith('/publish') ||
+          c.path.endsWith('/draft') ||
+          c.path.includes('/go') ||
+          c.path.includes('/reboot') ||
+          c.path.includes('stop'),
+      ),
+  );
+  const frequencyViewport = page.viewportSize();
+  for (const width of [320, 375, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= width);
+    const bounds = await frequencyField.boundingBox();
+    assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
+    if (width === 320) await page.screenshot({ path: '/tmp/theatre-086-frequency-320.png' });
+  }
+  await page.setViewportSize(frequencyViewport);
+  await frequencyDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  delete peer.pwmFrequency;
   await page.getByLabel('Название спектакля', { exact: true }).fill('MOCK ESP test');
   await page.waitForFunction(() =>
     document.querySelector('.version-chip')?.textContent.includes('v1'),

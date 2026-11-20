@@ -8,10 +8,11 @@
 class ExtraPwm {
  mcpwm_timer_handle_t timer=nullptr;mcpwm_oper_handle_t operators[2]{};
  mcpwm_cmpr_handle_t compare[4]{};mcpwm_gen_handle_t generators[4]{};bool ready=false;
- static constexpr uint32_t TICKS=80000000UL/THEATRE_PWM_HZ;
+ uint32_t ticks=80000000UL/THEATRE_PWM_HZ;
 public:
- bool begin(const uint8_t *pins,uint8_t inactiveHigh=0){
-  mcpwm_timer_config_t cfg{};cfg.group_id=0;cfg.clk_src=MCPWM_TIMER_CLK_SRC_DEFAULT;cfg.resolution_hz=80000000;cfg.period_ticks=TICKS;cfg.count_mode=MCPWM_TIMER_COUNT_MODE_UP;
+ bool begin(const uint8_t *pins,uint8_t inactiveHigh=0,uint32_t hz=THEATRE_PWM_HZ){
+  ticks=(80000000UL+hz/2)/hz;
+  mcpwm_timer_config_t cfg{};cfg.group_id=0;cfg.clk_src=MCPWM_TIMER_CLK_SRC_DEFAULT;cfg.resolution_hz=80000000;cfg.period_ticks=ticks;cfg.count_mode=MCPWM_TIMER_COUNT_MODE_UP;
   if(mcpwm_new_timer(&cfg,&timer)!=ESP_OK)return false;
   for(int op=0;op<2;op++){
    mcpwm_operator_config_t oc{};oc.group_id=0;if(mcpwm_new_operator(&oc,&operators[op])!=ESP_OK||mcpwm_operator_connect_timer(operators[op],timer)!=ESP_OK)return false;
@@ -27,14 +28,14 @@ public:
  }
  bool writeFine(uint8_t index,float value){
   if(!ready||index>=4)return false;
-  uint32_t ticks=(uint32_t)(value*TICKS/255.f+.5f);
-  if(ticks==0||ticks>=TICKS)return mcpwm_generator_set_force_level(generators[index],ticks?1:0,true)==ESP_OK;
-  return mcpwm_comparator_set_compare_value(compare[index],ticks)==ESP_OK&&mcpwm_generator_set_force_level(generators[index],-1,true)==ESP_OK;
+  uint32_t dutyTicks=(uint32_t)(value*ticks/255.f+.5f);
+  if(dutyTicks==0||dutyTicks>=ticks)return mcpwm_generator_set_force_level(generators[index],dutyTicks?1:0,true)==ESP_OK;
+  return mcpwm_comparator_set_compare_value(compare[index],dutyTicks)==ESP_OK&&mcpwm_generator_set_force_level(generators[index],-1,true)==ESP_OK;
  }
  bool write(uint8_t index,uint8_t value){
   if(!ready||index>=4)return false;
   if(value==0||value==255)return mcpwm_generator_set_force_level(generators[index],value?1:0,true)==ESP_OK;
-  return mcpwm_comparator_set_compare_value(compare[index],(value*TICKS+128)/256)==ESP_OK&&mcpwm_generator_set_force_level(generators[index],-1,true)==ESP_OK;
+  return mcpwm_comparator_set_compare_value(compare[index],(value*ticks+128)/256)==ESP_OK&&mcpwm_generator_set_force_level(generators[index],-1,true)==ESP_OK;
  }
 };
 #endif

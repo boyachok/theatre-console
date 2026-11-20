@@ -130,6 +130,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         mac: key,
         voice:
           n.role === 'helmet' && n.voice && Number.isFinite(n.voice.inputLevel) ? n.voice : null,
+        pwmFrequency: n.pwmFrequency ?? null,
         firmwareVersion: typeof n.firmwareVersion === 'string' ? n.firmwareVersion : null,
         dimmerInverted: n.pwmConfig?.inverted12 ?? n.pwmConfig?.inverted,
         // Before first contact after a master restart, protocol/deviceBoot=0 and
@@ -234,6 +235,57 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         token: this.token,
       }),
     });
+  }
+  async setPwmFrequency(mac: string, hz: number) {
+    const status = await this.status();
+    const node = status.nodes.find(
+      (n: { mac: string }) => n.mac.toUpperCase() === mac.toUpperCase(),
+    );
+    if (
+      !node ||
+      !node.pwmFrequency ||
+      node.role !== 'slave' ||
+      !Number.isFinite(node.ageMs) ||
+      node.ageMs >= 3000
+    )
+      throw new Error('Нужен доступный slave с поддержкой настройки частоты');
+    if (
+      status.console.editorLocked !== false ||
+      status.console.running ||
+      status.console.livePreview ||
+      status.console.startupPending
+    )
+      throw new Error('Сначала STOP и разблокировка редактора');
+    if (!Number.isInteger(hz) || hz < node.pwmFrequency.minHz || hz > node.pwmFrequency.maxHz)
+      throw new Error('Частота вне диапазона контроллера');
+    const response = await this.post('/command', {
+      id: node.id,
+      mac: node.mac,
+      op: 23,
+      channel: 0,
+      value: hz,
+      client: this.client,
+      seq: ++this.sequence,
+      deadline: Math.floor(this.clock!.server + performance.now() - this.clock!.at + 950),
+    });
+    const { requestId } = await response.json();
+    // Read-only ACK polling. Never resend an uncertain setting or reboot the device.
+    for (let i = 0; i < 12; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const data = await this.status();
+      const current = data.nodes.find(
+        (n: { mac: string }) => n.mac.toUpperCase() === mac.toUpperCase(),
+      );
+      if (!current || current.deviceBoot !== node.deviceBoot || current.requestId !== requestId)
+        throw new Error('Сессия/команда изменилась; перечитайте настройки');
+      if (current.commandPending) continue;
+      if (current.commandStatus !== 'APPLIED' && current.commandStatus !== 'applied')
+        throw new Error(current.commandStatus || 'Нет подтверждения настройки');
+      if (current.pwmFrequency?.savedHz === hz) return;
+    }
+    throw new Error(
+      'Нет подтверждения сохранённой частоты; перечитайте настройки, запрос не повторялся',
+    );
   }
   async setEditLock(locked: boolean) {
     ++this.editorRevision;

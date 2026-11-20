@@ -13,6 +13,7 @@ import {
 } from '../domain/project.ts';
 import { Modal } from './Modal.tsx';
 import { useConfirm } from './Confirm.tsx';
+import { PwmFrequencySettings } from './PwmFrequencySettings.tsx';
 import type { NetworkTransport } from '../transport/network.ts';
 export function DevicesDialog({
   project,
@@ -193,6 +194,14 @@ export function DevicesDialog({
                   <tr className="device-details">
                     <td colSpan={19}>
                       <div className="device-detail-form">
+                        {device.profile !== 'helmet' && (
+                          <PwmFrequencySettings
+                            key={device.mac ?? device.id}
+                            mac={device.mac ?? null}
+                            network={network}
+                            status={status}
+                          />
+                        )}
                         <div className="device-detail-top">
                           <label className="field">
                             <span>Название прибора</span>

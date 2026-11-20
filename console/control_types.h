@@ -4,7 +4,7 @@ constexpr uint8_t PWM_COUNT=8;
 enum Op : uint8_t {
   LEGACY_ARM=1,LEGACY_DISARM,PWM,RELAY,RELAY_CONFIG,LEGACY_AUDIO_ENABLE,
   AUDIO_TRACK,AUDIO_RESUME,AUDIO_PAUSE,AUDIO_STOP,AUDIO_NEXT,AUDIO_PREV,
-  AUDIO_VOLUME,AUDIO_MODE,AUDIO_EQ,AUDIO_DRIVE,AUDIO_QUERY,ALL_OFF,UART_CLEAR,UART_POLL,PWM_SWITCH,PWM_CONFIG
+  AUDIO_VOLUME,AUDIO_MODE,AUDIO_EQ,AUDIO_DRIVE,AUDIO_QUERY,ALL_OFF,UART_CLEAR,UART_POLL,PWM_SWITCH,PWM_CONFIG,PWM_FREQUENCY
 };
 enum Result : uint8_t { APPLIED=0,NOT_READY,INVALID,IO_ERROR,LEGACY_AUDIO_DISABLED,PLAYER_OFFLINE,STALE,LEASE_EXPIRED };
 struct __attribute__((packed)) ControlState {
@@ -23,7 +23,7 @@ static_assert(sizeof(ControlState)==32&&sizeof(LegacyState)==24,"Control state s
 inline bool freshDeadline(uint32_t now,uint32_t deadline){int32_t left=(int32_t)(deadline-now);return left>=0&&left<=1000;}
 inline bool newSequence(uint32_t value,uint32_t last){return !last||(int32_t)(value-last)>0;}
 inline bool needsLiveLink(Op op,uint16_t value){
-  return ((op==PWM||op==PWM_SWITCH)&&value>0)||(op==RELAY&&value>0)||op==AUDIO_TRACK||op==AUDIO_RESUME||op==AUDIO_NEXT||op==AUDIO_PREV;
+  return ((op==PWM||op==PWM_SWITCH)&&value>0)||(op==RELAY&&value>0)||op==AUDIO_TRACK||op==AUDIO_RESUME||op==AUDIO_NEXT||op==AUDIO_PREV||op==PWM_FREQUENCY;
 }
 inline bool safeDuringOTA(Op op,uint16_t value){return op==ALL_OFF||op==AUDIO_STOP||((op==PWM||op==PWM_SWITCH||op==RELAY)&&value==0);}
 inline bool validControl(Op op,uint8_t channel,uint16_t value){
@@ -31,6 +31,7 @@ inline bool validControl(Op op,uint8_t channel,uint16_t value){
     case AUDIO_RESUME:case AUDIO_PAUSE:case AUDIO_STOP:case AUDIO_NEXT:case AUDIO_PREV:
     case AUDIO_QUERY:case ALL_OFF:case UART_CLEAR:return channel==0&&value==0;
     case PWM_SWITCH:return channel>=1&&channel<=PWM_COUNT&&value<=1;
+    case PWM_FREQUENCY:return channel==0&&value>=2000&&value<=25000;
     case PWM_CONFIG:return channel>=1&&channel<=PWM_COUNT&&value<=511;
     case PWM:return channel>=1&&channel<=PWM_COUNT&&value<=255;
     case RELAY:case UART_POLL:return channel==0&&value<=1;
