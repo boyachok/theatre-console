@@ -70,6 +70,9 @@ const status = {
   measuring: true,
   console: {
     version: 0,
+    editorLocked: true,
+    helmetVoiceRevision: 1,
+    helmetVoiceReady: true,
     fingerprint: '',
     syncFingerprint: '',
     draftFingerprint: '',
@@ -92,6 +95,7 @@ const status = {
 const calls = [],
   errors = [];
 const backupSequences = new Map();
+let globalVoices = {};
 let failBackupReservations = false;
 let draft = null,
   lastSequence = 0,
@@ -134,6 +138,32 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify(status));
         return;
       }
+      if (path.endsWith('/edit-lock')) {
+        const form = new URLSearchParams(raw);
+        assert.equal(form.get('token'), status.token);
+        status.console.editorLocked = form.get('locked') === '1';
+        res.end('{}');
+        return;
+      }
+      if (path.endsWith('/helmet-voices')) {
+        if (req.method === 'POST') {
+          const body = JSON.parse(raw);
+          assert.equal(body.revision, status.console.helmetVoiceRevision);
+          if (body.import) globalVoices = body.banks;
+          else globalVoices[body.mac] = body.bank;
+          status.console.helmetVoiceRevision++;
+        }
+        workspace.helmetVoices = structuredClone(globalVoices);
+        workspace.helmetVoiceRevision = status.console.helmetVoiceRevision;
+        res.end(
+          JSON.stringify({
+            revision: status.console.helmetVoiceRevision,
+            banks: globalVoices,
+            saved: true,
+          }),
+        );
+        return;
+      }
       if (path.endsWith('/backup-sequence')) {
         if (failBackupReservations) {
           res.writeHead(507).end('Mock counter write failed');
@@ -148,6 +178,13 @@ const server = createServer(async (req, res) => {
         res.end(JSON.stringify({ major, minor }));
         return;
       }
+      if (path.endsWith('/workspace-metadata')) {
+        const body = JSON.parse(raw);
+        if (body.backup) workspace.backup = body.backup;
+        workspace.interfaceVersion = body.interfaceVersion;
+        res.end('{}');
+        return;
+      }
       if (path.endsWith('/workspace')) {
         if (req.method === 'POST') {
           const next = JSON.parse(raw);
@@ -155,12 +192,21 @@ const server = createServer(async (req, res) => {
             res.writeHead(409).end('Stale workspace');
             return;
           }
-          workspace = next;
+          if (status.console.editorLocked) {
+            res.writeHead(423).end('Score locked');
+            return;
+          }
+          workspace = {
+            ...next,
+            helmetVoices: structuredClone(globalVoices),
+            helmetVoiceRevision: status.console.helmetVoiceRevision,
+          };
         }
         res.end(JSON.stringify(req.method === 'POST' ? {} : workspace));
         return;
       }
       if (path.endsWith('/draft')) {
+        assert.equal(status.console.editorLocked, false);
         const body = JSON.parse(raw);
         assert.equal(body.base, status.console.draftFingerprint);
         assert.equal(body.revision, status.console.draftRevision);
@@ -196,6 +242,7 @@ const server = createServer(async (req, res) => {
         return;
       }
       if (path.endsWith('/publish')) {
+        assert.equal(status.console.editorLocked, false);
         const body = JSON.parse(raw);
         assert.equal(body.version, status.console.version + 1);
         const wasLive = status.console.livePreview;
@@ -293,6 +340,33 @@ try {
   await page.waitForFunction(
     () => document.querySelector('.device-group code')?.textContent === '192.168.50.33',
   );
+  assert.equal(status.console.editorLocked, true);
+  const lockedDraft = JSON.stringify(workspace.draft);
+  await page
+    .locator('.parameter-row[data-parameter="pwm-1"]')
+    .first()
+    .locator('td button')
+    .first()
+    .dblclick();
+  await page.keyboard.press('Digit8');
+  await page.waitForTimeout(400);
+  assert.equal(
+    JSON.stringify(workspace.draft),
+    lockedDraft,
+    'Locked mouse/keyboard cannot change score',
+  );
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/publish') || c.path.endsWith('/draft')).length,
+    0,
+  );
+  await page.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
+  await page.waitForTimeout(450);
+  assert.equal(
+    calls.filter((c) => c.path.endsWith('/publish') || c.path.endsWith('/draft')).length,
+    0,
+    'Unlock itself does not stop/recompile/restart show',
+  );
+  await page.getByLabel('Название спектакля', { exact: true }).fill('MOCK ESP test');
   await page.waitForFunction(() =>
     document.querySelector('.version-chip')?.textContent.includes('v1'),
   );
@@ -718,10 +792,13 @@ try {
   await settings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
   await settings.getByLabel('Контроллер прибора', { exact: true }).selectOption(helmet.mac);
   await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
+  await page.waitForTimeout(1000);
+  const legacySceneVoices = JSON.stringify(draft.devices[0].cues.map((c) => c.v));
+  const voicePublications = calls.filter((c) => c.path.endsWith('/publish')).length;
   await page.getByRole('button', { name: 'Настройки шлема', exact: true }).click();
   const voiceWindow = page.getByRole('dialog', { name: /Звук шлема/ });
   const voiceNav = navigationCalls();
-  assert.equal(await voiceWindow.locator('details').getAttribute('open'), null);
+  assert.equal(await voiceWindow.locator('details').last().getAttribute('open'), null);
   await voiceWindow.getByText('Параметры звука', { exact: true }).click();
   await helmetDialogChecks(page, voiceWindow);
   assert.equal(navigationCalls(), voiceNav);
@@ -734,11 +811,24 @@ try {
   await voiceWindow.getByLabel('Название голосового пресета', { exact: true }).fill('Шлем — чип');
   await page.waitForTimeout(2000);
   const helmetDevice = workspace.draft.devices[0];
-  assert.equal(helmetDevice.voice.presets.length, 2);
-  assert.equal(helmetDevice.voice.presets[1].name, 'Шлем — чип');
-  assert.equal(helmetDevice.voice.presets[1].settings.frequency, 333);
-  assert(draft.devices[0].cues.every((c) => c.v[2] === 4 && c.v[9] === 333 && c.v[12] === -40));
+  const helmetBank = workspace.helmetVoices[helmet.mac];
+  assert.equal(helmetBank.presets.length, 2);
+  assert.equal(helmetBank.presets[1].name, 'Шлем — чип');
+  assert.equal(helmetBank.presets[1].settings.frequency, 333);
+  assert.equal(JSON.stringify(draft.devices[0].cues.map((c) => c.v)), legacySceneVoices);
+  assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, voicePublications);
   assert.equal(navigationCalls(), voiceNav);
+  await voiceWindow
+    .getByText('Параметрический эквалайзер и разборчивость', { exact: true })
+    .click();
+  await voiceWindow.getByLabel('Эквалайзер голоса', { exact: true }).check();
+  await voiceWindow.getByLabel('Усиление EQ 2', { exact: true }).fill('5');
+  await voiceWindow.getByLabel('Полоса разборчивости', { exact: true }).check();
+  await voiceWindow.getByLabel('Подмешивание разборчивости', { exact: true }).fill('0.15');
+  await voiceWindow.getByRole('button', { name: 'Сохранить пресет', exact: true }).click();
+  await page.waitForTimeout(1000);
+  assert.equal(workspace.helmetVoices[helmet.mac].presets[1].settings.eq.bands[1].gainDb, 5);
+  assert.equal(workspace.helmetVoices[helmet.mac].presets[1].settings.presence.amount, 0.15);
   await page.setViewportSize({ width: 320, height: 844 });
   console.log(
     'Helmet mobile bounds',
@@ -760,6 +850,17 @@ try {
   await page.screenshot({ path: '/tmp/theatre-0715-voice-dialog-320.png' });
   await page.setViewportSize({ width: 1280, height: 900 });
   await voiceWindow.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+  await page.getByRole('button', { name: 'Заблокировать редактирование', exact: true }).click();
+  const selectedBefore = workspace.helmetVoices[helmet.mac].selected;
+  await page
+    .getByLabel(/Пресет голоса ·/)
+    .selectOption(workspace.helmetVoices[helmet.mac].presets[0].id);
+  await page.waitForTimeout(800);
+  assert.notEqual(workspace.helmetVoices[helmet.mac].selected, selectedBefore);
+  assert.equal(status.console.editorLocked, true);
+  assert.equal(navigationCalls(), voiceNav);
+  assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, voicePublications);
+  await page.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   const libraryMode = workspace.draft.effects[0].mode;
   await page
     .locator('.parameter-row[data-parameter="strip"]')

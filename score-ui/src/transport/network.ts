@@ -38,6 +38,13 @@ export interface NetworkDeviceStatus {
   history: NetworkSample[];
 }
 export interface NetworkSnapshot {
+  editorLocked?: boolean;
+  startupPending?: boolean;
+  startupResetAllowed?: boolean;
+  helmetVoiceRevision?: number;
+  helmetVoices?: Record<string, import('../domain/voice.ts').VoiceBank>;
+  helmetVoiceReady?: boolean;
+  helmetVoiceSaved?: boolean;
   connected: boolean;
   testEnabled: boolean;
   devices: Record<string, NetworkDeviceStatus>;

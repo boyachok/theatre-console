@@ -51,6 +51,7 @@ export async function helmetDialogChecks(page, dialog) {
     assert(await dialog.evaluate((e) => e.scrollWidth <= e.clientWidth + 1));
     const columns = await dialog
       .locator('.helmet-fields')
+      .last()
       .evaluate((e) => getComputedStyle(e).gridTemplateColumns.split(' ').length);
     assert.equal(columns, width > 600 ? 2 : 1);
     await check.focus();

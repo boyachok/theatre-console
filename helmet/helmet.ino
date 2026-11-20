@@ -14,7 +14,7 @@ bool httpReady=false,otaLocked=false,otaWriting=false,otaOK=false,uploadSeen=fal
 uint32_t firmwareBoot=1,restartAt=0,lastUploadAt=0;char otaToken[33]{};const char *otaError="none";
 HelmetOta::ImageGuard otaImage;
 void helmetWebBegin();void helmetWebTick();String helmetOtaStatusJSON();
-uint32_t voiceReportAt=0;
+uint32_t voiceReportAt=0,globalVoiceSession=0,globalVoiceRevision=0,globalVoiceHash=0;
 // Published RUN is a 44B local-plan reference; draft PREVIEW remains explicit.
 WifiTransport network;Helmet::Runner runner;Show::SlaveStore scoreStore;
 uint8_t masterMAC[6]{};bool masterKnown=false,hasHeartbeat=false,recovery=false,storageReady=false,masterWantsFirmware=false;
@@ -29,13 +29,14 @@ Packet message(Type type,uint32_t seq=0){
  if(type==HELLO||type==ECHO){p.padding[0]='P';p.padding[2]=17;}
  return p;
 }
-void sendFirmwareReport(){if(masterKnown&&masterWantsFirmware){auto p=firmwareReport(masterSession,selfBoot,FW_HELMET);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}}
+void sendFirmwareReport(){if(masterKnown&&masterWantsFirmware){auto p=firmwareReport(masterSession,selfBoot,FW_HELMET);p.reserved[0]=1;network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}}
 void sendVoiceReport(){if(!masterKnown)return;auto s=runner.voice.diagnostics();VoiceReport p{};p.magic=MAGIC;p.protocol=PROTOCOL;p.type=VOICE_REPORT;p.size=sizeof(p);p.session=masterSession;p.deviceBoot=selfBoot;p.uptime=millis();p.captured=s.captured;p.played=s.played;p.errors=s.errors;p.late=s.late;p.limited=s.limited;p.workMax=s.workMax;p.inputLevel=s.inputLevel;p.outputLevel=s.outputLevel;p.load=s.load;p.ready=s.ready;p.enabled=s.enabled;p.audioCore=s.audioCore;
 #ifdef THEATRE_HOST_TEST
 p.controlCore=0;
 #else
 p.controlCore=xPortGetCoreID();
 #endif
+p.profileHash=runner.global.active?HelmetSound::hash(runner.global.profile):0;
 network.send(masterMAC,(uint8_t*)&p,sizeof(p));}
 void resetLink(bool forget){
  selfBoot=randomId();hasHeartbeat=false;lastProbeSeq=0;lastControlId=0;lastControlResult=APPLIED;if(runner.active)recovery=true;
@@ -47,6 +48,14 @@ void receiveHelmet(){
  LanMessage wire;int budget=32;
  while(budget--&&network.receive(wire)){
   uint32_t now=millis();
+  if(wire.length==sizeof(HelmetSound::Packet)){
+   HelmetSound::Packet p;memcpy(&p,wire.payload,sizeof(p));
+   if(!HelmetSound::valid(p)||!fromMaster(wire,p.session)||p.deviceBoot!=selfBoot){network.rxInvalid++;continue;}
+   if(globalVoiceSession!=p.session){globalVoiceSession=p.session;globalVoiceRevision=globalVoiceHash=0;}
+   Result result=STALE;
+   if(!otaLocked&&(p.revision==globalVoiceRevision?p.checksum==globalVoiceHash:Show::newer(p.revision,globalVoiceRevision))&&runner.configureGlobal(p.profile,now)){globalVoiceRevision=p.revision;globalVoiceHash=p.checksum;result=APPLIED;}
+   Packet ack=message(VOICE_CONFIG_ACK,p.revision);ack.commandId=p.checksum;ack.result=result;network.send(masterMAC,(const uint8_t*)&ack,sizeof(ack));continue;
+  }
   if(wire.length==sizeof(Show::Packet)||wire.length==sizeof(Show::RunPacket)){
    Show::Packet p{};memcpy(&p,wire.payload,wire.length);bool indexed=wire.length==sizeof(Show::RunPacket);
    if(p.magic!=Show::MAGIC||p.protocol!=Show::PROTOCOL||p.size!=wire.length||!fromMaster(wire,p.session)||p.deviceBoot!=selfBoot){network.rxInvalid++;continue;}
@@ -102,6 +111,7 @@ String helmetStatusJSON(){
  auto a=runner.voice.diagnostics();auto live=runner.voice.appliedProfile();const auto &b=runner.defaults.settings();char mac[18];snprintf(mac,sizeof(mac),"%02X:%02X:%02X:%02X:%02X:%02X",network.mac[0],network.mac[1],network.mac[2],network.mac[3],network.mac[4],network.mac[5]);String j;
  j="{\"role\":\"helmet\",\"version\":\""+String(RADIO_VERSION)+"\",\"mac\":\""+String(mac)+"\",\"boot\":"+String(selfBoot)+",\"ip\":\""+WiFi.localIP().toString()+"\",\"connected\":"+String(network.ready()?"true":"false")+",\"masterReady\":"+String(linkFresh()?"true":"false")+",\"standalone\":"+String(runner.standalone?"true":"false")+",\"active\":"+String(runner.active?"true":"false")+",\"step\":"+(runner.active&&!runner.standalone?String(runner.step+1):String("null"));
  j+=",\"voiceRequested\":"+String(runner.voice.requested()?"true":"false")+",\"voiceAvailable\":"+String(a.ready?"true":"false")+",\"voiceApplied\":"+String(a.enabled?"true":"false")+",\"storageReady\":"+String(storageReady?"true":"false")+",\"scoreVersion\":"+String(scoreStore.version)+",\"defaultsSaved\":"+String(runner.defaults.saved?"true":"false")+",\"defaultsSource\":\""+String(runner.defaults.source)+"\",\"defaultsWrites\":"+String(runner.defaults.writes);
+ j+=",\"globalVoice\":{"+String("\"active\":")+String(runner.global.active?"true":"false")+",\"saved\":"+String(runner.global.saved?"true":"false")+",\"revision\":"+String(globalVoiceRevision)+",\"hash\":"+String(runner.global.active?HelmetSound::hash(runner.global.profile):0)+",\"eqEnabled\":"+String(runner.voice.appliedTone().eqEnabled?"true":"false")+",\"presenceEnabled\":"+String(runner.voice.appliedTone().presenceEnabled?"true":"false")+"}";
  j+=",\"sound\":{\"algorithm\":"+String(live.algorithm)+",\"mode\":"+String(live.mode)+",\"frequency\":"+String(live.frequency,2)+",\"gain\":"+String(live.gain,2)+",\"volume\":"+String(live.volume,3)+",\"gateDb\":"+String(live.gateDb,1)+"},\"diagnostic\":"+String(runner.diagnostic?"true":"false")+",\"savedSound\":{\"frequency\":"+String(b.voice.frequency,2)+",\"gain\":"+String(b.voice.gain,2)+",\"volume\":"+String(b.voice.volume,3)+",\"gateDb\":"+String(b.voice.gateDb,1)+"},\"strip\":{\"mode\":"+String(b.strip.mode)+",\"count\":"+String(b.strip.count)+",\"brightness\":"+String(b.strip.brightness)+",\"pin\":47},\"audio\":{\"captured\":"+String(a.captured)+",\"played\":"+String(a.played)+",\"errors\":"+String(a.errors)+",\"late\":"+String(a.late)+",\"load\":"+String(a.load,2)+",\"inputLevel\":"+String(a.inputLevel,6)+",\"outputLevel\":"+String(a.outputLevel,6)+",\"core\":"+String(a.audioCore)+",\"gateDb\":"+String(a.gateDb,1)+",\"gateEnvelopeDb\":"+String(a.gateEnvelopeDb,2)+",\"gateGain\":"+String(a.gateGain,5)+"},"+helmetOtaStatusJSON()+"}";return j;
 }
 void status(){Serial.println(helmetStatusJSON());}

@@ -9,7 +9,7 @@ for TEST in quality control lan remote remote_battery ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors pwm_inversion pwm_precision pwm_camera firmware_info helmet_audio helmet_gate helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery remote_master pulse_diagnostics; do
+for TEST in actors pwm_inversion pwm_precision pwm_camera firmware_info helmet_audio helmet_gate helmet_tone helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery master_boot remote_master pulse_diagnostics; do
   c++ "${FLAGS[@]}" -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
@@ -23,6 +23,8 @@ ARDUINOJSON_PATH="${ARDUINOJSON_PATH:-$HOME/Documents/Arduino/libraries/ArduinoJ
 if [[ -f "$ARDUINOJSON_PATH/ArduinoJson.h" ]]; then
   c++ "${FLAGS[@]}" -Itests/mock -I"$ARDUINOJSON_PATH" tests/console_storage.cpp -lz -o "$OUT/console_storage"
   "$OUT/console_storage"
+  c++ "${FLAGS[@]}" -Itests/mock -I"$ARDUINOJSON_PATH" tests/helmet_sound_store.cpp -lz -o "$OUT/helmet_sound_store"
+  "$OUT/helmet_sound_store"
 else
   echo 'Master storage test skipped: set ARDUINOJSON_PATH to ArduinoJson/src.'
 fi
@@ -30,7 +32,7 @@ for TEST in http console_http; do
   c++ "${FLAGS[@]}" -pthread -Itests/http_mock "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in wifi remote_firmware remote_ota remote_buttons remote_battery_firmware helmet_firmware helmet_ota; do
+for TEST in wifi remote_firmware remote_ota remote_buttons remote_battery_firmware helmet_firmware helmet_global_voice helmet_ota; do
   c++ "${FLAGS[@]}" -Itests/net_mock -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   if [[ "$TEST" == remote_battery_firmware ]]; then BATTERY_HTML_DUMP="$OUT/remote-battery.html" "$OUT/$TEST";else "$OUT/$TEST";fi
 done

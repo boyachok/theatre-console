@@ -1,6 +1,7 @@
 #pragma once
 #include "show_filesystem.h"
 #include "scene_delivery.h"
+#include "raw_workspace_patch.h"
 void consoleButtons(){
  if(!RADIO_MASTER)return;
  static Remote::Buttons keys;auto action=keys.tick(digitalRead(BUTTON_FORWARD_PIN)==LOW,digitalRead(BUTTON_BACK_PIN)==LOW,!otaSafetyLock&&!networkResetActive&&showMaster.navigationCount()>0,millis());
@@ -15,12 +16,33 @@ bool guardShowRequest(){
 bool guardNavigation(){uint32_t expected;if(!unsignedArg("navigation",0xffffffffUL,expected)||expected!=showMaster.navigation){web.send(409,"text/plain","Сцена уже переключена мастером: повторите выбор");return false;}return true;}
 void consoleRoutes(){
  web.on("/api/console/status",HTTP_GET,[]{web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",statusJSON(false));});
- web.on("/api/console/workspace",HTTP_GET,[]{if(!RADIO_MASTER){web.send(403);return;}if(!showFSReady||showMaster.workspaceFault){web.send(503,"text/plain","Не удалось прочитать память партитуры: восстановите JSON-бэкап");return;}web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",showMaster.workspace.length()?showMaster.workspace:String("null"));});
+ web.on("/api/console/workspace",HTTP_GET,[]{if(!RADIO_MASTER){web.send(403);return;}if(!showFSReady||showMaster.workspaceFault){web.send(503,"text/plain","Не удалось прочитать память партитуры: восстановите JSON-бэкап");return;}web.sendHeader("Cache-Control","no-store");String body=helmetSounds.decorate(showMaster.workspace);if(!body.length()){web.send(503,"text/plain","Workspace read failed; original file preserved");return;}web.send(200,"application/json",body);});
  web.on("/api/console/workspace",HTTP_POST,[]{
   if(!consoleForm())return;if(!showFSReady){web.send(503);return;}String body=web.takePlain();if(body.length()>2200000){web.send(413);return;}JsonDocument filter,doc(&Show::jsonRam);filter["format"]=true;filter["schemaVersion"]=true;filter["published"]["version"]=true;
   if(deserializeJson(doc,body,DeserializationOption::Filter(filter))||doc["format"]!="theatre-score"||doc["schemaVersion"]!=1){web.send(400);return;}
+  if(editorLocked){web.send(423,"text/plain","Партитура заблокирована: сначала разрешите редактирование");return;}
   if((doc["published"]["version"]|0U)<showMaster.version){web.send(409,"text/plain","Версия уже изменилась");return;}
   if(!Show::atomicText("/workspace.json",body)){web.send(507);return;}showMaster.workspace=std::move(body);showMaster.workspaceFault=false;web.send(200,"text/plain","OK");
+ });
+ web.on("/api/console/workspace-metadata",HTTP_POST,[]{
+  if(!consoleForm())return;if(!showFSReady||showMaster.workspaceFault||otaSafetyLock||networkResetActive){web.send(409);return;}
+  String raw=web.takePlain();JsonDocument meta;if(raw.length()>10000||deserializeJson(meta,raw)||!meta["interfaceVersion"].is<const char*>()){web.send(400);return;}
+  const char *keys[]={"interfaceVersion","backup"};String values[2];serializeJson(meta["interfaceVersion"],values[0]);size_t count=1;
+  if(!meta["backup"].isNull()){if(!meta["backup"].is<JsonObjectConst>()){web.send(400);return;}serializeJson(meta["backup"],values[1]);count=2;}
+  String body=RawWorkspace::patch(showMaster.workspace,keys,values,count);if(!body.length()||!Show::atomicText("/workspace.json",body)){web.send(507);return;}showMaster.workspace=std::move(body);web.send(200,"text/plain","OK");
+ });
+ web.on("/api/console/edit-lock",HTTP_POST,[]{
+  if(!consoleForm())return;uint32_t locked;if(!unsignedArg("locked",1,locked)){web.send(400);return;}
+  if(otaSafetyLock||networkResetActive){web.send(409);return;}editorLocked=locked;if(!locked)startupShow.cancel();web.send(200,"application/json",String("{\"editorLocked\":")+(editorLocked?"true":"false")+"}");
+ });
+ web.on("/api/console/helmet-voices",HTTP_GET,[]{if(!RADIO_MASTER){web.send(403);return;}web.sendHeader("Cache-Control","no-store");web.send(200,"application/json",helmetSounds.json());});
+ web.on("/api/console/helmet-voices",HTTP_POST,[]{
+  if(!consoleForm())return;if(!showFSReady||otaSafetyLock||networkResetActive){web.send(409);return;}
+  String body=web.takePlain(),error;if(body.length()>200000){web.send(413);return;}JsonDocument request(&Show::jsonRam);if(deserializeJson(request,body)||!request["revision"].is<uint32_t>()){web.send(400);return;}
+  bool ok=false;
+  if(request["import"]==true){if(editorLocked){web.send(423,"text/plain","Unlock score before importing voice banks");return;}ok=helmetSounds.importBanks(request["banks"],request["revision"],millis(),error);}
+  else {String mac=request["mac"].as<String>();uint8_t bytes[6];if(!Show::parseMAC(mac.c_str(),bytes)){web.send(400);return;}int i=findNode(bytes,false);if(i>=0&&nodes[i].protocol&&!nodes[i].helmet){web.send(409,"text/plain","Target is not a helmet");return;}ok=helmetSounds.set(mac.c_str(),request["bank"],request["revision"],millis(),error);}
+  if(!ok){web.send(409,"text/plain",error);return;}for(auto &n:nodes)n.nextSound=0;web.send(200,"application/json",helmetSounds.json());
  });
  web.on("/api/console/backup-sequence",HTTP_POST,[]{
   if(!consoleForm())return;if(!showFSReady||otaSafetyLock||networkResetActive){web.send(503);return;}uint32_t major;uint64_t floor,next;
@@ -29,11 +51,11 @@ void consoleRoutes(){
   JsonDocument reply;reply["major"]=major;reply["minor"]=next;String text;serializeJson(reply,text);web.send(200,"application/json",text);
  });
  web.on("/api/console/publish",HTTP_POST,[]{
-  if(!consoleForm())return;if(otaSafetyLock||networkResetActive){web.send(409);return;}if(!showFSReady){web.send(503);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
+  if(!consoleForm())return;if(editorLocked){web.send(423,"text/plain","Партитура заблокирована");return;}if(otaSafetyLock||networkResetActive){web.send(409);return;}if(!showFSReady){web.send(503);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
   if(!showMaster.loadPayload(body,true,error)){web.send(400,"text/plain",error);return;}invalidateShowDelivery();web.send(200,"application/json","{\"version\":"+String(showMaster.version)+"}");
  });
  web.on("/api/console/draft",HTTP_POST,[]{
-  if(!consoleForm())return;if(otaSafetyLock||networkResetActive){web.send(409);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
+  if(!consoleForm())return;if(editorLocked){web.send(423,"text/plain","Партитура заблокирована");return;}if(otaSafetyLock||networkResetActive){web.send(409);return;}String body=web.takePlain(),error;if(body.length()>3000000){web.send(413);return;}
   if(!showMaster.draftPayload(body,error)){web.send(409,"text/plain",error);return;}
   for(auto &n:nodes)n.nextScore=0;web.send(200,"application/json","{\"fingerprint\":"+jsonString(showMaster.draftFingerprint)+"}");
  });
@@ -41,11 +63,11 @@ void consoleRoutes(){
   if(!consoleForm()||!guardShowRequest())return;uint32_t enabled;
   if(!unsignedArg("enabled",1,enabled)){web.send(400);return;}
   if(otaSafetyLock||networkResetActive){web.send(409);return;}
-  if(enabled){if(!guardNavigation())return;String id=web.arg("stepId");uint16_t index=0;for(;index<showMaster.draftStepIds.size()&&showMaster.draftStepIds[index]!=id;index++);
+  if(enabled){if(editorLocked){web.send(423,"text/plain","Партитура заблокирована");return;}startupShow.cancel();if(!guardNavigation())return;String id=web.arg("stepId");uint16_t index=0;for(;index<showMaster.draftStepIds.size()&&showMaster.draftStepIds[index]!=id;index++);
    if(!goDraft(index,0)){web.send(409,"text/plain","Черновик не загружен или выбранный шаг удалён");return;}
   }else{
    String expected=web.arg("fingerprint");if(!expected.length()||expected.length()>40){web.send(400);return;}
-   showMaster.queueShow(expected); // OFF always suspends live execution, even if the edited draft is invalid.
+   startupShow.cancel();showMaster.queueShow(expected); // OFF always suspends live execution, even if the edited draft is invalid.
    for(auto &n:nodes)n.nextScore=0;
   }
   web.send(200,"text/plain","OK");
@@ -70,7 +92,7 @@ void consoleRoutes(){
  });
  web.on("/api/console/preview",HTTP_POST,[]{
   if(!consoleForm()||!guardShowRequest())return;String body=web.takePlain(),error;if(body.length()>60000){web.send(413);return;}
-  if(!showMaster.previewPayload(body,error)){web.send(400,"text/plain",error);return;}for(auto &n:nodes)n.nextScore=0;
+  if(editorLocked){web.send(423,"text/plain","Партитура заблокирована");return;}startupShow.cancel();if(!showMaster.previewPayload(body,error)){web.send(400,"text/plain",error);return;}for(auto &n:nodes)n.nextScore=0;
   web.send(200,"application/json","{\"transition\":"+String(showMaster.sequence)+"}");
  });
  web.on("/api/console/measure",HTTP_POST,[]{if(!consoleForm())return;uint32_t enabled;if(!unsignedArg("enabled",1,enabled)){web.send(400);return;}setMeasurements(enabled);web.send(200,"text/plain","OK");});

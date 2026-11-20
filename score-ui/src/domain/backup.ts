@@ -4,7 +4,12 @@ export const BACKUP_INTERVAL = 10 * 60 * 1000;
 export const backupInfo = (w: Workspace): BackupInfo => w.backup ?? { major: 1, minor: 0 };
 // Compare editable content only: navigation, publication bookkeeping and backup metadata are not edits.
 export const backupFingerprint = (w: Workspace) =>
-  fingerprint({ ...w.draft, revision: 0, updatedAt: '' });
+  fingerprint({
+    ...w.draft,
+    revision: 0,
+    updatedAt: '',
+    ...(w.helmetVoices ? { helmetVoices: w.helmetVoices } : {}),
+  });
 export const backupDirty = (w: Workspace) =>
   backupInfo(w).exportedFingerprint !== backupFingerprint(w);
 export const backupNumber = (b: BackupInfo) => `${b.major}.${String(b.minor).padStart(3, '0')}`;

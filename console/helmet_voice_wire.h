@@ -19,6 +19,19 @@ inline bool validVoice(const VoiceProfile &p){
  (p.toneHz==0||voiceRange(p.toneHz,20,20000))&&voiceRange(p.formant,-6,6)&&voiceRange(p.clarity,0,1)&&
  voiceRange(p.retuneMs,0,250)&&voiceRange(p.strength,0,1)&&voiceRange(p.transpose,-12,12);
 }
+// Independent global voice processing; never enlarges a 512B scene packet.
+struct __attribute__((packed)) EqBand {float frequency,gainDb,q;};
+struct __attribute__((packed)) VoiceTone {
+ uint8_t eqEnabled=0,presenceEnabled=0;
+ float highpassHz=0,lowpassHz=0;EqBand bands[3]{{180,0,1},{900,0,1},{2800,0,1}};
+ float presenceFrequency=2500,presenceWidth=2200,presenceDrive=2,presenceAmount=0;
+};
+static_assert(sizeof(VoiceTone)==62,"Independent helmet tone profile");
+inline bool validTone(const VoiceTone &p){
+ if(p.eqEnabled>1||p.presenceEnabled>1||!(p.highpassHz==0||voiceRange(p.highpassHz,20,1000))||!(p.lowpassHz==0||voiceRange(p.lowpassHz,2000,20000)))return false;
+ for(int i=0;i<3;i++)if(!voiceRange(p.bands[i].frequency,30,16000)||!voiceRange(p.bands[i].gainDb,-12,12)||!voiceRange(p.bands[i].q,.2f,8))return false;
+ return voiceRange(p.presenceFrequency,80,6000)&&voiceRange(p.presenceWidth,100,6000)&&voiceRange(p.presenceDrive,0,12)&&voiceRange(p.presenceAmount,0,1);
+}
 struct __attribute__((packed)) StripOptions {
  uint8_t density,sparkles,noise,palette,reactive,backgroundEnabled,backgroundBrightness,sensitivity;
  uint32_t releaseMs,seed;

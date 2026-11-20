@@ -21,6 +21,8 @@
 #include "actors.h"
 #include "score_runtime.h"
 #include "score_store.h"
+#include "helmet_sound_store.h"
+#include "startup_policy.h"
 #include "show_filesystem.h"
 #include "web_assets.h"
 #include <esp_partition.h>
@@ -31,6 +33,15 @@ WifiTransport network;
 String statusJSON(bool history,bool outputs=false);
 Actors actors;
 Show::Runner showRunner(actors);Show::SlaveStore showStore;Show::MasterStore showMaster;bool showRecovery=false,showFSReady=false;
+HelmetSoundStore helmetSounds;StartupPolicy startupShow;bool editorLocked=true,startupResetAllowed=true;
+bool normalStartupReset(){
+#ifdef THEATRE_HOST_TEST
+ return true;
+#else
+ auto reason=esp_reset_reason();return reason==ESP_RST_POWERON||reason==ESP_RST_EXT||reason==ESP_RST_SW;
+#endif
+}
+struct Rx;void globalVoiceTick();bool globalVoiceReady();void bootShowTick();void handleGlobalVoiceAck(const Rx &r);
 void consoleRoutes();void showMasterTick();void consoleButtons();bool handleShowMessage(const LanMessage &message);
 bool publishedReady();size_t storedPlans();bool goPublished(uint16_t target,uint8_t reason);bool goDraft(uint16_t target,uint8_t reason);
 uint32_t lastControlId=0;
@@ -55,7 +66,7 @@ uint32_t masterSession=0, masterSeen=0, lastProbe=0, helloAt=0;
 uint8_t assignedId=0;
 uint32_t lastProbeSeq=0;
 
-struct Rx { VoiceReport voice{}; uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm; uint32_t pwmHz=0;char firmwareVersion[24]{};uint8_t firmwareRole=0; int8_t rssi; uint32_t atUs; };
+struct Rx { VoiceReport voice{}; uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm; uint32_t pwmHz=0;char firmwareVersion[24]{};uint8_t firmwareRole=0,firmwareFlags=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
 struct Node;bool currentSceneConfirmed(const Node &n);const char *sceneStatus(const Node &n);
 bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigateCurrent(uint8_t action);
@@ -68,6 +79,7 @@ struct Node {
   bool used=false;uint8_t mac[6]{};String name,firmwareVersion;
   uint8_t protocol=0,pwmChannels=0;bool pwmConfigSupported=false,helmet=false;
   VoiceReport voice{};uint32_t voiceAt=0;
+  bool soundSupported=false;uint32_t soundRevision=0,soundHash=0,nextSound=0;
   PwmStatus pwmConfig{};uint32_t pwmConfigAt=0,pwmReportSequence=0;
   uint32_t requestId=0,requestStartedAt=0,requestDeadline=0;bool boundedRequest=false;int32_t commandAckMs=-1;
   String uiClient;uint32_t uiSequence=0;
@@ -133,7 +145,7 @@ bool decodeMessage(const LanMessage &message,Rx &r) {
     VoiceReport p;memcpy(&p,data,sizeof(p));if(p.magic!=MAGIC||p.size!=sizeof(p)||p.ready>1||p.enabled>1||!std::isfinite(p.inputLevel)||!std::isfinite(p.outputLevel)||!std::isfinite(p.load)||p.inputLevel<0||p.outputLevel<0||p.load<0)return false;r.voice=p;r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;
   }else if(len==(int)sizeof(FirmwarePacket)&&data[4]==PROTOCOL&&data[5]==FIRMWARE_REPORT){
     FirmwarePacket p;memcpy(&p,data,sizeof(p));if(!validFirmware(p))return false;
-    r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;r.firmwareRole=p.role;memcpy(r.firmwareVersion,p.version,sizeof(p.version));
+    r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;r.firmwareRole=p.role;r.firmwareFlags=p.reserved[0];memcpy(r.firmwareVersion,p.version,sizeof(p.version));
   } else if(len==(int)sizeof(Packet)) {
     memcpy(&r.p,data,sizeof(r.p));
     if(r.p.magic!=MAGIC||r.p.protocol!=PROTOCOL||r.p.size!=sizeof(Packet)||r.p.type==DEBUG_REPORT)return false;
@@ -255,6 +267,7 @@ bool queueCommand(int i,Op op,uint8_t channel=0,uint16_t value=0,uint32_t deadli
   if(networkResetActive&&!urgent)return false;
   if(otaSafetyLock&&!safeDuringOTA(op,value))return false;
   if(!network.ready()||!n.used||!n.deviceBoot||(uint32_t)network.peerIP(n.mac)==0||!validControl(op,channel,value))return false;
+  if(op==ALL_OFF)startupShow.cancel();
   if((op==PWM||op==PWM_SWITCH||op==PWM_CONFIG)&&channel>n.pwmChannels)return false;
   if(op==PWM_CONFIG&&!n.pwmConfigSupported)return false;
   if(op==RELAY_CONFIG&&!n.pwmConfigSupported){
@@ -277,7 +290,7 @@ void commandTick(){
     else if(n.attempts<4&&(int32_t)(now-n.retryAt)>=0){sendPacket(n.mac,n.pendingPacket);n.attempts++;n.retryAt=now+150;}
   }
 }
-void beginNetworkReset(){
+void beginNetworkReset(){startupShow.cancel();
   if(networkResetActive)return;
   networkResetActive=true;networkResetAt=millis()+1100;
 }
@@ -292,8 +305,9 @@ void finishNetworkReset(){
 void handleMasterRx(const Rx &r) {
   if(r.p.session!=bootSession||!r.p.deviceBoot)return;
   if(handleRemoteRx(r))return;
+  if(r.p.type==VOICE_CONFIG_ACK){handleGlobalVoiceAck(r);return;}
   if(r.p.type==VOICE_REPORT){int i=findNode(r.mac,false);if(i>=0&&nodes[i].helmet&&nodes[i].deviceBoot==r.p.deviceBoot&&(!nodes[i].voiceAt||(int32_t)(r.p.uptime-nodes[i].voice.uptime)>=0)){nodes[i].voice=r.voice;nodes[i].voiceAt=millis();}return;}
-  if(r.p.type==FIRMWARE_REPORT){int i=findNode(r.mac,false);if(i>=0&&nodes[i].deviceBoot==r.p.deviceBoot&&r.firmwareRole==(nodes[i].helmet?FW_HELMET:FW_SLAVE))nodes[i].firmwareVersion=String(r.firmwareVersion);return;}
+  if(r.p.type==FIRMWARE_REPORT){int i=findNode(r.mac,false);if(i>=0&&nodes[i].deviceBoot==r.p.deviceBoot&&r.firmwareRole==(nodes[i].helmet?FW_HELMET:FW_SLAVE)){nodes[i].firmwareVersion=String(r.firmwareVersion);nodes[i].soundSupported=nodes[i].helmet&&r.firmwareFlags==1;}return;}
   if(r.p.type==SCORE_ACK){handleShowAck(r);return;}
   if(r.p.type==PWM_REPORT){
     int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];
@@ -314,7 +328,7 @@ void handleMasterRx(const Rx &r) {
     n.pending=false;n.deferred=false;n.commandStatus="session_changed";n.uartAt=0;n.uartUptime=0;
   }
   n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;
-  if(newBoot){n.voiceAt=0;n.firmwareVersion=String();n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
+  if(newBoot){n.soundSupported=false;n.soundRevision=n.soundHash=n.nextSound=0;n.voiceAt=0;n.firmwareVersion=String();n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
   if(newBoot||!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0) {
     if(r.p.type==HELLO||r.p.type==ECHO){n.helmet=helmetTag(r.p);n.pwmChannels=n.helmet?0:(r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT);n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=!n.helmet&&r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;n.localScoreSupported=localScoreTag(r.p);}
     n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;
@@ -404,7 +418,7 @@ void linkTick() {
   }
   uint32_t now=millis();
   if(RADIO_MASTER) {
-    commandTick();showMasterTick();consoleButtons();remoteMasterTick();
+    commandTick();globalVoiceTick();bootShowTick();showMasterTick();consoleButtons();remoteMasterTick();
     static uint32_t sendAt=0;
     if(network.ready()&&!networkResetActive&&(int32_t)(now-discoverAt)>=0){
       Packet p=packet(DISCOVER,bootSession);requestFirmware(p);sendPacket(BROADCAST,p);sendLegacy(BROADCAST,p);discoverAt=now+2000;
@@ -510,7 +524,7 @@ String statusJSON(bool history,bool outputs) {
 #endif
   if(!RADIO_MASTER)j+=",\"uartPollMs\":"+String(PLAYER_POLL_MS)+",\"outputWrites\":"+outputTraceJSON(outputs);
   if(!RADIO_MASTER)j+=",\"pwmBits\":"+String(PWM_BITS)+",\"pwmHzConfigured\":"+String(PWM_HZ)+",\"pwmGamma\":"+String((float)THEATRE_PWM_GAMMA,3)+",\"pwmGray\":"+String((float)THEATRE_PWM_GRAY,3)+",\"pwmHz\":"+String(actors.pwmFrequency())+",\"pwmConfig\":"+pwmJSON(actors.pwmStatus())+",\"control\":"+controlJSON(actors.snapshot())+",\"uart\":"+uartJSON(actors.player.diagnostics(),actors.player.debug());
-  if(RADIO_MASTER)j+=",\"console\":{\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.cursorValid?String(showMaster.step+1):String("null"))+",\"stepId\":"+jsonString(showMaster.cursorId())+",\"livePreview\":"+String(showMaster.livePreview?"true":"false")+",\"running\":"+String(showMaster.active?"true":"false")+",\"syncing\":"+String((showMaster.syncPending||(!showMaster.livePreview&&showMaster.draftUnsaved()))?"true":"false")+",\"navigation\":"+String(showMaster.navigation)+",\"draftFingerprint\":"+jsonString(showMaster.draftFingerprint)+",\"syncFingerprint\":"+jsonString(showMaster.syncFingerprint)+",\"draftRevision\":"+String(showMaster.draftRevision)+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
+  if(RADIO_MASTER)j+=",\"console\":{\"editorLocked\":"+String(editorLocked?"true":"false")+",\"startupResetAllowed\":"+String(startupResetAllowed?"true":"false")+",\"startupPending\":"+String(startupShow.waiting()?"true":"false")+",\"helmetVoiceSaved\":"+String(helmetSounds.saved()?"true":"false")+",\"helmetVoiceRevision\":"+String(helmetSounds.revision)+",\"helmetVoiceReady\":"+String(globalVoiceReady()?"true":"false")+",\"version\":"+String(showMaster.version)+",\"fingerprint\":"+jsonString(showMaster.fingerprint)+",\"step\":"+(showMaster.cursorValid?String(showMaster.step+1):String("null"))+",\"stepId\":"+jsonString(showMaster.cursorId())+",\"livePreview\":"+String(showMaster.livePreview?"true":"false")+",\"running\":"+String(showMaster.active?"true":"false")+",\"syncing\":"+String((showMaster.syncPending||(!showMaster.livePreview&&showMaster.draftUnsaved()))?"true":"false")+",\"navigation\":"+String(showMaster.navigation)+",\"draftFingerprint\":"+jsonString(showMaster.draftFingerprint)+",\"syncFingerprint\":"+jsonString(showMaster.syncFingerprint)+",\"draftRevision\":"+String(showMaster.draftRevision)+",\"preview\":"+String(showMaster.isPreview?"true":"false")+",\"transition\":"+String(showMaster.sequence)+",\"ready\":"+String(publishedReady()?"true":"false")+",\"storedDevices\":"+String((unsigned)storedPlans())+",\"plannedDevices\":"+String((unsigned)showMaster.plans.size())+",\"repeatMs\":"+String(Show::REPEAT_MS)+",\"scoreProtocol\":"+String(Show::PROTOCOL)+"}";
   if(RADIO_MASTER)j+=",\"remotes\":"+remoteStatusJSON();
   j+="}";return j;
 }
@@ -576,7 +590,7 @@ void routes() {
   });
   web.on("/stop-all",HTTP_POST,[] {
     if(!validForm())return;if(!RADIO_MASTER){web.send(400,"text/plain","Master only");return;}
-    showMaster.queueShow(showMaster.draftFingerprint); // Explicit ALL OFF also suspends LIVE/reconciliation.
+    startupShow.cancel();showMaster.queueShow(showMaster.draftFingerprint); // Explicit ALL OFF also suspends LIVE/reconciliation.
     int count=0;for(int i=0;i<MAX_NODES;i++)if(queueCommand(i,ALL_OFF))count++;
     web.send(202,"text/plain","ALL OFF: "+String(count));
   });
@@ -615,7 +629,7 @@ void routes() {
       if(web.arg("token")!=csrfToken)return;
       if(web.hasArg("target")&&!web.arg("target").equalsIgnoreCase(macString(network.mac)))return;
       String origin=web.header("Origin");if(origin.length()&&origin!="http://"+web.hostHeader())return;
-      if(!RADIO_MASTER)showRunner.stop();else {showMaster.active=false;for(int i=0;i<MAX_NODES;i++)queueCommand(i,ALL_OFF);}
+      if(!RADIO_MASTER)showRunner.stop();else {startupShow.cancel();showMaster.active=false;for(int i=0;i<MAX_NODES;i++)queueCommand(i,ALL_OFF);}
       otaSafetyLock=true;otaActive=Update.begin(UPDATE_SIZE_UNKNOWN,U_FLASH);if(!otaActive)otaSafetyLock=false;
     } else if(u.status==UPLOAD_FILE_WRITE&&otaActive) {
       if(Update.write(u.buf,u.currentSize)!=u.currentSize){Update.abort();otaActive=false;otaSafetyLock=false;}
@@ -627,7 +641,7 @@ void routes() {
 void setup() {
   if(!RADIO_MASTER){actors.begin();showRunner.begin();actors.tick(false);}
   showFSReady=mountShowFS();
-  if(!RADIO_MASTER){if(showFSReady)showStore.begin();}else{if(showFSReady)showMaster.begin();pinMode(BUTTON_FORWARD_PIN,INPUT_PULLUP);pinMode(BUTTON_BACK_PIN,INPUT_PULLUP);showMaster.run=freshSession();}
+  if(!RADIO_MASTER){if(showFSReady)showStore.begin();}else{if(showFSReady){showMaster.begin();helmetSounds.begin(showMaster.workspace);}startupResetAllowed=normalStartupReset();startupShow.begin(startupResetAllowed&&showFSReady&&!showMaster.workspaceFault&&showMaster.version&&!showMaster.plans.empty());pinMode(BUTTON_FORWARD_PIN,INPUT_PULLUP);pinMode(BUTTON_BACK_PIN,INPUT_PULLUP);showMaster.run=freshSession();}
   Serial.begin(115200);delay(500);
   bootSession=freshSession();
   char token[17];snprintf(token,sizeof(token),"%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random());csrfToken=token;
@@ -663,7 +677,7 @@ void loop() {
     if(c=='j')Serial.println(statusJSON(false));
     if(c=='u'&&!RADIO_MASTER)Serial.println(uartJSON(actors.player.diagnostics(),actors.player.debug()));
     if(c=='q'&&!RADIO_MASTER){actors.player.poll();Serial.println("UART status query queued");}
-    if(c=='!'){if(!RADIO_MASTER)showRunner.stop();else {showMaster.active=false;for(int i=0;i<MAX_NODES;i++)queueCommand(i,ALL_OFF);}}
+    if(c=='!'){if(!RADIO_MASTER)showRunner.stop();else {startupShow.cancel();showMaster.active=false;for(int i=0;i<MAX_NODES;i++)queueCommand(i,ALL_OFF);}}
   }
   Health h=WARMUP;
   if(RADIO_MASTER) {
@@ -676,6 +690,7 @@ void loop() {
   if(restartAt&&(int32_t)(millis()-restartAt)>=0)ESP.restart();
   delay(1);
 }
+#include "helmet_sound_master.h"
 #include "remote_master.h"
 #include "console_routes.h"
 

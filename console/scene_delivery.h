@@ -8,12 +8,12 @@ size_t storedPlans(){
 }
 bool publishedReady(){return showMaster.version&&!showMaster.plans.empty()&&storedPlans()==showMaster.plans.size();}
 bool goPublished(uint16_t target,uint8_t reason){
- if(!RADIO_MASTER||networkResetActive||otaSafetyLock||(!showMaster.livePreview&&showMaster.draftUnsaved())||!publishedReady())return false;
- if(!showMaster.go(target,reason))return false;
+ if(!RADIO_MASTER||networkResetActive||otaSafetyLock||(!showMaster.livePreview&&showMaster.draftUnsaved())||!publishedReady()||(!showMaster.cursorValid&&!globalVoiceReady()))return false;
+ if(!showMaster.go(target,reason))return false;startupShow.cancel();
  for(auto &n:nodes)n.nextScore=0;return true;
 }
 bool goDraft(uint16_t target,uint8_t reason){
- if(!RADIO_MASTER||networkResetActive||otaSafetyLock||!showMaster.goDraft(target,reason))return false;
+ if(!RADIO_MASTER||networkResetActive||otaSafetyLock||(!showMaster.cursorValid&&!globalVoiceReady())||!showMaster.goDraft(target,reason))return false;startupShow.cancel();
  for(auto &n:nodes)n.nextScore=0;return true;
 }
 bool currentSceneConfirmed(const Node &n){return showMaster.active&&showMaster.find(n.mac,showMaster.isPreview)&&n.scoreAt&&n.scoreStep==showMaster.step&&n.scoreSeq==showMaster.sequence&&n.scoreResult==APPLIED&&millis()-n.scoreAt<OFFLINE_MS;}

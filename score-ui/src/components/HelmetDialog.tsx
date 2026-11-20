@@ -4,6 +4,8 @@ import {
   voiceBank,
   voiceSettings,
   voiceAlgorithms,
+  defaultVoiceEq,
+  defaultVoicePresence,
   type VoiceSettings,
   type VoiceAlgorithm,
 } from '../domain/voice.ts';
@@ -32,7 +34,9 @@ export function HelmetDialog({
 }) {
   const bank = voiceBank(device),
     sound = voiceSettings(device),
-    preset = bank.presets.find((p) => p.id === bank.selected)!;
+    preset = bank.presets.find((p) => p.id === bank.selected)!,
+    eq = sound.eq ?? defaultVoiceEq(),
+    presence = sound.presence ?? defaultVoicePresence();
   const ask = useConfirm(),
     frequencies = useRef<Partial<Record<VoiceAlgorithm, number>>>({});
   const snapshot = useSyncExternalStore(network.subscribe, network.getSnapshot),
@@ -74,9 +78,15 @@ export function HelmetDialog({
     <Modal title={`Звук шлема · ${device.name}`} onClose={onClose} className="helmet-modal">
       <div className="helmet-content">
         <p className="muted helmet-note">
-          Общие настройки этого шлема для ВСЕХ сцен. LIVE — прослушивание сразу; OFF —
-          редактирование. Включение голоса и свет задаются отдельно в каждой сцене.
+          Независимый звук шлема: настройки применяются сразу, без переключения сцены, в том числе
+          при заблокированной партитуре. Сцены задают только включение голоса и свет.
         </p>
+        {snapshot.helmetVoiceReady === false && (
+          <p className="helmet-note" role="status">
+            Независимый звук ещё не подтверждён шлемом: нужны новые прошивки master и helmet. Сцену
+            это не переключает.
+          </p>
+        )}
         <div className="helmet-preset-fields">
           <label className="field">
             <span>Звуковой пресет</span>
@@ -114,6 +124,131 @@ export function HelmetDialog({
             />
           </label>
         </div>
+        <details className="helmet-tone-panel">
+          <summary>Параметрический эквалайзер и разборчивость</summary>
+          <label className="check">
+            <input
+              type="checkbox"
+              aria-label="Эквалайзер голоса"
+              checked={eq.enabled}
+              onChange={(e) => edit({ eq: { ...eq, enabled: e.target.checked } })}
+            />
+            Эквалайзер: 3 полосы
+          </label>
+          <p className="muted helmet-note">
+            Частота / усиление / Q. Меньше Q — шире полоса. Начните с ослабления лишнего; сильное
+            усиление может вызвать акустическую обратную связь.
+          </p>
+          <div className="helmet-fields">
+            {eq.bands.map((band, index) => (
+              <div className="helmet-eq-band" key={index}>
+                <strong>Полоса {index + 1}</strong>
+                {(
+                  [
+                    ['frequency', 'Частота', 30, 16000, 1, ' Гц'],
+                    ['gainDb', 'Усиление', -12, 12, 0.1, ' дБ'],
+                    ['q', 'Ширина Q', 0.2, 8, 0.05, ''],
+                  ] as const
+                ).map(([key, label, min, max, step, suffix]) => (
+                  <SliderField
+                    key={key}
+                    label={`${label} EQ ${index + 1}`}
+                    min={min}
+                    max={max}
+                    step={step}
+                    suffix={suffix}
+                    value={band[key]}
+                    onChange={(value) =>
+                      edit({
+                        eq: {
+                          ...eq,
+                          bands: eq.bands.map((b, i) => (i === index ? { ...b, [key]: value } : b)),
+                        },
+                      })
+                    }
+                  />
+                ))}
+              </div>
+            ))}
+            <div className="helmet-eq-band">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  aria-label="Срез низких EQ"
+                  checked={eq.highpassHz > 0}
+                  onChange={(e) => edit({ eq: { ...eq, highpassHz: e.target.checked ? 120 : 0 } })}
+                />
+                Срез низких
+              </label>
+              {eq.highpassHz > 0 && (
+                <SliderField
+                  label="Частота среза низких EQ"
+                  min={20}
+                  max={1000}
+                  step={10}
+                  value={eq.highpassHz}
+                  suffix=" Гц"
+                  onChange={(highpassHz) => edit({ eq: { ...eq, highpassHz } })}
+                />
+              )}
+              <label className="check">
+                <input
+                  type="checkbox"
+                  aria-label="Срез высоких EQ"
+                  checked={eq.lowpassHz > 0}
+                  onChange={(e) => edit({ eq: { ...eq, lowpassHz: e.target.checked ? 8000 : 0 } })}
+                />
+                Срез высоких
+              </label>
+              {eq.lowpassHz > 0 && (
+                <SliderField
+                  label="Частота среза высоких EQ"
+                  min={2000}
+                  max={20000}
+                  step={100}
+                  value={eq.lowpassHz}
+                  suffix=" Гц"
+                  onChange={(lowpassHz) => edit({ eq: { ...eq, lowpassHz } })}
+                />
+              )}
+            </div>
+          </div>
+          <label className="check">
+            <input
+              type="checkbox"
+              aria-label="Полоса разборчивости"
+              checked={presence.enabled}
+              onChange={(e) => edit({ presence: { ...presence, enabled: e.target.checked } })}
+            />
+            Полоса разборчивости
+          </label>
+          <p className="muted helmet-note">
+            Параллельная полоса из чистого микрофона после gate: сохраняет согласные поверх
+            роботизации. Мягкая сатурация только в выбранном диапазоне; после неё полоса фильтруется
+            снова. Начните с небольшого подмешивания.
+          </p>
+          <div className="helmet-fields">
+            {(
+              [
+                ['frequency', 'Центр разборчивости', 80, 6000, 10, ' Гц'],
+                ['width', 'Ширина разборчивости', 100, 6000, 10, ' Гц'],
+                ['drive', 'Сатурация разборчивости', 0, 12, 0.1, ''],
+                ['amount', 'Подмешивание разборчивости', 0, 1, 0.01, ''],
+              ] as const
+            ).map(([key, label, min, max, step, suffix]) => (
+              <SliderField
+                key={key}
+                label={label}
+                min={min}
+                max={max}
+                step={step}
+                suffix={suffix}
+                value={presence[key]}
+                onChange={(value) => edit({ presence: { ...presence, [key]: value } })}
+              />
+            ))}
+          </div>
+        </details>
         <div className="segmented helmet-preset-actions">
           <button
             onClick={() =>

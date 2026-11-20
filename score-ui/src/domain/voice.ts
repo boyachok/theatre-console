@@ -1,7 +1,39 @@
 import type { Device } from './schema.ts';
 export const voiceAlgorithms = ['ring', 'vocoder', 'autotune', 'monotone', 'chip'] as const;
 export type VoiceAlgorithm = (typeof voiceAlgorithms)[number];
+export interface VoiceEq {
+  enabled: boolean;
+  highpassHz: number;
+  lowpassHz: number;
+  bands: { frequency: number; gainDb: number; q: number }[];
+}
+export interface VoicePresence {
+  enabled: boolean;
+  frequency: number;
+  width: number;
+  drive: number;
+  amount: number;
+}
+export const defaultVoiceEq = (): VoiceEq => ({
+  enabled: false,
+  highpassHz: 0,
+  lowpassHz: 0,
+  bands: [
+    { frequency: 180, gainDb: 0, q: 1 },
+    { frequency: 900, gainDb: 0, q: 1 },
+    { frequency: 2800, gainDb: 0, q: 1 },
+  ],
+});
+export const defaultVoicePresence = (): VoicePresence => ({
+  enabled: false,
+  frequency: 2500,
+  width: 2200,
+  drive: 2,
+  amount: 0,
+});
 export interface VoiceSettings {
+  eq?: VoiceEq;
+  presence?: VoicePresence;
   mode: 'dry' | 'robot';
   algorithm: VoiceAlgorithm;
   gain: number;
@@ -92,6 +124,33 @@ export function validVoiceSettings(s: any): s is VoiceSettings {
     ['tuneStrength', 0, 1],
     ['transpose', -12, 12],
   ];
+  if (
+    s.eq !== undefined &&
+    (!s.eq ||
+      typeof s.eq.enabled !== 'boolean' ||
+      !(s.eq.highpassHz === 0 || between(s.eq.highpassHz, 20, 1000)) ||
+      !(s.eq.lowpassHz === 0 || between(s.eq.lowpassHz, 2000, 20000)) ||
+      !Array.isArray(s.eq.bands) ||
+      s.eq.bands.length !== 3 ||
+      !s.eq.bands.every(
+        (b: any) =>
+          b &&
+          between(b.frequency, 30, 16000) &&
+          between(b.gainDb, -12, 12) &&
+          between(b.q, 0.2, 8),
+      ))
+  )
+    return false;
+  if (
+    s.presence !== undefined &&
+    (!s.presence ||
+      typeof s.presence.enabled !== 'boolean' ||
+      !between(s.presence.frequency, 80, 6000) ||
+      !between(s.presence.width, 100, 6000) ||
+      !between(s.presence.drive, 0, 12) ||
+      !between(s.presence.amount, 0, 1))
+  )
+    return false;
   return (
     ranges.every(([k, a, b]) => between(s[k], a, b)) &&
     (s.toneHz === 0 || between(s.toneHz, 20, 20000)) &&

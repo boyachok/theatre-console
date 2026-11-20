@@ -4,24 +4,25 @@
 #include "voice/voice_settings.h"
 #include "voice/audio_effects.h"
 #include "voice/audio_protection.h"
+#include "voice/voice_tone.h"
 #include "voice/inmp441_decode.h"
 namespace Helmet {
 inline Settings soundSettings(const Show::VoiceProfile &p,bool enabled){Settings s;s.enabled=enabled;if(!p.configured)return s;s.mode=p.mode?ROBOT:DRY;s.vocoder=p.algorithm==1;s.autotune=p.algorithm==2;s.monotone=p.algorithm==3;s.speechChip=p.algorithm==4;s.gain=p.gain;s.volume=p.volume;s.frequency=p.frequency;s.mix=p.mix;s.drive=p.drive;s.gateDb=p.gateDb;s.notch=p.flags&1;s.reduceThumps=p.flags&2;s.breathReduction=p.breath;s.wave=p.wave;s.toneHz=p.toneHz;s.formant=p.formant;s.clarity=p.clarity;s.tuneKey=p.key;s.tuneScale=p.scale;s.retuneMs=p.retuneMs;s.tuneStrength=p.strength;s.transpose=p.transpose;return s;}
 struct VoiceStats {bool ready=false,enabled=false;uint8_t audioCore=255;uint32_t captured=0,played=0,errors=0,late=0,limited=0,workMax=0;float inputLevel=0,outputLevel=0,pitch=0,target=0,load=0,gateEnvelopeDb=-180,gateGain=0,gateDb=-90;};
 // Large DSP buffers are members of a static/global Runner, never audio task stack.
 class VoiceProcessor {
- VoiceEffects effects;InputLowCut lowCut;OutputPeakLimiter limiter;
+ VoiceEffects effects;InputLowCut lowCut;OutputPeakLimiter limiter;VoiceToneDSP::Processor tone;
  float lp=0,nx1=0,nx2=0,ny1=0,ny2=0,envelope=0,gate=0,volume=0,gain=2,notchMix=1;
 public:
  void process(const Settings &c,const uint32_t *slots,int32_t *output,size_t frames,VoiceStats &stats){
-  effects.configure(c);const float pi=3.14159265358979323846f,omega=2*pi*50/48000,alpha=sinf(omega)/16;
+  effects.configure(c);tone.configure(c.tone);const float pi=3.14159265358979323846f,omega=2*pi*50/48000,alpha=sinf(omega)/16;
   const float b0=1/(1+alpha),b1=-2*cosf(omega)/(1+alpha),b2=b0,a1=b1,a2=(1-alpha)/(1+alpha),lpAlpha=1-expf(-2*pi*6000/48000),threshold=powf(10,c.gateDb/20);
   float power=0,outPower=0;
   for(size_t i=0;i<frames;i++){
    float input=normalizeInmp441(slots[2*i]),hp=lowCut.tick(input,c.reduceThumps),notched=b0*hp+b1*nx1+b2*nx2-a1*ny1-a2*ny2;nx2=nx1;nx1=hp;ny2=ny1;ny1=notched;
    notchMix+=.004f*((c.notch?1.f:0.f)-notchMix);lp+=lpAlpha*(hp+notchMix*(notched-hp)-lp);power+=lp*lp;
    float magnitude=fabsf(lp);envelope+=(magnitude>envelope?.004f:.00025f)*(magnitude-envelope);gate+=.004f*((c.gateDb<=-89||envelope>=threshold?1.f:0.f)-gate);gain+=.004f*(c.gain-gain);volume+=.004f*((c.enabled?c.volume:0)-volume);
-   float signal=limiter.tick(effects.tick(lp*gain,gate)*volume);if(limiter.limiting())stats.limited++;if(!std::isfinite(signal)){signal=0;stats.errors++;}signal=fmaxf(-.98f,fminf(.98f,signal));outPower+=signal*signal;
+   float signal=limiter.tick(tone.tick(effects.tick(lp*gain,gate),hp*gain*gate)*volume);if(limiter.limiting())stats.limited++;if(!std::isfinite(signal)){signal=0;stats.errors++;}signal=fmaxf(-.98f,fminf(.98f,signal));outPower+=signal*signal;
    output[2*i]=output[2*i+1]=(int32_t)(signal*2147483647.f);
   }
   stats.gateEnvelopeDb=20*log10f(fmaxf(envelope,1e-9f));stats.gateGain=gate;stats.gateDb=c.gateDb;
@@ -32,10 +33,11 @@ public:
 #ifdef THEATRE_HOST_TEST
 namespace Helmet {
 class VoicePort {
- bool desired=false;Show::VoiceProfile profile{};
+ bool desired=false;Show::VoiceProfile profile{};Show::VoiceTone tone{};
 public:
- void begin(){}bool configure(const Show::VoiceProfile &p,bool enabled){if(!Show::validVoice(p))return false;profile=p;desired=enabled;return true;}
+ void begin(){}bool configure(const Show::VoiceProfile &p,bool enabled,const Show::VoiceTone &t=Show::VoiceTone{}){if(!Show::validVoice(p)||!Show::validTone(t))return false;profile=p;tone=t;desired=enabled;return true;}
  Show::VoiceProfile appliedProfile()const{return profile;}
+ Show::VoiceTone appliedTone()const{return tone;}
  void setEnabled(bool e){desired=e;}bool requested()const{return desired;}bool available()const{return true;}float level()const{return 0;}VoiceStats diagnostics()const{VoiceStats s;s.ready=true;s.enabled=desired;return s;}
 };
 }
@@ -66,8 +68,9 @@ public:
   if(i2s_set_pin(I2S_NUM_0,&pins)!=ESP_OK||gpio_set_pull_mode(GPIO_NUM_7,GPIO_PULLDOWN_ONLY)!=ESP_OK||i2s_zero_dma_buffer(I2S_NUM_0)!=ESP_OK){i2s_driver_uninstall(I2S_NUM_0);return;}
   if(xTaskCreatePinnedToCore(entry,"helmet-audio",16384,this,6,&task,1)!=pdPASS){i2s_driver_uninstall(I2S_NUM_0);return;}stats.ready=true;
  }
- bool configure(const Show::VoiceProfile &p,bool enabled){if(!Show::validVoice(p))return false;portENTER_CRITICAL(&mux);profile=p;settings=soundSettings(p,enabled);portEXIT_CRITICAL(&mux);return true;}
+ bool configure(const Show::VoiceProfile &p,bool enabled,const Show::VoiceTone &t=Show::VoiceTone{}){if(!Show::validVoice(p)||!Show::validTone(t))return false;portENTER_CRITICAL(&mux);profile=p;settings=soundSettings(p,enabled);settings.tone=t;portEXIT_CRITICAL(&mux);return true;}
  void setEnabled(bool enabled){portENTER_CRITICAL(&mux);settings.enabled=enabled;portEXIT_CRITICAL(&mux);}
+ Show::VoiceTone appliedTone(){portENTER_CRITICAL(&mux);auto p=settings.tone;portEXIT_CRITICAL(&mux);return p;}
  Show::VoiceProfile appliedProfile(){portENTER_CRITICAL(&mux);auto p=profile;portEXIT_CRITICAL(&mux);return p;}
  bool requested(){portENTER_CRITICAL(&mux);bool e=settings.enabled;portEXIT_CRITICAL(&mux);return e;}
  bool available(){portENTER_CRITICAL(&mux);bool r=stats.ready;portEXIT_CRITICAL(&mux);return r;}

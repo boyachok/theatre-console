@@ -43,6 +43,7 @@ try {
     p = await ctx.newPage();
   watch(p);
   await p.goto(base);
+  await p.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await p.waitForSelector('.parameter-row');
   assert.equal(await p.locator('.step-heading').count(), 1);
   assert.equal(await p.locator('.device-group').count(), 10);
@@ -230,6 +231,7 @@ try {
   assert.equal(storage.draft.steps[1].devices[deviceId].dimmers['pwm-1'].value, 33);
   assert.equal(storage.published.project.steps[1].devices[deviceId].dimmers['pwm-1'].value, 20);
   await p.reload();
+  await p.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await p.waitForSelector('.parameter-row');
   assert.equal((await cell(p, 1, 'pwm-1').innerText()).replace(/\s/g, ''), '33%');
   await p.locator('input[type=file]').setInputFiles(file);
@@ -279,6 +281,7 @@ try {
   const big = await stress.newPage();
   watch(big);
   await big.goto(base);
+  await big.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await big.waitForSelector('.step-heading:nth-of-type(101)');
   assert.equal(await big.locator('.step-heading').count(), 100);
   assert.equal(await big.locator('.parameter-row td').count(), 17000);
@@ -305,6 +308,7 @@ try {
       mobile = await context.newPage();
     watch(mobile);
     await mobile.goto(base);
+    await mobile.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
     await mobile.waitForSelector('.parameter-row');
     for (const name of ['Предыдущий шаг', 'Следующий шаг', 'Сдублировать шаг', 'Сеть']) {
       const r = await mobile.getByRole('button', { name, exact: true }).boundingBox();
@@ -342,6 +346,7 @@ try {
   const deletion = await confirmContext.newPage();
   watch(deletion);
   await deletion.goto(base);
+  await deletion.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await deletion.waitForSelector('.step-heading');
   for (let i = 0; i < 4; i++)
     await deletion.getByRole('button', { name: 'Сдублировать шаг', exact: true }).click();
@@ -365,6 +370,7 @@ try {
   );
   await pause(400);
   await deletion.reload();
+  await deletion.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await deletion.waitForSelector('.step-heading');
   await remove();
   await deletion.getByRole('dialog', { name: 'Подтверждение', exact: true }).waitFor();
@@ -376,6 +382,7 @@ try {
   const helmet = await helmetContext.newPage();
   watch(helmet);
   await helmet.goto(base);
+  await helmet.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await helmet.waitForSelector('.parameter-row');
   await helmet.getByRole('button', { name: 'Приборы', exact: true }).click();
   const helmetModal = helmet.getByRole('dialog', { name: 'Приборы', exact: true });

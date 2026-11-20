@@ -4,6 +4,8 @@ import {
   ChevronRight,
   Download,
   Layers3,
+  LockKeyhole,
+  LockKeyholeOpen,
   PanelRightOpen,
   Radio,
   Settings2,
@@ -67,6 +69,7 @@ import {
 import { historyReducer } from './domain/history.ts';
 import { Inspector } from './components/Inspector.tsx';
 import { HelmetDialog } from './components/HelmetDialog.tsx';
+import { voiceBank } from './domain/voice.ts';
 import { DevicesDialog } from './components/DevicesDialog.tsx';
 import { EffectsDialog } from './components/EffectsDialog.tsx';
 import { NetworkDialog } from './components/NetworkDialog.tsx';
@@ -104,6 +107,12 @@ function startup() {
 export default function App() {
   const ask = useConfirm();
   const [initial] = useState(startup);
+  const [editorLocked, setEditorLocked] = useState(true),
+    [lockBusy, setLockBusy] = useState(false);
+  const editLockRef = useRef(true),
+    voicePending = useRef(0),
+    authoredSinceUnlock = useRef(false);
+  editLockRef.current = editorLocked;
   const [history, dispatchHistory] = useReducer(historyReducer, {
     workspace: initial.workspace,
     past: [],
@@ -112,12 +121,32 @@ export default function App() {
   });
   const workspace = history.workspace;
   const setWorkspace = useCallback(
-    (update: Workspace | ((w: Workspace) => Workspace), discrete = false) =>
-      dispatchHistory({ type: 'set', update, at: Date.now(), discrete }),
+    (update: Workspace | ((w: Workspace) => Workspace), discrete = false, system = false) =>
+      dispatchHistory({
+        type: 'set',
+        update: (w) => {
+          const next = typeof update === 'function' ? update(w) : update;
+          if (!system && editLockRef.current && next.draft !== w.draft) return w;
+          if (!system && next.draft !== w.draft) authoredSinceUnlock.current = true;
+          return next;
+        },
+        at: Date.now(),
+        discrete,
+      }),
     [],
   );
-  const undo = useCallback(() => dispatchHistory({ type: 'undo', at: Date.now() }), []);
-  const redo = useCallback(() => dispatchHistory({ type: 'redo', at: Date.now() }), []);
+  const undo = useCallback(() => {
+    if (!editLockRef.current) {
+      authoredSinceUnlock.current = true;
+      dispatchHistory({ type: 'undo', at: Date.now() });
+    }
+  }, []);
+  const redo = useCallback(() => {
+    if (!editLockRef.current) {
+      authoredSinceUnlock.current = true;
+      dispatchHistory({ type: 'redo', at: Date.now() });
+    }
+  }, []);
   const project = workspace.draft,
     latest = useRef(workspace);
   latest.current = workspace;
@@ -130,6 +159,11 @@ export default function App() {
     [exporting, setExporting] = useState(false);
   const exportBusy = useRef(false);
   const backupClock = useRef(new BackupReminder());
+  const savedAuthoring = useRef<{
+    draft: Project;
+    published: Workspace['published'];
+    backup: Workspace['backup'];
+  } | null>(null);
   const [showMode, setShowMode] = useState(true);
   const [selectionIntent, setSelectionIntent] = useState<{ id: string; nonce: number } | null>(
     null,
@@ -167,7 +201,15 @@ export default function App() {
     [dialog, setDialog] = useState<'devices' | 'effects' | 'network' | 'helmet' | null>(null);
   const [deviceDialogId, setDeviceDialogId] = useState<string | undefined>();
   const [helmetDeviceId, setHelmetDeviceId] = useState<string>();
-  const helmetDevice = project.devices.find((d) => d.id === helmetDeviceId);
+  const globalHelmet = (d: Device, w = workspace): Device => ({
+    ...d,
+    voice: w.helmetVoices?.[(d.mac ?? '').toUpperCase()] ?? voiceBank(d),
+  });
+  const selectedHelmetDevice = project.devices.find((d) => d.id === helmetDeviceId);
+  const helmetDevice = selectedHelmetDevice ? globalHelmet(selectedHelmetDevice) : undefined;
+  const headerHelmets = project.devices
+    .filter((d) => d.profile === 'helmet' && d.mac)
+    .map((d) => globalHelmet(d));
   const [saveState, setSaveState] = useState<'pending' | 'saved' | 'error'>('pending'),
     [saveBlocked, setSaveBlocked] = useState(!!initial.error);
   const [toast, setToast] = useState(initial.error),
@@ -186,6 +228,20 @@ export default function App() {
       if (!mounted) return;
       const state = network.getSnapshot();
       if (!state.connected) return;
+      if (state.editorLocked !== undefined) {
+        editLockRef.current = state.editorLocked;
+        setEditorLocked(state.editorLocked);
+      }
+      if (
+        !voicePending.current &&
+        state.helmetVoices &&
+        state.helmetVoiceRevision !== latest.current.helmetVoiceRevision
+      )
+        setWorkspace((w) => ({
+          ...w,
+          helmetVoices: state.helmetVoices,
+          helmetVoiceRevision: state.helmetVoiceRevision,
+        }));
       setPreload({
         pending: !!state.syncing,
         stored: state.storedDevices ?? 0,
@@ -232,7 +288,7 @@ export default function App() {
       .then((saved) => {
         if (!mounted) return;
         if (saved) {
-          setWorkspace(restoreBackupMetadata(saved, latest.current));
+          setWorkspace(restoreBackupMetadata(saved, latest.current), false, true);
           dispatchHistory({ type: 'clear' });
           setSelectedCells([]);
           setSelectedStepIds([]);
@@ -290,9 +346,25 @@ export default function App() {
         try {
           saveWorkspace(workspace);
           if (network instanceof EspConsoleTransport) {
+            const before = savedAuthoring.current;
+            if (
+              before?.draft === workspace.draft &&
+              before?.published === workspace.published &&
+              before?.backup === workspace.backup
+            ) {
+              setSaveState('saved');
+              return;
+            }
             network
               .saveWorkspace(workspace)
-              .then(() => setSaveState('saved'))
+              .then(() => {
+                savedAuthoring.current = {
+                  draft: workspace.draft,
+                  published: workspace.published,
+                  backup: workspace.backup,
+                };
+                setSaveState('saved');
+              })
               .catch(() => setSaveState('error'));
           } else setSaveState('saved');
         } catch {
@@ -317,7 +389,7 @@ export default function App() {
     return () => window.removeEventListener('beforeunload', flush);
   }, [saveBlocked]);
   useEffect(() => {
-    if (!backendReady || saveBlocked) return;
+    if (!backendReady || saveBlocked || editorLocked) return;
     const check = () => {
       const w = latest.current;
       const due = backupClock.current.observe(w, Date.now());
@@ -332,7 +404,7 @@ export default function App() {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', check);
     };
-  }, [backendReady, saveBlocked]);
+  }, [backendReady, saveBlocked, editorLocked]);
   useEffect(() => {
     if (network instanceof EspConsoleTransport) network.rememberBackup(workspace.backup);
     backupClock.current.observe(workspace, Date.now());
@@ -374,6 +446,83 @@ export default function App() {
       exportBusy.current = false;
       setExporting(false);
     }
+  };
+  const changeEditorLock = async () => {
+    if (lockBusy) return;
+    setLockBusy(true);
+    try {
+      const next = !editLockRef.current;
+      if (network instanceof EspConsoleTransport) await network.setEditLock(next);
+      editLockRef.current = next;
+      authoredSinceUnlock.current = false;
+      setEditorLocked(next);
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Не удалось изменить блокировку');
+    } finally {
+      setLockBusy(false);
+    }
+  };
+  const saveGlobalVoice = (device: Device) => {
+    if (!device.voice) return;
+    if (!device.mac) {
+      setWorkspace(
+        (w) => ({
+          ...w,
+          draft: {
+            ...w.draft,
+            devices: w.draft.devices.map((d) =>
+              d.id === device.id ? { ...d, voice: device.voice } : d,
+            ),
+          },
+        }),
+        false,
+        true,
+      );
+      setToast('Звук сохранён локально: для применения назначьте MAC шлема');
+      return;
+    }
+    const mac = device.mac.toUpperCase(),
+      bank = device.voice;
+    const base =
+      network.getSnapshot().helmetVoiceRevision ?? latest.current.helmetVoiceRevision ?? 1;
+    setWorkspace((w) => ({ ...w, helmetVoices: { ...w.helmetVoices, [mac]: bank } }));
+    if (!(network instanceof EspConsoleTransport)) return;
+    voicePending.current++;
+    void network
+      .saveHelmetBank(mac, bank, base)
+      .then((result) => {
+        if (result) setWorkspace((w) => ({ ...w, helmetVoiceRevision: result.revision }));
+      })
+      .catch((error) => {
+        let kept = false;
+        try {
+          sessionStorage.setItem(
+            `theatre.voice-unsent.${mac}`,
+            JSON.stringify({ bank, at: Date.now() }),
+          );
+          kept = true;
+        } catch {
+          /* Keep the visible working copy even if browser storage is full. */
+        }
+        setToast(
+          `Голос не подтверждён: ${error.message}${kept ? ' · локальная копия сохранена' : ''}`,
+        );
+      })
+      .finally(() => {
+        voicePending.current--;
+      });
+  };
+  const chooseGlobalPreset = async (device: Device, id: string) => {
+    const bank = voiceBank(device);
+    if (
+      bank.working &&
+      !(await ask({
+        message: 'Загрузить пресет вместо несохранённых звуковых параметров?',
+        accept: 'Загрузить',
+      }))
+    )
+      return;
+    saveGlobalVoice({ ...device, voice: { ...bank, selected: id, working: undefined } });
   };
   const changeCell = useCallback(
     (cell: CellSelection, changes: Record<string, unknown>) =>
@@ -498,6 +647,7 @@ export default function App() {
     [],
   );
   const duplicate = useCallback(() => {
+    if (editLockRef.current) return;
     const w = latest.current,
       result = duplicateStep(w.draft, selectedRef.current);
     setWorkspace({ ...w, draft: result.project });
@@ -513,6 +663,7 @@ export default function App() {
     );
   }, []);
   const remove = async () => {
+    if (editLockRef.current) return;
     const id = selectedRef.current,
       p = latest.current.draft,
       number = p.steps.findIndex((s) => s.id === id);
@@ -581,12 +732,13 @@ export default function App() {
     [engine, network, showMode],
   );
   useEffect(() => {
-    if (selectionIntent && !showMode) void run(selectionIntent.id, 'select');
+    if (selectionIntent && !showMode && !editLockRef.current)
+      void run(selectionIntent.id, 'select');
     // Human selection only. Master-follow updates must not send another navigation command.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectionIntent]);
   useEffect(() => {
-    if (!backendReady || saveBlocked) return;
+    if (!backendReady || saveBlocked || editorLocked || !authoredSinceUnlock.current) return;
     if (!(network instanceof EspConsoleTransport)) {
       if (!showMode) {
         const step =
@@ -623,7 +775,7 @@ export default function App() {
       mounted = false;
       clearTimeout(timer);
     };
-  }, [project, backendReady, saveBlocked, network, showMode, engine, selectedStepId]);
+  }, [project, backendReady, saveBlocked, network, showMode, engine, selectedStepId, editorLocked]);
   const changePreviewMode = async (enabled: boolean) => {
     if (!(network instanceof EspConsoleTransport)) {
       setShowMode(!enabled);
@@ -689,6 +841,7 @@ export default function App() {
     run(id, after < before ? 'back' : 'select');
   };
   const publish = async () => {
+    if (editLockRef.current) return;
     setPublishing(true);
     try {
       const published = await transport.current.publish(workspace.draft, workspace.published);
@@ -705,17 +858,19 @@ export default function App() {
     }
   };
   const importFile = async (file: File | undefined) => {
-    if (!file) return;
+    if (!file || editLockRef.current) return;
     try {
       if (file.size > 20 * 1024 * 1024) throw new Error('Файл больше 20 МБ');
       const next = parseBackup(await file.text());
       if (!(await ask({ message: 'Заменить текущую партитуру из JSON?', accept: 'Заменить' })))
         return;
+      if (network instanceof EspConsoleTransport) await network.importHelmetBanks(next);
       setWorkspace({ ...importedBackup(next), interfaceVersion: INTERFACE_VERSION });
       dispatchHistory({ type: 'clear' });
       setSelectedCells([]);
       setSelectedStepIds([]);
       setSaveBlocked(false);
+      setBackendReady(true);
       setSelectedStepId(next.draft.steps[0].id);
       setSelection(null);
       setDeviceId(next.draft.devices[0].id);
@@ -732,6 +887,7 @@ export default function App() {
     }
   };
   const saveDevices = (devices: Device[]) => {
+    if (editLockRef.current) return;
     setWorkspace((w) => ({ ...w, draft: replaceDevices(w.draft, devices) }));
     setSelectedCells([]);
     setSelectedStepIds([]);
@@ -741,6 +897,7 @@ export default function App() {
   const saveEffects = (effects: StripEffect[]) =>
     setWorkspace((w) => ({ ...w, draft: touch(w.draft, { effects }) }));
   const openDevices = useCallback((id?: string) => {
+    if (editLockRef.current) return;
     setDeviceDialogId(id);
     setDialog('devices');
   }, []);
@@ -765,6 +922,7 @@ export default function App() {
     );
   };
   const applyQuick = (field: EditField, value: number | null, cells = scopedCells()) => {
+    if (editLockRef.current) return;
     const result = applyEdit(latest.current.draft, cells, field, value);
     if (result.count) setWorkspace((w) => ({ ...w, draft: result.project }));
     setToast(
@@ -773,6 +931,7 @@ export default function App() {
     setQuickEdit(null);
   };
   const openQuick = (field: EditField) => {
+    if (editLockRef.current) return;
     const cells = scopedCells();
     if (cells.length) setQuickEdit({ field, cells });
     else setToast('Сначала выдели ячейки или шаги');
@@ -848,7 +1007,7 @@ export default function App() {
         }
         return;
       }
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (editLockRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key === 'Enter' && el?.closest('.matrix-cell')) {
         e.preventDefault();
         openQuick('level');
@@ -889,7 +1048,11 @@ export default function App() {
     dirty = !published || published.fingerprint !== draftFingerprint;
   const inspector = (
     <Inspector
-      project={project}
+      readOnly={editorLocked}
+      project={{
+        ...project,
+        devices: project.devices.map((d) => (d.profile === 'helmet' ? globalHelmet(d) : d)),
+      }}
       stepId={selectedStepId}
       selection={selection}
       deviceId={deviceId}
@@ -900,19 +1063,21 @@ export default function App() {
         setDialog('helmet');
       }}
       onDevice={(device) =>
-        setWorkspace((w) => ({
-          ...w,
-          draft: touch(w.draft, {
-            devices: w.draft.devices.map((d) => (d.id === device.id ? device : d)),
-          }),
-        }))
+        device.profile === 'helmet'
+          ? saveGlobalVoice(device)
+          : setWorkspace((w) => ({
+              ...w,
+              draft: touch(w.draft, {
+                devices: w.draft.devices.map((d) => (d.id === device.id ? device : d)),
+              }),
+            }))
       }
       network={network}
       onStep={changeStep}
     />
   );
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${editorLocked ? 'editing-locked' : ''}`}>
       <header className="app-header">
         <div className="brand">
           <span className="brand-mark">
@@ -924,7 +1089,7 @@ export default function App() {
             </h1>
             <input
               className="project-name"
-              disabled={!backendReady}
+              disabled={!backendReady || editorLocked}
               aria-label="Название спектакля"
               maxLength={120}
               value={project.name}
@@ -959,7 +1124,7 @@ export default function App() {
               className="icon-button"
               aria-label="Шаг левее"
               title="Переместить шаг влево"
-              disabled={selectedIndex <= 0}
+              disabled={editorLocked || selectedIndex <= 0}
               onClick={() => reorder(selectedStepId, selectedIndex - 1)}
             >
               <ChevronLeft size={14} />
@@ -968,7 +1133,7 @@ export default function App() {
               className="icon-button"
               aria-label="Шаг правее"
               title="Переместить шаг вправо"
-              disabled={selectedIndex === project.steps.length - 1}
+              disabled={editorLocked || selectedIndex === project.steps.length - 1}
               onClick={() => reorder(selectedStepId, selectedIndex + 1)}
             >
               <ChevronRight size={14} />
@@ -977,7 +1142,7 @@ export default function App() {
               className="icon-button delete-button"
               aria-label="Удалить шаг"
               title="Удалить шаг"
-              disabled={project.steps.length === 1}
+              disabled={editorLocked || project.steps.length === 1}
               onClick={remove}
             >
               <Trash2 size={14} />
@@ -985,6 +1150,38 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          <button
+            className={`edit-lock-button ${editorLocked ? 'locked' : ''}`}
+            aria-label={editorLocked ? 'Разрешить редактирование' : 'Заблокировать редактирование'}
+            aria-pressed={editorLocked}
+            disabled={
+              (!backendReady &&
+                !(network instanceof EspConsoleTransport && network.getSnapshot().connected)) ||
+              lockBusy
+            }
+            onClick={() => void changeEditorLock()}
+            title="Блокировка партитуры; спектакль и пульт продолжают работать"
+          >
+            {editorLocked ? <LockKeyhole size={17} /> : <LockKeyholeOpen size={17} />}
+            {editorLocked ? 'Просмотр' : 'Редактирование'}
+          </button>
+          {headerHelmets.map((device) => (
+            <select
+              key={device.id}
+              className="helmet-quick-preset"
+              aria-label={`Пресет голоса · ${device.name}`}
+              value={voiceBank(device).selected}
+              disabled={!backendReady}
+              title="Независимый голос: применяется сразу, не переключая сцену"
+              onChange={(e) => void chooseGlobalPreset(device, e.target.value)}
+            >
+              {voiceBank(device).presets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+          ))}
           <label
             className="preview-toggle"
             title="Включён: выбор и правки сразу исполняются. Выключен: синхронизация памяти без автозапуска."
@@ -994,7 +1191,7 @@ export default function App() {
               role="switch"
               aria-label="Предпросмотр"
               checked={!showMode}
-              disabled={publishing || !backendReady}
+              disabled={publishing || !backendReady || editorLocked}
               onChange={(e) => void changePreviewMode(e.target.checked)}
             />
             Предпросмотр
@@ -1003,19 +1200,21 @@ export default function App() {
             <span className="sync-chip" role="status">
               {!backendReady
                 ? 'Чтение партитуры…'
-                : publishing || editorSyncing
-                  ? 'Синхронизация…'
-                  : preload.pending
-                    ? `Память ${preload.stored}/${preload.total}`
-                    : !showMode
-                      ? 'Черновик · LIVE'
-                      : 'Память контроллеров'}
+                : network.getSnapshot().startupPending
+                  ? `Автостарт · память ${preload.stored}/${preload.total}`
+                  : publishing || editorSyncing
+                    ? 'Синхронизация…'
+                    : preload.pending
+                      ? `Память ${preload.stored}/${preload.total}`
+                      : !showMode
+                        ? 'Черновик · LIVE'
+                        : 'Память контроллеров'}
             </span>
           )}
           <button
             className="icon-button"
             aria-label="Приборы"
-            disabled={!backendReady}
+            disabled={!backendReady || editorLocked}
             title="Приборы"
             onClick={() => openDevices()}
           >
@@ -1032,9 +1231,11 @@ export default function App() {
           <button
             className="icon-button"
             aria-label="Эффекты ленты"
-            disabled={!backendReady}
+            disabled={!backendReady || editorLocked}
             title="Эффекты ленты"
-            onClick={() => setDialog('effects')}
+            onClick={() => {
+              if (!editLockRef.current) setDialog('effects');
+            }}
           >
             <Waves size={18} />
           </button>
@@ -1059,7 +1260,7 @@ export default function App() {
             aria-label="Загрузить JSON"
             title="Загрузить JSON"
             onClick={() => importInput.current?.click()}
-            disabled={exporting}
+            disabled={exporting || editorLocked}
           >
             <Upload size={17} />
           </button>
@@ -1081,13 +1282,15 @@ export default function App() {
             </span>
           )}
           <span
-            className={`save-dot ${saveState}`}
+            className={`save-dot ${network.getSnapshot().helmetVoiceSaved === false ? 'pending' : saveState}`}
             title={
-              saveState === 'saved'
-                ? 'Сохранено'
-                : saveState === 'pending'
-                  ? 'Сохранение'
-                  : 'Не сохранено'
+              network.getSnapshot().helmetVoiceSaved === false
+                ? 'Голос применён в RAM; ожидается запись в память'
+                : saveState === 'saved'
+                  ? 'Сохранено'
+                  : saveState === 'pending'
+                    ? 'Сохранение'
+                    : 'Не сохранено'
             }
           />
           {compact && (
@@ -1215,14 +1418,7 @@ export default function App() {
           device={helmetDevice}
           network={network}
           onClose={() => setDialog(null)}
-          onChange={(device) =>
-            setWorkspace((w) => ({
-              ...w,
-              draft: touch(w.draft, {
-                devices: w.draft.devices.map((d) => (d.id === device.id ? device : d)),
-              }),
-            }))
-          }
+          onChange={saveGlobalVoice}
         />
       )}
       {dialog === 'network' && (

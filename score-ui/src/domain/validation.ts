@@ -241,6 +241,22 @@ export function parseBackup(content: string): Workspace {
     'Неподдерживаемый формат партитуры',
   );
   validateProject(value.draft);
+  if (value.helmetVoices !== undefined)
+    ensure(
+      object(value.helmetVoices) &&
+        Object.keys(value.helmetVoices).length <= 10 &&
+        new Set(Object.keys(value.helmetVoices).map((mac) => mac.toUpperCase())).size ===
+          Object.keys(value.helmetVoices).length &&
+        Object.entries(value.helmetVoices).every(
+          ([mac, bank]) => /^(?:[0-9A-F]{2}:){5}[0-9A-F]{2}$/i.test(mac) && validVoiceBank(bank),
+        ),
+      'Неверные независимые банки шлема',
+    );
+  if (value.helmetVoiceRevision !== undefined)
+    ensure(
+      Number.isSafeInteger(value.helmetVoiceRevision) && value.helmetVoiceRevision >= 1,
+      'Неверная ревизия звука',
+    );
   if (value.backup !== undefined) {
     const b = value.backup;
     ensure(
@@ -274,5 +290,15 @@ export function parseBackup(content: string): Workspace {
       'Опубликованная версия повреждена',
     );
   }
-  return { ...value, draft: upgradeDraft(value.draft) } as unknown as Workspace;
+  return {
+    ...value,
+    ...(object(value.helmetVoices)
+      ? {
+          helmetVoices: Object.fromEntries(
+            Object.entries(value.helmetVoices).map(([mac, bank]) => [mac.toUpperCase(), bank]),
+          ),
+        }
+      : {}),
+    draft: upgradeDraft(value.draft),
+  } as unknown as Workspace;
 }

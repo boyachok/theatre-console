@@ -1,8 +1,10 @@
 #pragma once
 #include <stdint.h>
+#include "helmet_voice_wire.h"
 enum AudioMode {DRY,ROBOT,TEST};
 struct Settings {
   bool enabled=false;AudioMode mode=DRY;
+  Show::VoiceTone tone{};
   float gain=8,volume=.15f,frequency=85,mix=1,drive=0,gateDb=-70;
   bool notch=true,vocoder=false,autotune=false,monotone=false;
   bool speechChip=false;

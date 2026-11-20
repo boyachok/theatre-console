@@ -11,6 +11,7 @@ import { voiceBank } from '../domain/voice.ts';
 import type { Device } from '../domain/schema.ts';
 import type { NetworkTransport } from '../transport/network.ts';
 interface Props {
+  readOnly?: boolean;
   onHelmet: (id: string) => void;
   onDevice: (d: Device) => void;
   network: NetworkTransport;
@@ -23,6 +24,7 @@ interface Props {
   onStep: (id: string, changes: Partial<Step>) => void;
 }
 export function Inspector({
+  readOnly = false,
   project,
   stepId,
   selection,
@@ -108,273 +110,277 @@ export function Inspector({
           Ячейка
         </button>
       </div>
-      {tab === 'step' || !selection ? (
-        <>
-          <Section title="Свет">
-            <FieldPair>
-              <NumberField
-                label="Свет · вход"
-                suffix="с"
-                value={step.timings.lightIn}
-                onChange={(n) => timing('lightIn', n)}
-              />
-              <NumberField
-                label="Свет · выход"
-                suffix="с"
-                value={step.timings.lightOut}
-                onChange={(n) => timing('lightOut', n)}
-              />
-            </FieldPair>
-          </Section>
-          <Section title="Звук">
-            <FieldPair>
-              <NumberField
-                label="Звук · вход"
-                suffix="с"
-                value={step.timings.audioIn}
-                onChange={(n) => timing('audioIn', n)}
-              />
-              <NumberField
-                label="Звук · выход"
-                suffix="с"
-                value={step.timings.audioOut}
-                onChange={(n) => timing('audioOut', n)}
-              />
-            </FieldPair>
-          </Section>
-          <Section title="Задержка реле">
-            <FieldPair>
-              <NumberField
-                label="Реле · включение"
-                suffix="с"
-                value={step.timings.relayOn}
-                onChange={(n) => timing('relayOn', n)}
-              />
-              <NumberField
-                label="Реле · выключение"
-                suffix="с"
-                value={step.timings.relayOff}
-                onChange={(n) => timing('relayOff', n)}
-              />
-            </FieldPair>
-          </Section>
-        </>
-      ) : (
-        <>
-          <div className="cell-context">
-            <span>{device.name}</span>
-            <h3>{parameter?.name}</h3>
-          </div>
-          {(selection.kind === 'dimmer' || selection.kind === 'ac') && (
-            <>
-              <NumberField
-                label="Яркость"
-                value={light.value}
-                suffix="%"
-                min={0}
-                max={100}
-                step={1}
-                onChange={(n) => change({ value: n ?? 0 })}
-              />
-              <input
-                className="full-slider"
-                aria-label="Ползунок яркости"
-                type="range"
-                min="0"
-                max="100"
-                value={light.value}
-                onChange={(e) => change({ value: Number(e.target.value) })}
-              />
-              <SliderField
-                label="Задержка включения света"
-                value={light.startDelay ?? 0}
-                min={0}
-                max={3600}
-                logarithmic
-                suffix="с"
-                onChange={(startDelay) => change({ startDelay })}
-              />
-              <p className="muted">
-                До перехода сохраняется предыдущий свет и его анимация. После задержки начинаются
-                новый фейд и новая анимация. Новый шаг задаёт новую задержку.
-              </p>
-              {selection.kind === 'ac' && (
-                <p className="muted">
-                  220 В · GPIO41 Z-C → GPIO40 PSM. Только фазовое управление, не PWM. Нужны
-                  проверенные уровни 3.3 В, изоляция и охлаждение. Без Z-C импульсов нет; после
-                  краткого сбоя синхронизация восстанавливается автоматически. Предпросмотр не
-                  измеряет сеть.
-                </p>
-              )}
-              <DimmerAnimationEditor
-                key={`${step.id}/${device.id}/${selection.parameterId}`}
-                cue={light}
-                minPeriod={selection.kind === 'ac' ? 0.04 : 0.02}
-                onChange={change}
-              />
-              {fadeFields('light')}
-            </>
-          )}
-          {selection.kind === 'audio' && device.profile === 'helmet' && (
-            <Section title="Обработка голоса">
-              <div className="segmented">
-                <button
-                  className={cue.audio.voiceOn ? 'selected' : ''}
-                  onClick={() => change({ voiceOn: true })}
-                >
-                  ВКЛ
-                </button>
-                <button
-                  className={!cue.audio.voiceOn ? 'selected' : ''}
-                  onClick={() => change({ voiceOn: false })}
-                >
-                  ВЫКЛ
-                </button>
-              </div>
-              <p className="muted">
-                Живой голос INMP441 → локальный DSP → PCM5102A. Звуковой пресет общий для этого
-                шлема во всех сценах.
-              </p>
-            </Section>
-          )}
-          {selection.kind === 'audio' && device.profile !== 'helmet' && (
-            <>
-              <NumberField
-                label="Номер трека"
-                min={1}
-                max={65535}
-                step={1}
-                value={cue.audio.track}
-                placeholder="—"
-                onChange={(n) => change({ track: n === null ? null : Math.round(n) })}
-              />
-              <button className="text-button" onClick={() => change({ track: null })}>
-                Очистить трек
-              </button>
-              <NumberField
-                label="Громкость"
-                value={cue.audio.volume}
-                suffix="%"
-                max={100}
-                step={1}
-                onChange={(n) => change({ volume: n ?? 0 })}
-              />
-              <label className="animation-enable">
-                <input
-                  type="checkbox"
-                  checked={cue.audio.loop ?? false}
-                  onChange={(e) => change({ loop: e.target.checked })}
+      <fieldset className="score-edit-fieldset" disabled={readOnly}>
+        {tab === 'step' || !selection ? (
+          <>
+            <Section title="Свет">
+              <FieldPair>
+                <NumberField
+                  label="Свет · вход"
+                  suffix="с"
+                  value={step.timings.lightIn}
+                  onChange={(n) => timing('lightIn', n)}
                 />
-                Зациклить трек
-              </label>
-              <SliderField
-                label="Задержка старта трека"
-                value={cue.audio.startDelay ?? 0}
-                min={0}
-                max={3600}
-                logarithmic
-                suffix="с"
-                onChange={(startDelay) => change({ startDelay })}
-              />
-              <p className="muted">
-                От начала сцены до команды запуска. Фейд начинается с PLAY; уже играющий тот же трек
-                продолжает звучать без новой задержки.
-              </p>
-              {fadeFields('audio')}
-            </>
-          )}
-          {selection.kind === 'relay' && (
-            <>
-              <div className="segmented">
-                <button
-                  className={cue.relays[selection.parameterId].on ? 'selected' : ''}
-                  onClick={() => change({ on: true })}
-                >
-                  ВКЛ
-                </button>
-                <button
-                  className={!cue.relays[selection.parameterId].on ? 'selected' : ''}
-                  onClick={() => change({ on: false })}
-                >
-                  ВЫКЛ
-                </button>
-              </div>
-              <Section title="Задержка">
-                <FieldPair>
-                  <NumberField
-                    label="Задержка включения"
-                    suffix="с"
-                    value={cue.relays[selection.parameterId].delayOn}
-                    placeholder={String(step.timings.relayOn)}
-                    onChange={(n) => change({ delayOn: n })}
-                  />
-                  <NumberField
-                    label="Задержка выключения"
-                    suffix="с"
-                    value={cue.relays[selection.parameterId].delayOff}
-                    placeholder={String(step.timings.relayOff)}
-                    onChange={(n) => change({ delayOff: n })}
-                  />
-                </FieldPair>
-                <button
-                  className="text-button"
-                  onClick={() => change({ delayOn: null, delayOff: null })}
-                >
-                  <RotateCcw size={12} />
-                  Как в шаге
-                </button>
-              </Section>
-            </>
-          )}
-          {selection.kind === 'strip' && (
-            <>
-              <label className="field">
-                <span>Событие ленты</span>
-                <select
-                  aria-label="Событие ленты"
-                  value={
-                    cue.strip.action === 'play' ? (cue.strip.effectId ?? 'hold') : cue.strip.action
-                  }
-                  onChange={(e) =>
-                    change(
-                      e.target.value === 'hold' || e.target.value === 'stop'
-                        ? { action: e.target.value, effectId: null }
-                        : {
-                            action: 'play',
-                            effectId: e.target.value,
-                            settings: structuredClone(
-                              project.effects.find((f) => f.id === e.target.value),
-                            ),
-                          },
-                    )
-                  }
-                >
-                  <option value="hold">Продолжать</option>
-                  <option value="stop">Стоп</option>
-                  {project.effects.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {stripEffect && (
-                <>
+                <NumberField
+                  label="Свет · выход"
+                  suffix="с"
+                  value={step.timings.lightOut}
+                  onChange={(n) => timing('lightOut', n)}
+                />
+              </FieldPair>
+            </Section>
+            <Section title="Звук">
+              <FieldPair>
+                <NumberField
+                  label="Звук · вход"
+                  suffix="с"
+                  value={step.timings.audioIn}
+                  onChange={(n) => timing('audioIn', n)}
+                />
+                <NumberField
+                  label="Звук · выход"
+                  suffix="с"
+                  value={step.timings.audioOut}
+                  onChange={(n) => timing('audioOut', n)}
+                />
+              </FieldPair>
+            </Section>
+            <Section title="Задержка реле">
+              <FieldPair>
+                <NumberField
+                  label="Реле · включение"
+                  suffix="с"
+                  value={step.timings.relayOn}
+                  onChange={(n) => timing('relayOn', n)}
+                />
+                <NumberField
+                  label="Реле · выключение"
+                  suffix="с"
+                  value={step.timings.relayOff}
+                  onChange={(n) => timing('relayOff', n)}
+                />
+              </FieldPair>
+            </Section>
+          </>
+        ) : (
+          <>
+            <div className="cell-context">
+              <span>{device.name}</span>
+              <h3>{parameter?.name}</h3>
+            </div>
+            {(selection.kind === 'dimmer' || selection.kind === 'ac') && (
+              <>
+                <NumberField
+                  label="Яркость"
+                  value={light.value}
+                  suffix="%"
+                  min={0}
+                  max={100}
+                  step={1}
+                  onChange={(n) => change({ value: n ?? 0 })}
+                />
+                <input
+                  className="full-slider"
+                  aria-label="Ползунок яркости"
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={light.value}
+                  onChange={(e) => change({ value: Number(e.target.value) })}
+                />
+                <SliderField
+                  label="Задержка включения света"
+                  value={light.startDelay ?? 0}
+                  min={0}
+                  max={3600}
+                  logarithmic
+                  suffix="с"
+                  onChange={(startDelay) => change({ startDelay })}
+                />
+                <p className="muted">
+                  До перехода сохраняется предыдущий свет и его анимация. После задержки начинаются
+                  новый фейд и новая анимация. Новый шаг задаёт новую задержку.
+                </p>
+                {selection.kind === 'ac' && (
                   <p className="muted">
-                    Параметры света только этой сцены; библиотечный эффект не меняется.
+                    220 В · GPIO41 Z-C → GPIO40 PSM. Только фазовое управление, не PWM. Нужны
+                    проверенные уровни 3.3 В, изоляция и охлаждение. Без Z-C импульсов нет; после
+                    краткого сбоя синхронизация восстанавливается автоматически. Предпросмотр не
+                    измеряет сеть.
                   </p>
-                  <StripEditor
-                    effect={stripEffect}
-                    onChange={(patch) => change({ settings: { ...stripEffect, ...patch } })}
+                )}
+                <DimmerAnimationEditor
+                  key={`${step.id}/${device.id}/${selection.parameterId}`}
+                  cue={light}
+                  minPeriod={selection.kind === 'ac' ? 0.04 : 0.02}
+                  onChange={change}
+                />
+                {fadeFields('light')}
+              </>
+            )}
+            {selection.kind === 'audio' && device.profile === 'helmet' && (
+              <Section title="Обработка голоса">
+                <div className="segmented">
+                  <button
+                    className={cue.audio.voiceOn ? 'selected' : ''}
+                    onClick={() => change({ voiceOn: true })}
+                  >
+                    ВКЛ
+                  </button>
+                  <button
+                    className={!cue.audio.voiceOn ? 'selected' : ''}
+                    onClick={() => change({ voiceOn: false })}
+                  >
+                    ВЫКЛ
+                  </button>
+                </div>
+                <p className="muted">
+                  Живой голос INMP441 → локальный DSP → PCM5102A. Звуковой пресет общий для этого
+                  шлема во всех сценах.
+                </p>
+              </Section>
+            )}
+            {selection.kind === 'audio' && device.profile !== 'helmet' && (
+              <>
+                <NumberField
+                  label="Номер трека"
+                  min={1}
+                  max={65535}
+                  step={1}
+                  value={cue.audio.track}
+                  placeholder="—"
+                  onChange={(n) => change({ track: n === null ? null : Math.round(n) })}
+                />
+                <button className="text-button" onClick={() => change({ track: null })}>
+                  Очистить трек
+                </button>
+                <NumberField
+                  label="Громкость"
+                  value={cue.audio.volume}
+                  suffix="%"
+                  max={100}
+                  step={1}
+                  onChange={(n) => change({ volume: n ?? 0 })}
+                />
+                <label className="animation-enable">
+                  <input
+                    type="checkbox"
+                    checked={cue.audio.loop ?? false}
+                    onChange={(e) => change({ loop: e.target.checked })}
                   />
-                </>
-              )}
-            </>
-          )}
-        </>
-      )}
+                  Зациклить трек
+                </label>
+                <SliderField
+                  label="Задержка старта трека"
+                  value={cue.audio.startDelay ?? 0}
+                  min={0}
+                  max={3600}
+                  logarithmic
+                  suffix="с"
+                  onChange={(startDelay) => change({ startDelay })}
+                />
+                <p className="muted">
+                  От начала сцены до команды запуска. Фейд начинается с PLAY; уже играющий тот же
+                  трек продолжает звучать без новой задержки.
+                </p>
+                {fadeFields('audio')}
+              </>
+            )}
+            {selection.kind === 'relay' && (
+              <>
+                <div className="segmented">
+                  <button
+                    className={cue.relays[selection.parameterId].on ? 'selected' : ''}
+                    onClick={() => change({ on: true })}
+                  >
+                    ВКЛ
+                  </button>
+                  <button
+                    className={!cue.relays[selection.parameterId].on ? 'selected' : ''}
+                    onClick={() => change({ on: false })}
+                  >
+                    ВЫКЛ
+                  </button>
+                </div>
+                <Section title="Задержка">
+                  <FieldPair>
+                    <NumberField
+                      label="Задержка включения"
+                      suffix="с"
+                      value={cue.relays[selection.parameterId].delayOn}
+                      placeholder={String(step.timings.relayOn)}
+                      onChange={(n) => change({ delayOn: n })}
+                    />
+                    <NumberField
+                      label="Задержка выключения"
+                      suffix="с"
+                      value={cue.relays[selection.parameterId].delayOff}
+                      placeholder={String(step.timings.relayOff)}
+                      onChange={(n) => change({ delayOff: n })}
+                    />
+                  </FieldPair>
+                  <button
+                    className="text-button"
+                    onClick={() => change({ delayOn: null, delayOff: null })}
+                  >
+                    <RotateCcw size={12} />
+                    Как в шаге
+                  </button>
+                </Section>
+              </>
+            )}
+            {selection.kind === 'strip' && (
+              <>
+                <label className="field">
+                  <span>Событие ленты</span>
+                  <select
+                    aria-label="Событие ленты"
+                    value={
+                      cue.strip.action === 'play'
+                        ? (cue.strip.effectId ?? 'hold')
+                        : cue.strip.action
+                    }
+                    onChange={(e) =>
+                      change(
+                        e.target.value === 'hold' || e.target.value === 'stop'
+                          ? { action: e.target.value, effectId: null }
+                          : {
+                              action: 'play',
+                              effectId: e.target.value,
+                              settings: structuredClone(
+                                project.effects.find((f) => f.id === e.target.value),
+                              ),
+                            },
+                      )
+                    }
+                  >
+                    <option value="hold">Продолжать</option>
+                    <option value="stop">Стоп</option>
+                    {project.effects.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {stripEffect && (
+                  <>
+                    <p className="muted">
+                      Параметры света только этой сцены; библиотечный эффект не меняется.
+                    </p>
+                    <StripEditor
+                      effect={stripEffect}
+                      onChange={(patch) => change({ settings: { ...stripEffect, ...patch } })}
+                    />
+                  </>
+                )}
+              </>
+            )}
+          </>
+        )}
+      </fieldset>
       {device.profile === 'helmet' && (
-        <Section title="Звук шлема · все сцены">
+        <Section title="Звук шлема · независимо от сцен">
           <label className="field">
             <span>Пресет голоса</span>
             <select

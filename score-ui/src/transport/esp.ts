@@ -5,6 +5,7 @@ import { parseBackup } from '../domain/validation.ts';
 import type { ScoreTransport } from './preview.ts';
 import type { NetworkSnapshot, NetworkTransport, NetworkDeviceStatus } from './network.ts';
 import { INTERFACE_VERSION } from '../version.ts';
+import type { VoiceBank } from '../domain/voice.ts';
 import { compileDraft, draftDelta, type DraftPlan } from '../domain/programming.ts';
 // Retry only idempotent editor reconciliation; never automatically replay GO or I/O commands.
 class TransientRequestError extends Error {}
@@ -24,8 +25,14 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     draftFingerprint?: string;
     draftRevision?: number;
     livePreview?: boolean;
+    editorLocked?: boolean;
+    helmetVoiceRevision?: number;
   } = { version: 0 };
   private draftCache: DraftPlan | null = null;
+  private voiceBanks: Record<string, VoiceBank> = {};
+  private voiceRevision = 0;
+  private ownVoiceRevision = 0;
+  private voiceEditSerial: Record<string, number> = {};
   private editorQueue: Promise<unknown> = Promise.resolve();
   private editorRevision = 0;
   private statusRequest = 0;
@@ -91,10 +98,26 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       );
     if (stamp < this.acceptedStatus) return data;
     this.acceptedStatus = stamp;
-    if (this.token && this.token !== data.token) this.draftCache = null;
+    if (this.token && this.token !== data.token) {
+      this.draftCache = null;
+      this.voiceRevision = this.ownVoiceRevision = 0;
+    }
     this.token = data.token;
     this.manifest = data.console;
     this.clock = { server: data.serverMs, at: performance.now() };
+    if (
+      Number.isInteger(data.console.helmetVoiceRevision) &&
+      data.console.helmetVoiceRevision !== this.voiceRevision
+    ) {
+      const voices = await (await this.request('/api/console/helmet-voices', {}, 7000)).json();
+      if (voices.revision >= this.voiceRevision) {
+        this.voiceRevision = voices.revision;
+        this.voiceBanks = Object.fromEntries(
+          Object.entries(voices.banks ?? {}).map(([mac, bank]) => [mac.toUpperCase(), bank]),
+        ) as Record<string, VoiceBank>;
+      }
+      if (stamp < this.acceptedStatus) return data;
+    }
     const devices: Record<string, NetworkDeviceStatus> = {};
     for (const n of [...data.nodes, ...(data.remotes ?? [])]) {
       const key = n.mac.toUpperCase(),
@@ -146,6 +169,15 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     }
     this.snapshot = {
       connected: true,
+      editorLocked: data.console.editorLocked,
+      startupPending: data.console.startupPending,
+      startupResetAllowed: data.console.startupResetAllowed,
+      helmetVoiceRevision: this.voiceRevision,
+      helmetVoices: Number.isInteger(data.console.helmetVoiceRevision)
+        ? this.voiceBanks
+        : undefined,
+      helmetVoiceReady: data.console.helmetVoiceReady,
+      helmetVoiceSaved: data.console.helmetVoiceSaved,
       testEnabled: data.measuring,
       devices,
       masterMac: data.mac,
@@ -203,6 +235,69 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       }),
     });
   }
+  async setEditLock(locked: boolean) {
+    ++this.editorRevision;
+    await this.post('/api/console/edit-lock', { locked: Number(locked) });
+    await this.status();
+  }
+  async saveHelmetBank(mac: string, bank: VoiceBank, baseRevision: number) {
+    const key = mac.toUpperCase(),
+      serial = (this.voiceEditSerial[key] ?? 0) + 1;
+    this.voiceEditSerial[key] = serial;
+    return this.enqueue(async () => {
+      if (serial !== this.voiceEditSerial[key]) return null;
+      await this.status();
+      if (serial !== this.voiceEditSerial[key]) return null;
+      const current = this.manifest.helmetVoiceRevision ?? 1;
+      if (baseRevision !== current && this.ownVoiceRevision !== current)
+        throw new Error('Звук изменён другим редактором: обновите страницу');
+      const r = await this.request(
+        `/api/console/helmet-voices?token=${this.token}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mac: mac.toUpperCase(), bank, revision: current }),
+        },
+        10000,
+      );
+      const result = await r.json();
+      this.ownVoiceRevision = result.revision;
+      this.manifest.helmetVoiceRevision = result.revision;
+      await this.status();
+      return result;
+    });
+  }
+  async importHelmetBanks(workspace: Workspace) {
+    ++this.editorRevision;
+    for (const mac of Object.keys(this.voiceEditSerial)) ++this.voiceEditSerial[mac];
+    return this.enqueue(async () => {
+      await this.status();
+      const banks =
+        workspace.helmetVoices ??
+        Object.fromEntries(
+          workspace.draft.devices
+            .filter((d) => d.profile === 'helmet' && d.mac && d.voice)
+            .map((d) => [d.mac!.toUpperCase(), d.voice!]),
+        );
+      const r = await this.request(
+        `/api/console/helmet-voices?token=${this.token}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            import: true,
+            banks,
+            revision: this.manifest.helmetVoiceRevision ?? 1,
+          }),
+        },
+        10000,
+      );
+      const result = await r.json();
+      this.ownVoiceRevision = result.revision;
+      await this.status();
+      return result;
+    });
+  }
   async setMeasurement(enabled: boolean) {
     await this.post('/api/console/measure', { enabled: Number(enabled) });
     await this.status();
@@ -244,11 +339,15 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
     this.backupMeta = workspace.backup;
     if (!this.token) await this.status();
     await this.request(
-      `/api/console/workspace?token=${this.token}`,
+      `/api/console/${this.manifest.editorLocked ? 'workspace-metadata' : 'workspace'}?token=${this.token}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...workspace, interfaceVersion: INTERFACE_VERSION }),
+        body: JSON.stringify(
+          this.manifest.editorLocked
+            ? { backup: workspace.backup, interfaceVersion: INTERFACE_VERSION }
+            : { ...workspace, interfaceVersion: INTERFACE_VERSION },
+        ),
       },
       10000,
     );
@@ -357,6 +456,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         try {
           await this.status();
           if (revision !== this.editorRevision) return null;
+          if (this.manifest.editorLocked) return null;
           await this.uploadDraft(project);
           break;
         } catch (error) {

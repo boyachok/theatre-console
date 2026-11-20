@@ -129,6 +129,8 @@ export interface BackupInfo {
   exportedAt?: string;
 }
 export interface Workspace {
+  helmetVoices?: Record<string, import('./voice.ts').VoiceBank>;
+  helmetVoiceRevision?: number;
   backup?: BackupInfo;
   format: 'theatre-score';
   schemaVersion: 1;

@@ -1,5 +1,22 @@
 # Изменения Theatre console
 
+## 0.8.5 — EQ/разборчивость, независимый голос, lock/автостарт (НЕ установлено)
+
+- Шлем:3peak-полосы/HP/LP и параллельная gatedмикрофонная полоса с мягкой сатурацией,
+  сглаживанием/2xoversampling; limiter остаётся последним, defaultbypass точный.
+- Независимый globalvoice/EQ:145B packet сboot/session/revision/CRC/ACK, без роста512B
+  сцен/111Blegacy startup. Новый небольшой файлбанковmaster и отдельныйCRC/NVShelmet;
+  JSONbackup включаетбанки, исходные числа/партитура сохраняются raw-патчем без округления.
+- Верхнийselect только имена, работает и приlock; полныйзвук в прежнем окне. НетGO,
+  смены шага, света или отменыSTOP при выборе пресета. LegacyDevice.voice сохранён.
+- DefaulteditorLocked, backend423 для авторинга, metadataэкспорта отдельно; unlock
+  сам не публикует/не запускает. Пульт/STOP/голос продолжают работать.
+- Обычныйboot: один FIRSTпосле всехпланов/свежихready/ACKголоса, затемFORWARD→вторая.
+  Нетreconnect/browserre-arm; STOP/service/unlock отменяет pending. Panic/WDT/brownout
+  не запускают сцену сами. Пользователь явно согласовал автостарт выходов при включении.
+-88domain/TypeScript, nativeASan/UBSan/DSP/wire/storage/boot и MOCKbrowser/mobile/SDK;
+  физическая акустика/нагрузки/CPU пока не проверены. [Контракт](docs/HELMET_EQ_STARTUP_085.md).
+
 ## 0.8.4 — батарея пульта /1sдвухкнопочный жест (подготовлено, не установлено)
 
 - RemoteGPIO4/ADC1: делитель2:1 для1S, фильтр/стабильность/свежесть, ручныеFULL/LOW

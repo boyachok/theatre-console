@@ -19,12 +19,12 @@ struct Node {
 struct Rx {uint8_t mac[6]{};Packet p{};int8_t rssi=-50;};
 struct Plan {uint8_t mac[6]{};std::vector<Show::Cue> cues;uint32_t checksum=0;};
 struct Publication {
- std::vector<Plan> plans,preview;std::vector<int> stepIds{0,1};uint32_t version=12,run=300,sequence=0;uint16_t step=0,previewTotal=2;uint8_t reason=0;bool active=false,isPreview=false,syncPending=false,programPreview=false,livePreview=false,dirty=false;
+ std::vector<Plan> plans,preview;std::vector<int> stepIds{0,1};uint32_t version=12,run=300,sequence=0;uint16_t step=0,previewTotal=2;uint8_t reason=0;bool active=false,isPreview=false,syncPending=false,programPreview=false,livePreview=false,dirty=false,cursorValid=false;
  bool draftUnsaved()const{return dirty;}
  uint16_t previewIndex()const{return programPreview?step:0;}
- bool goDraft(uint16_t target,uint8_t why){if(target>=previewTotal)return false;step=target;reason=why;active=isPreview=programPreview=true;sequence++;return true;}
+ bool goDraft(uint16_t target,uint8_t why){if(target>=previewTotal)return false;step=target;reason=why;active=cursorValid=isPreview=programPreview=true;sequence++;return true;}
  Plan *find(const uint8_t *mac,bool draft=false){for(auto &p:(draft?preview:plans))if(!memcmp(mac,p.mac,6))return &p;return nullptr;}
- bool go(uint16_t next,uint8_t why){if(next>=stepIds.size())return false;step=next;reason=why;isPreview=false;active=true;if(!++sequence)++sequence;return true;}
+ bool go(uint16_t next,uint8_t why){if(next>=stepIds.size())return false;step=next;reason=why;isPreview=false;active=cursorValid=true;if(!++sequence)++sequence;return true;}
 }showMaster;
 struct Frame {uint8_t mac[6]{};uint32_t at=0;std::vector<uint8_t> bytes;};
 struct Network {
@@ -40,10 +40,13 @@ std::vector<Packet> replies;
 bool sendPacket(const uint8_t*,const Packet &p){replies.push_back(p);return true;}
 int findNode(const uint8_t *mac,bool){for(int i=0;i<MAX_NODES;i++)if(nodes[i].used&&!memcmp(mac,nodes[i].mac,6))return i;return -1;}
 struct Metrics {Health health=GOOD;};Metrics metrics(const Node&){return {};}
+#include "../console/startup_policy.h"
+StartupPolicy startupShow;bool voiceReady=true;bool globalVoiceReady(){return voiceReady;}
 #include "../console/scene_delivery.h"
 template<class T>bool receive(const T &p){LanMessage m;memcpy(m.mac,masterMAC,6);m.length=sizeof(p);memcpy(m.payload,&p,sizeof(p));return handleShowMessage(m);}
 Show::Packet base(uint8_t type){Show::Packet p{};p.magic=Show::MAGIC;p.protocol=Show::PROTOCOL;p.type=type;p.size=sizeof(p);p.session=77;p.deviceBoot=700;p.run=100;p.transition=1;p.reserved=Show::ACTIVE;p.version=12;p.total=2;return p;}
 int main(){
+ StartupPolicy boot;boot.begin(true);assert(boot.waiting()&&!boot.take(false));assert(boot.take(true)&&!boot.take(true));boot.begin(true);assert(!boot.waiting());StartupPolicy stopped;stopped.begin(true);stopped.cancel();assert(!stopped.take(true));
  assert(Show::REPEAT_MS==200&&sizeof(Show::RunPacket)==44&&Show::PROTOCOL==12);
  actors.begin();showRunner.begin();mockNow=100;
  Show::Cue cues[2]{};for(int i=0;i<2;i++){cues[i].dimmerMask=1;cues[i].dimmers[0]={(uint8_t)(60+i*120),1000,0};}
@@ -92,5 +95,6 @@ int main(){
  showMaster.preview=showMaster.plans;showMaster.isPreview=true;showMaster.previewTotal=2;showMaster.sequence++;for(auto &n:nodes)n.nextScore=0;
  mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1&&network.sent[0].bytes.size()==sizeof(Show::Packet));Show::Packet draft;memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.version==0);
  showMaster.programPreview=true;showMaster.step=1;showMaster.sequence++;for(auto &n:nodes)n.nextScore=0;mockNow+=10;network.sent.clear();showMasterTick();assert(network.sent.size()==1);memcpy(&draft,network.sent[0].bytes.data(),sizeof(draft));assert(draft.type==Show::PREVIEW&&draft.step==1&&draft.cue.dimmers[0].value==180&&showMaster.version==12); // Full RAM bank follows the master's selected index, not cue0.
+ showMaster.livePreview=false;showMaster.dirty=false;showMaster.cursorValid=true;voiceReady=false;assert(goPublished(0,0));voiceReady=true; // Once started, changing a voice preset must not block scene navigation.
  puts("Actual scene delivery: 44B indexed RUN from CRC-bound flash plans, no legacy full-cue fallback; explicit draft PREVIEW, preload barrier, 200ms/10-node scheduler, stale/negative ACK isolation, current-scene confirmation and STOP latch passed");
 }
