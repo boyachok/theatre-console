@@ -158,7 +158,7 @@ const server = createServer(async (req, res) => {
         }
         peer.requestId = (peer.requestId ?? 0) + 1;
         peer.commandPending = false;
-        peer.commandStatus = 'applied';
+        peer.commandStatus = 'accepted';
         res.end(JSON.stringify({ requestId: peer.requestId }));
         return;
       }

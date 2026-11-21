@@ -297,7 +297,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       if (!current || current.deviceBoot !== node.deviceBoot || current.requestId !== requestId)
         throw new Error('Сессия/команда изменилась; перечитайте настройки');
       if (current.commandPending) continue;
-      if (current.commandStatus !== 'APPLIED' && current.commandStatus !== 'applied')
+      if (!['accepted', 'applied'].includes(String(current.commandStatus).toLowerCase()))
         throw new Error(current.commandStatus || 'Нет подтверждения настройки');
       if (
         ac

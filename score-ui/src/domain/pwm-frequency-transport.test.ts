@@ -51,7 +51,7 @@ function server(
                 },
             requestId: posts,
             commandPending: false,
-            commandStatus: 'applied',
+            commandStatus: 'accepted',
           },
         ],
         console: {

@@ -12,6 +12,7 @@ function server(
     requested?: number;
     uncertain?: boolean;
     reboot?: boolean;
+    result?: string;
   } = {},
 ) {
   let pulse = 200,
@@ -40,7 +41,7 @@ function server(
             timeouts: 0,
             requestId: posts,
             commandPending: false,
-            commandStatus: 'applied',
+            commandStatus: options.result ?? 'accepted',
             acDimmer: options.unsupported
               ? null
               : {
@@ -128,6 +129,19 @@ test('AC pulse rejects active load/show, stale telemetry, locked/old slave and i
       globalThis.fetch = s.fetcher;
       await assert.rejects(() => new EspConsoleTransport().setAcPulseUs(mac, value));
       assert.equal(s.posts, 0);
+    }
+  } finally {
+    globalThis.fetch = old;
+  }
+});
+test('production accepted ACK succeeds; negative/unknown ACK cannot be inferred from matching telemetry', async () => {
+  const old = globalThis.fetch;
+  try {
+    for (const result of ['not_ready', 'io_or_queue_error', 'UNKNOWN: no ACK; may have executed']) {
+      const s = server({ result });
+      globalThis.fetch = s.fetcher;
+      await assert.rejects(() => new EspConsoleTransport().setAcPulseUs(mac, 300));
+      assert.equal(s.posts, 1);
     }
   } finally {
     globalThis.fetch = old;
