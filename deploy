@@ -32,6 +32,17 @@ else
   OUT="$PWD/build/$PROFILE-$ROLE-ch$CHANNEL"
   LINK="ESP-NOW channel $CHANNEL"
 fi
+# Targeted AC rollback: only fixture6; PWM settings/protocol remain current.
+AC_PROFILE="${AC_PROFILE:-current}"
+case "$AC_PROFILE" in
+ current) ;;
+ legacy082)
+  [[ "$ROLE" == slave && "$PROFILE" == console ]] || { echo 'AC_PROFILE=legacy082 is only for console slave';exit 1; }
+  [[ "$ACTION" != usb ]] || { echo 'AC rollback refuses full-layout USB flash; use build or separately authorized app-only OTA';exit 1; }
+  FLAGS="$FLAGS -DTHEATRE_AC_LEGACY_082=1";OUT="$OUT-ac082"
+  ;;
+ *) echo 'AC_PROFILE must be current or legacy082';exit 1 ;;
+esac
 # Optional offline/bench slave variants; defaults stay byte-compatible 8-bit/25kHz.
 if [[ "$ROLE" == slave && "$PROFILE" == console && ( -n "${PWM_BITS:-}" || -n "${PWM_HZ:-}" ) ]]; then
   PWM_BITS="${PWM_BITS:-8}"
@@ -70,6 +81,7 @@ check_mac(){
   local mac expected
   mac="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"
   expected="$(printf '%s' "${EXPECTED_MAC:-}" | tr '[:lower:]' '[:upper:]')"
+  if [[ "$AC_PROFILE" == legacy082 && "$mac" != 'C0:4E:30:29:F4:8C' ]]; then echo 'Refusing targeted AC rollback on any board except fixture6 C0:4E:30:29:F4:8C';exit 1;fi
   if [[ "$ROLE" == helmet && -z "$expected" ]]; then echo 'Helmet updates require EXPECTED_MAC=...; IP/USB port is not identity.';exit 1;fi
   if [[ "$ROLE" == master && -z "$expected" ]]; then expected='A0:85:E3:E2:BC:D4';fi
   if [[ "$ROLE" != remote && "$mac" == '30:30:F9:1B:FD:6C' ]]; then echo 'Refusing to replace the known physical remote with another role.' >&2;exit 1;fi

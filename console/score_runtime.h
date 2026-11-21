@@ -25,8 +25,9 @@ public:
  bool active=false;uint32_t run=0,sequence=0,lastCueCRC=0;uint16_t step=0;
  explicit Runner(Actors &a):actors(a){}
  Mains::State acStatus(){return ac.diagnostics();}
- Result saveAcPulse(uint16_t us){return active?NOT_READY:ac.savePulse(us);}
- AcPulse::Report acReport(){auto s=ac.diagnostics();AcPulse::Report r;r.pulseUs=s.pulseUs;r.configFault=ac.pulseConfigFault();r.enabled=s.enabled;r.qualified=s.qualified;r.requested=s.requested;r.paired=s.paired;r.latched=s.latched;r.halfUs=s.halfUs;r.good=s.good;r.scheduled=s.scheduled;r.late=s.late;r.skipped=s.skippedPulses;r.syncLosses=s.syncLosses;r.fault=s.fault;return r;}
+ uint16_t acPulseUs(){return stateAcPulseUs(ac.diagnostics());}
+ Result saveAcPulse(uint16_t us){return !AcProfile::PULSE_CONFIGURABLE?INVALID:active?NOT_READY:ac.savePulse(us);}
+ AcPulse::Report acReport(){auto s=ac.diagnostics();AcPulse::Report r;r.pulseUs=stateAcPulseUs(s);r.maxUs=AcProfile::MAX_PULSE_US;r.configFault=ac.pulseConfigFault();r.enabled=s.enabled;r.qualified=s.qualified;r.requested=s.requested;r.paired=s.paired;r.latched=s.latched;r.halfUs=s.halfUs;r.good=s.good;r.scheduled=s.scheduled;r.late=s.late;r.skipped=s.skippedPulses;r.syncLosses=s.syncLosses;r.fault=s.fault;return r;}
  void begin(){ac.begin();relayConfig.begin("stage-io",false);relayMode2=relayConfig.getUChar("relayMode2",0);if(relayMode2>2)relayMode2=0;writeRelay(1,false);strip.begin();ac.monitor();}
 #ifdef THEATRE_HOST_TEST
  bool acZeroForTest(uint64_t at,Mains::Pulse &pulse){return ac.zeroForTest(at,pulse);}

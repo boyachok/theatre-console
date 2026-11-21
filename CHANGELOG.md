@@ -1,5 +1,18 @@
 # Изменения Theatre console
 
+## 0.8.9 — подготовленный AC082профиль толькодля№6, НЕ установлен
+
+- `AC_PROFILE=legacy082`: Mains namespace токен-идентичен0.8.2, fixedRMT200мкс,
+  без регулируемогоpulseNVS и егоAC_REPORTcapability. STOP/RMTсериализация сохранена.
+- PWM12/числоваячастота/CRC/NVS/инверсии/плеер/партитура не откатываются.
+  Legacyкандидатигнорирует/неперезаписываетстарыйpulse-v1, rejectsAC_PULSE.
+- Z-Cпотеря→6достоверныхинтервалов→продолжениепринятойсценыбезreboot/re-GO;
+  hardCPU/resourceзащиты не отключены. Причина реальногоотключения не установлена.
+- CLIограничивает профильconsole/slave/MAC№6; full-layoutUSBзапрещён.
+- NativeASan/UBSan/точнаяfixture/Runner/PWM2001/STOPthread/CLI,95domain/TS/browser,
+  SDKslavelegacy+current прошли. Платы не прошивались, master8/прочие7 остаются.
+  [Контракт/границы обещания](docs/AC_ROLLBACK_089.md).
+
 ## 0.8.8 — master UI: реальное имя успешного ACK
 
 - Во время разрешённой0.8.7 OTA обнаружено: productioncommandStatus=`accepted`,

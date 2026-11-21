@@ -2,14 +2,42 @@
 #include <Arduino.h>
 #include "hardware.h"
 #include "ac_phase.h"
+#include "control_types.h"
+#include "ac_pulse.h"
+#if THEATRE_AC_LEGACY_082
+struct AcConfigStorage {static constexpr uint16_t pulseUs=200;static constexpr bool fault=false;void begin(){}Result save(uint16_t){return INVALID;}};
+#else
 #include "ac_pulse_store.h"
+using AcConfigStorage=AcPulse::Store;
+#endif
+inline bool applyAcPulse(Mains::Phase &phase,uint16_t us){
+#if THEATRE_AC_LEGACY_082
+ (void)phase;return us==200;
+#else
+ return phase.configurePulse(us);
+#endif
+}
+inline uint16_t capturedAcPulseUs(const Mains::Pulse &p){
+#if THEATRE_AC_LEGACY_082
+ (void)p;return 200;
+#else
+ return p.pulseUs;
+#endif
+}
+inline uint16_t stateAcPulseUs(const Mains::State &s){
+#if THEATRE_AC_LEGACY_082
+ (void)s;return 200;
+#else
+ return s.pulseUs;
+#endif
+}
 #if defined(THEATRE_HOST_TEST) && !defined(THEATRE_AC_BACKEND_TEST)
 class AcDimmer {
- Mains::Phase phase;AcPulse::Store pulseConfig;
+ Mains::Phase phase;AcConfigStorage pulseConfig;
 public:
- void begin(){digitalWrite(AC_GATE_PIN,LOW);pinMode(AC_GATE_PIN,OUTPUT);pinMode(AC_ZC_PIN,INPUT);pulseConfig.begin();phase.configurePulse(pulseConfig.pulseUs);}
+ void begin(){digitalWrite(AC_GATE_PIN,LOW);pinMode(AC_GATE_PIN,OUTPUT);pinMode(AC_ZC_PIN,INPUT);pulseConfig.begin();applyAcPulse(phase,pulseConfig.pulseUs);}
  bool pulseConfigFault()const{return pulseConfig.fault;}
- Result savePulse(uint16_t us){auto s=phase.state();if(!AcPulse::valid(us))return INVALID;if(s.requested||s.paired)return NOT_READY;auto result=pulseConfig.save(us);if(result==APPLIED&&!phase.configurePulse(us))return IO_ERROR;return result;}
+ Result savePulse(uint16_t us){if(!AcProfile::PULSE_CONFIGURABLE)return INVALID;auto s=phase.state();if(!AcPulse::valid(us))return INVALID;if(s.requested||s.paired)return NOT_READY;auto result=pulseConfig.save(us);if(result==APPLIED&&!applyAcPulse(phase,us))return IO_ERROR;return result;}
  bool monitor(){return configure(true,false);}
  bool configure(bool on,bool rearm){if(!on){off();return true;}if(pulseConfig.fault){phase.trip(Mains::RESOURCE);return false;}if(rearm||!phase.state().enabled)phase.arm((uint64_t)millis()*1000);return true;}
  void off(){phase.level(0);}
@@ -42,7 +70,7 @@ struct AcTelemetry {
  uint32_t highUs=0,lowUs=0;AcIncident incident{};AcIncident events[8]{};uint8_t eventsCount=0;
 };
 class AcDimmer {
- Mains::Phase phase;AcPulse::Store pulseConfig;portMUX_TYPE mux=portMUX_INITIALIZER_UNLOCKED;TaskHandle_t task=nullptr;SemaphoreHandle_t io=nullptr;
+ Mains::Phase phase;AcConfigStorage pulseConfig;portMUX_TYPE mux=portMUX_INITIALIZER_UNLOCKED;TaskHandle_t task=nullptr;SemaphoreHandle_t io=nullptr;
  uint64_t rawAt=0,fallAt=0;uint32_t rawPeriods[128]{},rawEdges=0,highUs=0,lowUs=0,submits=0,lastSubmitLatency=0,maxSubmitLatency=0,lastSubmitDuration=0,maxSubmitDuration=0;uint8_t rawHead=0,rawSize=0;
  AcIncident incident{},events[8]{};uint8_t eventHead=0,eventSize=0,incidentSize=0;uint32_t incidentPeriods[64]{},seenEvent=0;
  Mains::Pulse latest{};bool pending=false,ready=false,attached=false,mapped=false,irqReady=false;uint32_t signal=SIG_GPIO_OUT_IDX;rmt_data_t symbols[2]{};
@@ -61,7 +89,7 @@ class AcDimmer {
    else{
     portENTER_CRITICAL(&mux);if(!mapped){esp_rom_gpio_connect_out_signal(AC_GATE_PIN,signal,false,false);mapped=true;}portEXIT_CRITICAL(&mux);
     now=esp_timer_get_time();uint32_t wait=p.fire>now?(uint32_t)(p.fire-now):1;
-    symbols[0].level0=0;symbols[0].duration0=wait;symbols[0].level1=1;symbols[0].duration1=p.pulseUs;
+    symbols[0].level0=0;symbols[0].duration0=wait;symbols[0].level1=1;symbols[0].duration1=capturedAcPulseUs(p);
     symbols[1].level0=0;symbols[1].duration0=100;symbols[1].level1=0;symbols[1].duration1=1;
     bool ok=rmtWriteAsync(AC_GATE_PIN,symbols,2);uint64_t after=esp_timer_get_time();
     portENTER_CRITICAL(&mux);
@@ -79,15 +107,15 @@ public:
 #ifdef THEATRE_AC_BACKEND_TEST
  void testService(){service();}
 #endif
- void begin(){digitalWrite(AC_GATE_PIN,LOW);pinMode(AC_GATE_PIN,OUTPUT);pinMode(AC_ZC_PIN,INPUT);pulseConfig.begin();phase.configurePulse(pulseConfig.pulseUs);}
+ void begin(){digitalWrite(AC_GATE_PIN,LOW);pinMode(AC_GATE_PIN,OUTPUT);pinMode(AC_ZC_PIN,INPUT);pulseConfig.begin();applyAcPulse(phase,pulseConfig.pulseUs);}
  bool pulseConfigFault()const{return pulseConfig.fault;}
  Result savePulse(uint16_t us){
-  if(!AcPulse::valid(us))return INVALID;
+  if(!AcProfile::PULSE_CONFIGURABLE||!AcPulse::valid(us))return INVALID;
   if(io)xSemaphoreTake(io,portMAX_DELAY);
   portENTER_CRITICAL(&mux);auto s=phase.state();bool quiet=!s.requested&&!s.paired;if(quiet){pending=false;gateLow();}portEXIT_CRITICAL(&mux);
   if(io)xSemaphoreGive(io);if(!quiet)return NOT_READY;
   auto result=pulseConfig.save(us);if(result!=APPLIED)return result;
-  portENTER_CRITICAL(&mux);bool ok=phase.configurePulse(us);if(!ok)fail(Mains::RESOURCE);portEXIT_CRITICAL(&mux);return ok?APPLIED:IO_ERROR;
+  portENTER_CRITICAL(&mux);bool ok=applyAcPulse(phase,us);if(!ok)fail(Mains::RESOURCE);portEXIT_CRITICAL(&mux);return ok?APPLIED:IO_ERROR;
  }
  bool configure(bool on,bool rearm){
   if(!on){off();return true;}if(pulseConfig.fault){portENTER_CRITICAL(&mux);fail(Mains::RESOURCE);portEXIT_CRITICAL(&mux);return false;}if(!io)io=xSemaphoreCreateMutex();
