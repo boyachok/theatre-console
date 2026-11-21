@@ -66,7 +66,7 @@ uint32_t masterSession=0, masterSeen=0, lastProbe=0, helloAt=0;
 uint8_t assignedId=0;
 uint32_t lastProbeSeq=0;
 
-struct Rx { VoiceReport voice{}; uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm;PwmFrequency::Report frequency{}; uint32_t pwmHz=0;char firmwareVersion[24]{};uint8_t firmwareRole=0,firmwareFlags=0; int8_t rssi; uint32_t atUs; };
+struct Rx { AcPulse::Report ac{};VoiceReport voice{}; uint8_t mac[6]; Packet p; UartStats uart;PlayerDebug playerDebug{}; PwmStatus pwm;PwmFrequency::Report frequency{}; uint32_t pwmHz=0;char firmwareVersion[24]{};uint8_t firmwareRole=0,firmwareFlags=0; int8_t rssi; uint32_t atUs; };
 void handleShowAck(const Rx &r);
 struct Node;bool currentSceneConfirmed(const Node &n);const char *sceneStatus(const Node &n);
 bool handleRemoteRx(const Rx &r);void remoteMasterTick();void resetRemoteNetwork();void resetRemoteStats();void pauseRemoteMeasurements();bool identifyRemote(const uint8_t *mac);String remoteStatusJSON();bool navigateCurrent(uint8_t action);
@@ -83,6 +83,7 @@ struct Node {
   PwmStatus pwmConfig{};uint32_t pwmConfigAt=0,pwmReportSequence=0;
   uint32_t requestId=0,requestStartedAt=0,requestDeadline=0;bool boundedRequest=false;int32_t commandAckMs=-1;
   String uiClient;uint32_t uiSequence=0;
+  AcPulse::Report ac{};uint32_t acAt=0;bool acSupported=false;
   PwmFrequency::Report frequency{};bool frequencySupported=false;
   uint32_t pwmHz=0;bool scoreSupported=false,localScoreSupported=false;uint32_t scoreLoaded=0,scoreChecksum=0,scoreStoredUptime=0,scoreNext=0,scoreAt=0,scoreSeq=0,scoreFeedbackAt=0,scoreFeedbackUptime=0,scoreSent=0,scoreReceived=0,nextScore=0,nextStore=0;uint16_t scoreStep=0;uint8_t scoreResult=NOT_READY;int32_t scoreRtt=-1;
   Sample samples[WINDOW];
@@ -111,7 +112,7 @@ void networkSessionChanged() {
   lastProbe=lastProbeSeq=probeReceivedAt=helloAt=debugUntil=0;
   lastControlId=0;lastControlResult=APPLIED;masterKnown=false;assignedId=0;
   if(RADIO_MASTER)for(auto &n:nodes)if(n.used){
-    n.pending=false;n.deferred=false;n.commandStatus="network_changed";n.deviceBoot=0;n.voiceAt=0;n.firmwareVersion=String();n.reportAt=0;n.reportUptime=0;n.pwmHz=0;n.frequencySupported=false;n.frequency={};n.pwmConfigAt=0;n.pwmConfigSupported=false;
+    n.pending=false;n.deferred=false;n.commandStatus="network_changed";n.deviceBoot=0;n.voiceAt=0;n.firmwareVersion=String();n.reportAt=0;n.reportUptime=0;n.pwmHz=0;n.acSupported=false;n.acAt=0;n.ac={};n.frequencySupported=false;n.frequency={};n.pwmConfigAt=0;n.pwmConfigSupported=false;
     n.hasReply=false;n.uartAt=0;n.uartUptime=0;
   }
 }
@@ -144,6 +145,8 @@ bool decodeMessage(const LanMessage &message,Rx &r) {
   const uint8_t *data=message.payload;int len=message.length;
   if(len==(int)sizeof(VoiceReport)&&data[4]==PROTOCOL&&data[5]==VOICE_REPORT){
     VoiceReport p;memcpy(&p,data,sizeof(p));if(p.magic!=MAGIC||p.size!=sizeof(p)||p.ready>1||p.enabled>1||!std::isfinite(p.inputLevel)||!std::isfinite(p.outputLevel)||!std::isfinite(p.load)||p.inputLevel<0||p.outputLevel<0||p.load<0)return false;r.voice=p;r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;
+  }else if(len==(int)sizeof(AcPulse::Report)&&data[4]==PROTOCOL&&data[5]==AC_REPORT){
+    memcpy(&r.ac,data,sizeof(r.ac));if(r.ac.magic!=MAGIC||r.ac.size!=sizeof(r.ac)||!r.ac.deviceBoot||!r.ac.sequence||!AcPulse::validReport(r.ac))return false;r.p.protocol=r.ac.protocol;r.p.type=r.ac.type;r.p.session=r.ac.session;r.p.deviceBoot=r.ac.deviceBoot;r.p.uptime=r.ac.uptime;
   }else if(len==(int)sizeof(FirmwarePacket)&&data[4]==PROTOCOL&&data[5]==FIRMWARE_REPORT){
     FirmwarePacket p;memcpy(&p,data,sizeof(p));if(!validFirmware(p))return false;
     r.p.protocol=p.protocol;r.p.type=p.type;r.p.session=p.session;r.p.deviceBoot=p.deviceBoot;r.p.uptime=p.uptime;r.firmwareRole=p.role;r.firmwareFlags=p.reserved[0];memcpy(r.firmwareVersion,p.version,sizeof(p.version));
@@ -180,11 +183,12 @@ void sendUartReport() {
   if(extendedDebugRequested)network.send(masterMAC,(const uint8_t*)&full,sizeof(full));
   else{p.size=sizeof(p);network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}
 }
+void sendAcReport(){if(!masterKnown||!heartbeatFresh())return;static uint32_t seq=0;auto p=showRunner.acReport();p.magic=MAGIC;p.protocol=PROTOCOL;p.type=AC_REPORT;p.size=sizeof(p);p.session=masterSession;p.deviceBoot=bootSession;p.uptime=millis();p.sequence=++seq;if(!p.sequence)p.sequence=++seq;network.send(masterMAC,(const uint8_t*)&p,sizeof(p));}
 void sendPwmReport(){
   if(!masterKnown||!heartbeatFresh())return;
   PwmPacket p{};p.magic=MAGIC;p.protocol=PROTOCOL;p.type=PWM_REPORT;p.size=sizeof(p);
   p.session=masterSession;p.deviceBoot=bootSession;p.uptime=millis();p.nodeId=assignedId;
-  p.config=actors.pwmStatus();auto f=actors.frequencyStatus();memcpy(p.reserved,&f,sizeof(f));p.frequency=actors.pwmFrequency();p.reportSeq=++pwmReportSeq;if(!p.reportSeq)p.reportSeq=++pwmReportSeq;network.send(masterMAC,(const uint8_t*)&p,sizeof(p));
+  p.config=actors.pwmStatus();auto f=actors.frequencyStatus();memcpy(p.reserved,&f,sizeof(f));p.frequency=actors.pwmFrequency();p.reportSeq=++pwmReportSeq;if(!p.reportSeq)p.reportSeq=++pwmReportSeq;network.send(masterMAC,(const uint8_t*)&p,sizeof(p));sendAcReport();
 }
 void led(Health h) {
   uint32_t now=millis(),color=networkLedColor(h,now,identifyUntil&&(int32_t)(identifyUntil-now)>0);
@@ -272,6 +276,7 @@ bool queueCommand(int i,Op op,uint8_t channel=0,uint16_t value=0,uint32_t deadli
   if((op==PWM||op==PWM_SWITCH||op==PWM_CONFIG)&&channel>n.pwmChannels)return false;
   if(op==PWM_CONFIG&&!n.pwmConfigSupported)return false;
   if(op==PWM_FREQUENCY&&(!n.frequencySupported||!PwmFrequency::valid(value,n.frequency.bits)||n.helmet||editorLocked||startupShow.waiting()||showMaster.active||showMaster.livePreview||showMaster.syncPending))return false;
+  if(op==AC_PULSE&&(!n.acSupported||!AcPulse::valid(value)||n.helmet||millis()-n.acAt>=3000||n.ac.requested||n.ac.paired||editorLocked||startupShow.waiting()||showMaster.active||showMaster.livePreview||showMaster.syncPending))return false;
   if(op==RELAY_CONFIG&&!n.pwmConfigSupported){
     if(n.reported.relayOn||n.reported.audioState==1)return false;
     for(int ch=0;ch<PWM_COUNT;ch++)if(n.reported.pwm[ch])return false;
@@ -311,6 +316,7 @@ void handleMasterRx(const Rx &r) {
   if(r.p.type==VOICE_REPORT){int i=findNode(r.mac,false);if(i>=0&&nodes[i].helmet&&nodes[i].deviceBoot==r.p.deviceBoot&&(!nodes[i].voiceAt||(int32_t)(r.p.uptime-nodes[i].voice.uptime)>=0)){nodes[i].voice=r.voice;nodes[i].voiceAt=millis();}return;}
   if(r.p.type==FIRMWARE_REPORT){int i=findNode(r.mac,false);if(i>=0&&nodes[i].deviceBoot==r.p.deviceBoot&&r.firmwareRole==(nodes[i].helmet?FW_HELMET:FW_SLAVE)){nodes[i].firmwareVersion=String(r.firmwareVersion);nodes[i].soundSupported=nodes[i].helmet&&r.firmwareFlags==1;}return;}
   if(r.p.type==SCORE_ACK){handleShowAck(r);return;}
+  if(r.p.type==AC_REPORT){int i=findNode(r.mac,false);if(i<0)return;auto &n=nodes[i];if(n.helmet||n.deviceBoot!=r.ac.deviceBoot||!newSequence(r.ac.sequence,n.ac.sequence))return;n.ac=r.ac;n.acAt=millis();n.acSupported=true;return;}
   if(r.p.type==PWM_REPORT){
     int i=findNode(r.mac,false);if(i<0)return;Node &n=nodes[i];
     if(n.deviceBoot!=r.p.deviceBoot||!r.p.seq||!newSequence(r.p.seq,n.pwmReportSequence))return;
@@ -330,7 +336,7 @@ void handleMasterRx(const Rx &r) {
     n.pending=false;n.deferred=false;n.commandStatus="session_changed";n.uartAt=0;n.uartUptime=0;
   }
   n.deviceBoot=r.p.deviceBoot;n.protocol=r.p.protocol;
-  if(newBoot){n.frequencySupported=false;n.frequency={};n.soundSupported=false;n.soundRevision=n.soundHash=n.nextSound=0;n.voiceAt=0;n.firmwareVersion=String();n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
+  if(newBoot){n.acSupported=false;n.acAt=0;n.ac={};n.frequencySupported=false;n.frequency={};n.soundSupported=false;n.soundRevision=n.soundHash=n.nextSound=0;n.voiceAt=0;n.firmwareVersion=String();n.pwmHz=0;n.pwmConfigAt=0;n.pwmReportSequence=0;n.pwmConfigSupported=false;n.scoreLoaded=n.scoreChecksum=n.scoreNext=n.scoreAt=n.scoreFeedbackAt=0;n.scoreSupported=n.localScoreSupported=false;}
   if(newBoot||!n.reportAt||(int32_t)(r.p.uptime-n.reportUptime)>=0) {
     if(r.p.type==HELLO||r.p.type==ECHO){n.helmet=helmetTag(r.p);n.pwmChannels=n.helmet?0:(r.p.protocol==LEGACY_PROTOCOL?4:PWM_COUNT);n.pwmHz=reportedPWMFrequency(r.p);n.pwmConfigSupported=!n.helmet&&r.p.protocol==PROTOCOL&&r.p.padding[0]=='P'&&r.p.padding[2]>=2;n.scoreSupported=r.p.padding[0]=='P'&&r.p.padding[2]>=4;n.localScoreSupported=localScoreTag(r.p);}
     n.reported=r.p.state;n.reportAt=millis();n.reportUptime=r.p.uptime;
@@ -399,7 +405,7 @@ void handleSlaveRx(const Rx &r) {
       bool fresh=heartbeatFresh()&&(uint32_t)((uint32_t)esp_timer_get_time()-r.atUs)<500000;
       if((Op)r.p.op==ALL_OFF)showRunner.stop();
       if((Op)r.p.op==AUDIO_STOP)showRunner.stopAudio();
-      result=(otaSafetyLock&&!safeDuringOTA((Op)r.p.op,r.p.value))||(showRunner.active&&(manualAudioChanges((Op)r.p.op)||(Op)r.p.op==PWM_FREQUENCY))?NOT_READY:actors.apply((Op)r.p.op,r.p.channel,r.p.value,fresh);
+      result=(otaSafetyLock&&!safeDuringOTA((Op)r.p.op,r.p.value))||(showRunner.active&&(manualAudioChanges((Op)r.p.op)||(Op)r.p.op==PWM_FREQUENCY||(Op)r.p.op==AC_PULSE))?NOT_READY:((Op)r.p.op==AC_PULSE?(fresh?showRunner.saveAcPulse(r.p.value):LEASE_EXPIRED):actors.apply((Op)r.p.op,r.p.channel,r.p.value,fresh));
       lastControlId=r.p.commandId;lastControlResult=result;
     }
     Packet reply=packet(COMMAND_ACK,masterSession);reply.deviceBoot=bootSession;
@@ -454,6 +460,7 @@ void linkTick() {
     if(debugUntil&&(int32_t)(debugUntil-now)>0&&(int32_t)(now-nextDebugAt)>=0){sendUartReport();nextDebugAt=now+1000;}
   }
 }
+String acJSON(const AcPulse::Report &a,uint32_t age){if(!AcPulse::validReport(a))return "null";return String("{\"pulseUs\":")+String(a.pulseUs)+",\"minUs\":"+String(a.minUs)+",\"maxUs\":"+String(a.maxUs)+",\"configFault\":"+(a.configFault?"true":"false")+",\"enabled\":"+(a.enabled?"true":"false")+",\"qualified\":"+(a.qualified?"true":"false")+",\"requested\":"+String(a.requested)+",\"paired\":"+String(a.paired)+",\"latched\":"+(a.latched?"true":"false")+",\"halfUs\":"+String(a.halfUs)+",\"goodZero\":"+String(a.good)+",\"scheduled\":"+String(a.scheduled)+",\"late\":"+String(a.late)+",\"skippedPulses\":"+String(a.skipped)+",\"syncLosses\":"+String(a.syncLosses)+",\"fault\":"+jsonString(Mains::faultName((Mains::Fault)a.fault))+",\"ageMs\":"+String(age)+"}";}
 String frequencyJSON(const PwmFrequency::Report &f){if(!PwmFrequency::validReport(f))return "null";return String("{\"activeHz\":")+String(f.active)+",\"savedHz\":"+String(f.saved)+",\"mcpwmHzCalculated\":"+String(80000000.0/f.periodTicks,3)+",\"bits\":"+String(f.bits)+",\"minHz\":"+String(f.minimum)+",\"maxHz\":"+String(f.maximumHz)+",\"rebootRequired\":"+(f.active!=f.saved?"true":"false")+"}";}
 String pwmJSON(const PwmStatus &p){
   String j="{\"levels\":[";for(int i=0;i<PWM_COUNT;i++){if(i)j+=',';j+=p.level[i];}
@@ -499,6 +506,7 @@ String statusJSON(bool history,bool outputs) {
     j+="{\"id\":"+String(i+1)+",\"name\":"+jsonString(n.name)+",\"mac\":"+jsonString(macString(n.mac))+",\"health\":"+jsonString(healthName(m.health));
     j+=",\"firmwareVersion\":"+(n.firmwareVersion.length()?jsonString(n.firmwareVersion):String("null"));
     j+=",\"ip\":"+((uint32_t)ip?jsonString(ip.toString()):String("null"))+",\"protocol\":"+String(n.protocol)+",\"pwmChannels\":"+String(n.pwmChannels)+",\"pwmHz\":"+(n.pwmHz?String(n.pwmHz):String("null"))+",\"pwmConfigSupported\":"+String(n.pwmConfigSupported?"true":"false")+",\"pwmConfig\":"+(n.pwmConfigAt?pwmJSON(n.pwmConfig):String("null"));
+    j+=",\"acDimmer\":"+(n.acSupported?acJSON(n.ac,millis()-n.acAt):String("null"));
     j+=",\"pwmFrequency\":"+(n.frequencySupported?frequencyJSON(n.frequency):String("null"));
     j+=",\"windowN\":"+String(m.n)+",\"deliveryPct\":"+(m.n?String(100.0*m.replies/m.n,3):String("null"))+",\"deadlinePct\":"+(m.n?String(100.0*m.deadline/m.n,3):String("null"));
     j+=",\"p50\":"+(m.replies?String(m.p50,2):String("null"))+",\"p95\":"+(m.replies?String(m.p95,2):String("null"))+",\"maxRtt\":"+(m.replies?String(m.maxRtt,2):String("null"))+",\"spread\":"+(m.replies?String(m.p95-m.p50,2):String("null"));
@@ -522,7 +530,7 @@ String statusJSON(bool history,bool outputs) {
   }
   j+="]";
   if(!RADIO_MASTER){j+=",\"hardwareProfile\":\"s3-yx6300-rx1-tx2-v1\",\"dimmerPins\":[";for(int i=0;i<DIMMER_COUNT;i++){if(i)j+=',';j+=PWM_PINS[i];}j+="],\"relayPins\":["+String(RELAY_PIN)+","+String(RELAY2_PIN)+"],\"stripPin\":"+String(STRIP_PIN);}
-  if(!RADIO_MASTER){auto a=showRunner.acStatus();j+=",\"acDimmer\":{\"zcPin\":41,\"gatePin\":40,\"enabled\":"+String(a.enabled?"true":"false")+",\"qualified\":"+String(a.qualified?"true":"false")+",\"latched\":"+String(a.latched?"true":"false")+",\"fault\":"+jsonString(Mains::faultName(a.fault))+",\"requested\":"+String(a.requested)+",\"paired\":"+String(a.paired)+",\"goodZero\":"+String(a.good)+",\"rejectedZero\":"+String(a.rejected)+",\"halfUs\":"+String(a.halfUs)+",\"scheduled\":"+String(a.scheduled)+",\"late\":"+String(a.late)+",\"duplicateEdges\":"+String(a.duplicateEdges)+",\"ignoredWindow\":"+String(a.ignoredWindow)+",\"syncLosses\":"+String(a.syncLosses)+",\"recoveries\":"+String(a.recoveries)+",\"skippedPulses\":"+String(a.skippedPulses)+",\"staleClockSamples\":"+String(a.staleClockSamples)+"}";}
+  if(!RADIO_MASTER){auto a=showRunner.acStatus();j+=",\"acDimmer\":{\"zcPin\":41,\"gatePin\":40,\"enabled\":"+String(a.enabled?"true":"false")+",\"qualified\":"+String(a.qualified?"true":"false")+",\"latched\":"+String(a.latched?"true":"false")+",\"fault\":"+jsonString(Mains::faultName(a.fault))+",\"requested\":"+String(a.requested)+",\"paired\":"+String(a.paired)+",\"goodZero\":"+String(a.good)+",\"rejectedZero\":"+String(a.rejected)+",\"halfUs\":"+String(a.halfUs)+",\"scheduled\":"+String(a.scheduled)+",\"late\":"+String(a.late)+",\"duplicateEdges\":"+String(a.duplicateEdges)+",\"ignoredWindow\":"+String(a.ignoredWindow)+",\"syncLosses\":"+String(a.syncLosses)+",\"recoveries\":"+String(a.recoveries)+",\"skippedPulses\":"+String(a.skippedPulses)+",\"staleClockSamples\":"+String(a.staleClockSamples)+",\"pulseUs\":"+String(a.pulseUs)+",\"minUs\":200,\"maxUs\":400,\"configFault\":"+(showRunner.acReport().configFault?"true":"false")+"}";}
 #ifndef THEATRE_HOST_TEST
   j+=",\"resetReason\":"+String((uint32_t)esp_reset_reason());
 #endif
@@ -579,7 +587,7 @@ void routes() {
   web.on("/command",HTTP_POST,[] {
     if(!validForm())return;
     int i=targetNode();uint32_t op,channel,value;
-    if(i<0||!unsignedArg("op",PWM_FREQUENCY,op)||!unsignedArg("channel",PWM_COUNT,channel)||!unsignedArg("value",65535,value)||!validControl((Op)op,channel,value)){web.send(400,"text/plain","Invalid command");return;}
+    if(i<0||!unsignedArg("op",AC_PULSE,op)||!unsignedArg("channel",PWM_COUNT,channel)||!unsignedArg("value",65535,value)||!validControl((Op)op,channel,value)){web.send(400,"text/plain","Invalid command");return;}
     uint32_t deadline=0,sequence;String client=web.arg("client");
     bool urgent=op==ALL_OFF||op==AUDIO_STOP||((op==PWM||op==PWM_SWITCH||op==RELAY)&&value==0);
     if(!urgent&&(!unsignedArg("deadline",0xffffffffUL,deadline)||!freshDeadline(millis(),deadline))){

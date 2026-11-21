@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include <cmath>
+#include "ac_pulse.h"
 #ifdef ESP_PLATFORM
 #include <esp_attr.h>
 #define MAINS_IRAM IRAM_ATTR
@@ -10,10 +11,11 @@
 namespace Mains {
 enum Fault:uint8_t {OFF_STATE=0,WAIT_ZERO=1,OK=2,ZERO_LOST=3,TIMING=4,CONTROL_LOST=5,LINK_LOST=6,RESOURCE=7};
 enum Reason:uint8_t {NONE,ACQUIRED,ZC_TIMEOUT,ZC_GAP,CPU_STALL,PULSE_LATE,PULSE_END,TX_BUSY,TX_SLOW,TX_REJECT,PENDING_REPLACED,RESOURCE_ERROR};
-struct Pulse {uint64_t zero=0,fire=0,end=0;uint32_t epoch=0;};
+struct Pulse {uint64_t zero=0,fire=0,end=0;uint32_t epoch=0;uint16_t pulseUs=AcPulse::DEFAULT_US;};
 struct Event {uint64_t at=0;uint32_t id=0,intervalUs=0,halfUs=10000;Reason reason=NONE;bool hard=false;};
 struct State {
  bool enabled=false,qualified=false,latched=false;uint8_t requested=0,paired=0;Fault fault=OFF_STATE;
+ uint16_t pulseUs=AcPulse::DEFAULT_US;
  uint32_t good=0,rejected=0,scheduled=0,late=0,halfUs=10000,phaseDelayUs=0,lastIntervalUs=0;
  uint32_t ignoredEarly=0,duplicateEdges=0,ignoredWindow=0,syncLosses=0,recoveries=0,skippedPulses=0,staleClockSamples=0;uint64_t lastZero=0;
 };
@@ -36,6 +38,7 @@ public:
  void disable();void arm(uint64_t now);void level(uint8_t v);void controller(uint64_t now,bool lease);
  void MAINS_IRAM watchdog(uint64_t now);bool MAINS_IRAM zeroCross(uint64_t now,Pulse &out);
  bool authorize(const Pulse &p,uint64_t now);
+ bool configurePulse(uint16_t us){if(!AcPulse::valid(us)||s.requested||s.paired)return false;s.pulseUs=us;++epoch;return true;}
  void MAINS_IRAM skip(Reason reason,uint64_t now,uint32_t interval=0);
 };
 State MAINS_IRAM Phase::state()const{return s;}
@@ -88,13 +91,14 @@ bool MAINS_IRAM Phase::zeroCross(uint64_t now,Pulse &out){
  if(!wasLocked){if(everLocked)s.recoveries++;everLocked=true;note(ACQUIRED,now,delta);}
  if(!pair)s.paired=s.requested;pair^=1;
  if(!s.paired)return false;
- uint32_t delay=(s.halfUs*table[s.paired])/65535;if(delay<300)delay=300;if(delay>s.halfUs-1000)delay=s.halfUs-1000;
- s.phaseDelayUs=delay;out={now,now+delay,now+s.halfUs-500,epoch};s.scheduled++;return true;
+ uint32_t delay=(s.halfUs*table[s.paired])/65535;if(delay<300)delay=300;uint32_t latest=s.halfUs-800-s.pulseUs;if(delay>latest)delay=latest;
+ // Preserve the old300us HIGH-end budget (150us late +150us submit), even with longer pulses.
+ s.phaseDelayUs=delay;out={now,now+delay,now+s.halfUs-500,epoch,s.pulseUs};s.scheduled++;return true;
 }
 bool Phase::authorize(const Pulse &p,uint64_t now){
- watchdog(now);if(now<p.zero){s.staleClockSamples++;return false;}if(outputBlocked()||p.epoch!=epoch||p.zero!=s.lastZero)return false;
+ watchdog(now);if(now<p.zero){s.staleClockSamples++;return false;}if(outputBlocked()||p.epoch!=epoch||p.zero!=s.lastZero||p.pulseUs!=s.pulseUs||!AcPulse::valid(p.pulseUs))return false;
  if(now>p.fire+150){s.late++;skip(PULSE_LATE,now,(uint32_t)(now-p.fire));return false;}
- if(now+201>=p.end){s.late++;skip(PULSE_END,now,(uint32_t)(now-p.zero));return false;}
+ if(p.fire+p.pulseUs+300>p.end||now+p.pulseUs+1>=p.end){s.late++;skip(PULSE_END,now,(uint32_t)(now-p.zero));return false;}
  return true;
 }
 inline const char *faultName(Fault f){const char *n[]={"disabled","waiting_zero","ok","zero_lost","timing_fault","controller_stalled","link_lost","resource_fault"};return f<=RESOURCE?n[f]:"invalid";}

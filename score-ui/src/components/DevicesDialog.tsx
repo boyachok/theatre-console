@@ -14,6 +14,7 @@ import {
 import { Modal } from './Modal.tsx';
 import { useConfirm } from './Confirm.tsx';
 import { PwmFrequencySettings } from './PwmFrequencySettings.tsx';
+import { AcPulseSettings } from './AcPulseSettings.tsx';
 import type { NetworkTransport } from '../transport/network.ts';
 export function DevicesDialog({
   project,
@@ -197,6 +198,14 @@ export function DevicesDialog({
                         {device.profile !== 'helmet' && (
                           <PwmFrequencySettings
                             key={device.mac ?? device.id}
+                            mac={device.mac ?? null}
+                            network={network}
+                            status={status}
+                          />
+                        )}
+                        {device.profile !== 'helmet' && (
+                          <AcPulseSettings
+                            key={`ac-${device.mac ?? device.id}`}
                             mac={device.mac ?? null}
                             network={network}
                             status={status}

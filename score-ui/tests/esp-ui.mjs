@@ -141,14 +141,21 @@ const server = createServer(async (req, res) => {
       if (path === '/command') {
         const form = new URLSearchParams(raw);
         command(form);
-        assert.equal(form.get('op'), '23');
+        assert(['23', '24'].includes(form.get('op')));
         assert.equal(form.get('channel'), '0');
         assert.equal(form.get('mac'), peer.mac);
         assert.equal(form.get('id'), String(peer.id));
         assert.equal(status.console.editorLocked, false);
         assert.equal(status.console.running, false);
-        peer.pwmFrequency.savedHz = Number(form.get('value'));
-        peer.pwmFrequency.rebootRequired = peer.pwmFrequency.savedHz !== peer.pwmFrequency.activeHz;
+        if (form.get('op') === '24') {
+          assert.equal(peer.acDimmer.requested, 0);
+          peer.acDimmer.pulseUs = Number(form.get('value'));
+          peer.acDimmer.configFault = false;
+        } else {
+          peer.pwmFrequency.savedHz = Number(form.get('value'));
+          peer.pwmFrequency.rebootRequired =
+            peer.pwmFrequency.savedHz !== peer.pwmFrequency.activeHz;
+        }
         peer.requestId = (peer.requestId ?? 0) + 1;
         peer.commandPending = false;
         peer.commandStatus = 'applied';
@@ -447,6 +454,75 @@ try {
   }
   await page.setViewportSize(frequencyViewport);
   await frequencyDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  peer.acDimmer = {
+    pulseUs: 200,
+    minUs: 200,
+    maxUs: 400,
+    configFault: false,
+    enabled: true,
+    qualified: true,
+    requested: 0,
+    paired: 0,
+    latched: false,
+    halfUs: 10000,
+    goodZero: 123,
+    scheduled: 50,
+    late: 0,
+    skippedPulses: 0,
+    syncLosses: 0,
+    fault: 'ok',
+    ageMs: 10,
+  };
+  await page.waitForTimeout(1100);
+  const beforePulse = calls.length;
+  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
+  const pulseDialog = page.getByRole('dialog', { name: 'Приборы', exact: true });
+  await pulseDialog
+    .getByRole('button', { name: /^Настроить / })
+    .first()
+    .click();
+  const pulseField = pulseDialog.getByLabel('Импульс открытия220, мкс', { exact: true }),
+    pulseSave = pulseDialog.getByRole('button', { name: 'Сохранить импульс220', exact: true });
+  for (const text of ['', '0', '199', '401', '300.5']) {
+    await pulseField.fill(text);
+    assert(await pulseSave.isDisabled());
+  }
+  await pulseField.fill('300');
+  await pulseSave.click();
+  await page.getByRole('button', { name: 'Подтвердить импульс220', exact: true }).click();
+  await pulseDialog
+    .getByText('Импульс сохранён. Для испытания нужен отдельный запуск сцены.', { exact: true })
+    .waitFor();
+  assert.equal(peer.acDimmer.pulseUs, 300);
+  for (const width of [320, 375, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    await pulseField.scrollIntoViewIfNeeded();
+    assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= width);
+    const b = await pulseField.boundingBox();
+    assert(b && b.x >= 0 && b.x + b.width <= width);
+    if (width === 320) await page.screenshot({ path: '/tmp/theatre-087-ac-pulse-320.png' });
+  }
+  await page.setViewportSize(frequencyViewport);
+  await pulseDialog.getByRole('button', { name: 'Ввести исходные200 мкс', exact: true }).click();
+  await pulseSave.click();
+  await page.getByRole('button', { name: 'Подтвердить импульс220', exact: true }).click();
+  await page.waitForTimeout(500);
+  assert.equal(peer.acDimmer.pulseUs, 200);
+  assert.equal(calls.slice(beforePulse).filter((c) => c.path === '/command').length, 2);
+  assert(
+    !calls
+      .slice(beforePulse)
+      .some(
+        (c) =>
+          c.path.endsWith('/publish') ||
+          c.path.endsWith('/draft') ||
+          c.path.includes('/go') ||
+          c.path.includes('/reboot') ||
+          c.path.includes('stop'),
+      ),
+  );
+  await pulseDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
+  delete peer.acDimmer;
   delete peer.pwmFrequency;
   await page.getByLabel('Название спектакля', { exact: true }).fill('MOCK ESP test');
   await page.waitForFunction(() =>

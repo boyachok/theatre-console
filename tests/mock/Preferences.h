@@ -5,11 +5,11 @@
 #include <string>
 #include <vector>
 inline uint8_t mockRelayConfig=0;
-inline bool mockPrefsWriteOK=true;
+inline bool mockPrefsWriteOK=true,mockPrefsBeginOK=true;
 inline std::map<std::string,std::vector<uint8_t>> mockPrefsBytes;
 class Preferences {
 public:
-  void begin(const char*,bool){}
+  bool begin(const char*,bool){return mockPrefsBeginOK;}
   uint16_t getUShort(const char *key,uint16_t fallback){auto &b=mockPrefsBytes[key];uint16_t n=fallback;if(b.size()==2)memcpy(&n,b.data(),2);return n;}
   size_t putUShort(const char *key,uint16_t n){return putBytes(key,&n,2);}
   uint8_t getUChar(const char*,uint8_t){return mockRelayConfig;}

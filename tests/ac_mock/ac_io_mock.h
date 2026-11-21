@@ -2,6 +2,9 @@
 #include <cassert>
 #include <vector>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <atomic>
 #define IRAM_ATTR
 using portMUX_TYPE=int;
 #define portMUX_INITIALIZER_UNLOCKED 0
@@ -16,14 +19,16 @@ inline unsigned mockAcIrqFlags=0,mockAcInstalls=0,mockAcWrites=0,mockAcCreates=0
 inline void (*mockAcHandler)(void*)=nullptr;inline void *mockAcHandlerArg=nullptr;
 struct MockGPIO {struct Config{uint32_t func_sel=SIG_GPIO_OUT_IDX;}func_out_sel_cfg[49];}inline GPIO;
 inline void gpio_ll_set_level(MockGPIO*,int pin,int value){mockLevels[pin]=value;}
-inline void esp_rom_gpio_connect_out_signal(int pin,uint32_t sig,bool,bool){GPIO.func_out_sel_cfg[pin].func_sel=sig;}
+inline std::function<void()> mockAcMapHook;
+inline void esp_rom_gpio_connect_out_signal(int pin,uint32_t sig,bool,bool){if(sig!=SIG_GPIO_OUT_IDX&&mockAcMapHook)mockAcMapHook();GPIO.func_out_sel_cfg[pin].func_sel=sig;}
 inline int gpio_install_isr_service(int flags){mockAcIrqFlags=flags;mockAcInstalls++;return ESP_OK;}
 inline int gpio_ll_get_level(MockGPIO*,int pin){return mockLevels[pin];}
 inline int gpio_set_intr_type(int pin,int type){assert(pin==41&&type==GPIO_INTR_ANYEDGE);return ESP_OK;}
 inline int gpio_isr_handler_add(int pin,void (*handler)(void*),void *arg){assert(pin==41);mockAcHandler=handler;mockAcHandlerArg=arg;return ESP_OK;}
 inline int gpio_intr_disable(int){return ESP_OK;}inline int gpio_isr_handler_remove(int){mockAcHandler=nullptr;return ESP_OK;}
 inline int64_t esp_timer_get_time(){return mockAcUs;}
-inline SemaphoreHandle_t xSemaphoreCreateMutex(){return mockAcMutexOK?(void*)1:nullptr;}inline int xSemaphoreTake(void*,int){return pdPASS;}inline void xSemaphoreGive(void*){}
+inline std::vector<std::unique_ptr<std::mutex>> mockAcMutexes;inline std::atomic<unsigned> mockAcTakes{0};
+inline SemaphoreHandle_t xSemaphoreCreateMutex(){if(!mockAcMutexOK)return nullptr;mockAcMutexes.emplace_back(std::make_unique<std::mutex>());return mockAcMutexes.back().get();}inline int xSemaphoreTake(void *p,int){++mockAcTakes;static_cast<std::mutex*>(p)->lock();return pdPASS;}inline void xSemaphoreGive(void *p){static_cast<std::mutex*>(p)->unlock();}
 inline int xTaskCreatePinnedToCore(void (*)(void*),const char*,int,void*,int priority,TaskHandle_t *handle,int core){*handle=(void*)1;mockAcCore=core;mockAcPriority=priority;mockAcCreates++;return pdPASS;}
 inline void vTaskNotifyGiveFromISR(TaskHandle_t handle,BaseType_t *wake){assert(handle);*wake=pdFALSE;}
 struct rmt_data_t {uint32_t duration0:15,level0:1,duration1:15,level1:1;};

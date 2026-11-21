@@ -15,6 +15,25 @@ export interface NetworkDeviceStatus {
     limited: number;
     ageMs: number;
   } | null;
+  acDimmer?: {
+    pulseUs: number;
+    minUs: number;
+    maxUs: number;
+    configFault: boolean;
+    requested: number;
+    paired: number;
+    qualified: boolean;
+    enabled: boolean;
+    latched: boolean;
+    halfUs: number;
+    goodZero: number;
+    scheduled: number;
+    late: number;
+    skippedPulses: number;
+    syncLosses: number;
+    fault: string;
+    ageMs: number;
+  } | null;
   pwmFrequency?: {
     activeHz: number;
     savedHz: number;
@@ -79,6 +98,7 @@ export interface NetworkTransport {
   setMeasurement(enabled: boolean): void | Promise<void>;
   identify?(mac: string): Promise<void>;
   setPwmFrequency?(mac: string, hz: number): Promise<void>;
+  setAcPulseUs?(mac: string, us: number): Promise<void>;
   resetNetwork?(): Promise<void>;
 }
 // Editor-only adapter: changing the switch never invents packets or RF measurements.

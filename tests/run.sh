@@ -9,14 +9,16 @@ for TEST in quality control lan remote remote_battery ac_phase; do
   c++ "${FLAGS[@]}" "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
-for TEST in actors pwm_inversion pwm_precision pwm_camera pwm_frequency firmware_info helmet_audio helmet_gate helmet_tone helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay scene_delivery master_boot remote_master pulse_diagnostics; do
+for TEST in actors pwm_inversion pwm_precision pwm_camera pwm_frequency firmware_info helmet_audio helmet_gate helmet_tone helmet_defaults player yx_player compat console dimmer_animation light_delay audio_delay ac_pulse_runner scene_delivery master_boot remote_master pulse_diagnostics; do
   c++ "${FLAGS[@]}" -Itests/mock -Iconsole "tests/$TEST.cpp" -o "$OUT/$TEST"
   "$OUT/$TEST"
 done
 c++ "${FLAGS[@]}" -DTHEATRE_PLAYER_POLL_MS=1300 -Itests/mock -Iconsole tests/pulse_diagnostics.cpp -o "$OUT/pulse_diagnostics_1300"
 "$OUT/pulse_diagnostics_1300"
-c++ "${FLAGS[@]}" -Itests/ac_mock -Itests/mock tests/ac_backend.cpp -o "$OUT/ac_backend"
-"$OUT/ac_backend"
+for TEST in ac_backend ac_pulse; do
+  c++ "${FLAGS[@]}" -pthread -Itests/ac_mock -Itests/mock "tests/$TEST.cpp" -o "$OUT/$TEST"
+  "$OUT/$TEST"
+done
 c++ "${FLAGS[@]}" -Itests/rom_mock tests/workspace_inflate.cpp -lz -o "$OUT/workspace_inflate"
 "$OUT/workspace_inflate"
 ARDUINOJSON_PATH="${ARDUINOJSON_PATH:-$HOME/Documents/Arduino/libraries/ArduinoJson/src}"

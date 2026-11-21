@@ -130,6 +130,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
         mac: key,
         voice:
           n.role === 'helmet' && n.voice && Number.isFinite(n.voice.inputLevel) ? n.voice : null,
+        acDimmer: n.acDimmer ?? null,
         pwmFrequency: n.pwmFrequency ?? null,
         firmwareVersion: typeof n.firmwareVersion === 'string' ? n.firmwareVersion : null,
         dimmerInverted: n.pwmConfig?.inverted12 ?? n.pwmConfig?.inverted,
@@ -236,32 +237,49 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       }),
     });
   }
-  async setPwmFrequency(mac: string, hz: number) {
+  setPwmFrequency(mac: string, hz: number) {
+    return this.saveHardwareSetting(mac, hz, false);
+  }
+  setAcPulseUs(mac: string, us: number) {
+    return this.saveHardwareSetting(mac, us, true);
+  }
+  private async saveHardwareSetting(mac: string, hz: number, ac: boolean) {
     const status = await this.status();
     const node = status.nodes.find(
       (n: { mac: string }) => n.mac.toUpperCase() === mac.toUpperCase(),
     );
     if (
       !node ||
-      !node.pwmFrequency ||
+      !(ac ? node.acDimmer : node.pwmFrequency) ||
       node.role !== 'slave' ||
       !Number.isFinite(node.ageMs) ||
       node.ageMs >= 3000
     )
-      throw new Error('Нужен доступный slave с поддержкой настройки частоты');
+      throw new Error('Нужен доступный slave с поддержкой этой настройки');
+    if (
+      ac &&
+      (!Number.isFinite(node.acDimmer.ageMs) ||
+        node.acDimmer.ageMs >= 3000 ||
+        node.acDimmer.requested ||
+        node.acDimmer.paired)
+    )
+      throw new Error('Нужны свежая диагностика220 и выключенная AC-нагрузка');
     if (
       status.console.editorLocked !== false ||
       status.console.running ||
       status.console.livePreview ||
-      status.console.startupPending
+      status.console.startupPending ||
+      status.console.syncing
     )
       throw new Error('Сначала STOP и разблокировка редактора');
-    if (!Number.isInteger(hz) || hz < node.pwmFrequency.minHz || hz > node.pwmFrequency.maxHz)
-      throw new Error('Частота вне диапазона контроллера');
+    const min = ac ? node.acDimmer.minUs : node.pwmFrequency.minHz,
+      max = ac ? node.acDimmer.maxUs : node.pwmFrequency.maxHz;
+    if (!Number.isInteger(hz) || hz < min || hz > max)
+      throw new Error('Значение вне диапазона контроллера');
     const response = await this.post('/command', {
       id: node.id,
       mac: node.mac,
-      op: 23,
+      op: ac ? 24 : 23,
       channel: 0,
       value: hz,
       client: this.client,
@@ -281,11 +299,14 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       if (current.commandPending) continue;
       if (current.commandStatus !== 'APPLIED' && current.commandStatus !== 'applied')
         throw new Error(current.commandStatus || 'Нет подтверждения настройки');
-      if (current.pwmFrequency?.savedHz === hz) return;
+      if (
+        ac
+          ? current.acDimmer?.pulseUs === hz && !current.acDimmer.configFault
+          : current.pwmFrequency?.savedHz === hz
+      )
+        return;
     }
-    throw new Error(
-      'Нет подтверждения сохранённой частоты; перечитайте настройки, запрос не повторялся',
-    );
+    throw new Error('Нет подтверждения настройки; перечитайте состояние, запрос не повторялся');
   }
   async setEditLock(locked: boolean) {
     ++this.editorRevision;

@@ -5,6 +5,7 @@
 #include "control_types.h"
 #include "uart_stats.h"
 #include "pwm_settings.h"
+#include "ac_pulse.h"
 #ifndef RADIO_MASTER
 #define RADIO_MASTER 0
 #endif
@@ -14,7 +15,7 @@ constexpr uint32_t MAGIC=0x32544753;
 constexpr uint8_t PROTOCOL=4,LEGACY_PROTOCOL=3;
 constexpr int MAX_NODES=10,WINDOW=120;
 constexpr uint32_t POLL_MS=500,TIMEOUT_MS=400,OFFLINE_MS=3000;
-enum Type : uint8_t {DISCOVER=1,HELLO,PROBE,ECHO,IDENTIFY,MAINTENANCE,COMMAND,COMMAND_ACK,DEBUG_REQUEST,DEBUG_REPORT,PWM_REPORT,SCORE_STORE,SCORE_RUN,SCORE_ACK,REMOTE_HELLO,REMOTE_PING,REMOTE_PONG,REMOTE_EVENT,REMOTE_ACK,FIRMWARE_REPORT,VOICE_REPORT,VOICE_CONFIG_ACK};
+enum Type : uint8_t {DISCOVER=1,HELLO,PROBE,ECHO,IDENTIFY,MAINTENANCE,COMMAND,COMMAND_ACK,DEBUG_REQUEST,DEBUG_REPORT,PWM_REPORT,SCORE_STORE,SCORE_RUN,SCORE_ACK,REMOTE_HELLO,REMOTE_PING,REMOTE_PONG,REMOTE_EVENT,REMOTE_ACK,FIRMWARE_REPORT,VOICE_REPORT,VOICE_CONFIG_ACK,AC_REPORT};
 struct __attribute__((packed)) VoiceReport {uint32_t magic;uint8_t protocol,type;uint16_t size;uint32_t session,deviceBoot,uptime,captured,played,errors,late,limited,workMax;float inputLevel,outputLevel,load;uint8_t ready,enabled,audioCore,controlCore;uint32_t profileHash;};
 static_assert(sizeof(VoiceReport)==64,"Helmet audio telemetry");
 enum FirmwareRole:uint8_t { FW_SLAVE=1,FW_REMOTE=2,FW_HELMET=3 };
