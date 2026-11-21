@@ -1,5 +1,66 @@
 # Проверенные записи на платы
 
+## 21.11.2026 — общий OTAрелиз0.8.7 + masterUI0.8.8, завершено10/10
+
+Пользователь явно разрешил общийSTOP и OTA master/шлем/пульт/1–7. ДоSTOP взята
+последняя стабильная публикация413, draftrevision10735/37шагов/8приборов; оба
+первоначальныхбанкаen/жен/муж/рэп,workingгдеприсутствовал и настройки всех целей.
+Draftworking отсутствовал, publishedworking присутствовал — оба факта сохранены,
+не подменены старой копией384. Root`helmetVoices` точно повторяетlatestdraftбанк.
+
+Проверены фактические MAC/роль/версии/образыSHA до POST, новые token/boot после:
+
+| Цель | MAC | Было | Стало |
+|---|---|---|---|
+|master|A0:85:E3:E2:BC:D4|0.8.3|0.8.8 через0.8.7|
+|шлем|C0:4E:30:36:C6:88|0.8.3|0.8.7|
+|пульт|30:30:F9:1B:FD:6C|0.7.8|0.8.7|
+|1|C0:4E:30:27:69:98|0.8.3|0.8.7|
+|2|74:4D:BD:73:0A:A4|0.7.18|0.8.7|
+|3|DC:DA:0C:43:C3:C0|0.7.18|0.8.7|
+|4|EC:DA:3B:56:F2:CC|0.7.18|0.8.7|
+|5|30:30:F9:31:19:C4|0.7.18|0.8.7|
+|6|C0:4E:30:29:F4:8C|0.8.2|0.8.7|
+|7|30:30:F9:32:02:30|0.8.3|0.8.7|
+
+Финальные образы:
+- Master0.8.8,1318800B SHA`66e43f08258c52a66743e2e9dec2aecdd3b4c7f2ed50339467f9b483aec0778b`, source3307eae.
+- Slave0.8.7,1125920B SHA`49e9abd53e4fbfc96925f86cbcfffce7c440fd5518f87c2ba40235203a7cab54`, sourcef497146.
+- Helmet0.8.7,1063680B SHA`7fae9ddde62cf03302de6bc983faf184e1243f2ff59377b5b7800ec85f985a3e`, sourcef497146.
+- Remote0.8.7,986384B SHA`353eef7e88ec6ab91bb1862103df98f92dbeeaf13be5ea1bdcda9f9972fab69e`, sourcef497146.
+
+Master сначала прошит7 при старомшлеме3, не способном ACKнезависимыйголос; сразу
+явныйSTOP/cancelpending. Послешлема7 сеть меняла linkBoot, firmwareBootId/token
+оставалисьстабильны; OTAнеповторялась, ALL_OFFотправлен по свежейпривязке и acceptedACK.
+
+Вживуюобнаружено productionимя успешного ACK`accepted`, в UIпроверке было`applied`.
+Подготовлена master-only8,95domain/TS/nativeASanUBSan/productionbrowser/masterSDK.
+Перед намеренной второйOTA master пользователь обесточил№6, провереноoffline;
+послеmaster8boot явноотменёнpendingдо его возврата. Затемпользовательвключил№6,
+снова провереныMAC/роль/boot и выполнена егоединственнаяOTA7. Все остальные цели
+получили поодномуPOST. Нет слепых повторов неизвестного исхода и версиирадиверсии.
+Master8 отдаёт JS/CSS, побайтно совпадающие с проверенной productionсборкой.
+
+На каждом этапе draft/published/обаlegacyбанка проверены точно, independentбанк
+равенlatestdraft. Сохранены PWMуровни/инверсии/relaymode; app-only NVS/FS/partition
+layout не стирались. Helmetlegacy saved/appliedSound сохранён, отдельныйglobalNVS
+подтверждёнsaved. EQ/presenceOFF. RemoteFULL/LOWавтоматическинепроводились.
+
+Финал:STOP/LIVEoff/editorlocked/startupPendingfalse,8/8плановготовы, cursorunset,
+transition0. GO/LIVEon/PLAY/тестоввыхода не отправлялось. КонфигурацияPWM25кГц/8бит/
+gamma1/gray.5; AC200мкс.№1плеерудалён:UARTpollOFF восстановленвRAM, genericboot400мс
+вместопрежнейдиагностической1300мс, persistentno-player всёещёне реализован.
+На№7плеерсохранён/poll400мс; за6.12с16TX/16valid/0checksum/lengtherrors.
+За тот же STOPинтервална7slavesнетновыхPWM/relay/OFFwrites; у№7ACqualified,
+requested/paired0, scheduledDelta0. Это софтсчётчики, не электрическиеосциллограммы,
+не камерная/тепловая/акустическая сертификация. Физическаяпробамерцанияещёпредстоит.
+
+Свежие данные/запросы/ответы/образы/хеши/newboot/сравнения/финал: приватный
+`Theatre-console-backups/ota-fleet-087-20261121-165938/`,700/600. HTTPне даётfullflash/
+NVSдамп или runningflashreadbackSHA: проверен SHAотправленногообраза, результатOTA,
+новаяверсия/boot и побайтныйUI; не утверждается независимый readbackвсейflash.
+Неназначенный84:FC:E6:57:0F:AC не прошивался и не удалялся.
+
 ## UART1/7 — подтверждённая проблема общей земли, без новыхOTA
 
 На активном шаге36 пользователь подтвердил, что мерцание1 замедлилось вслед за
