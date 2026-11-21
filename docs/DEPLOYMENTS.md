@@ -1,5 +1,40 @@
 # Проверенные записи на платы
 
+## 21.11.2026 — только№6 /0.8.9AC082, безобщегоSTOP
+
+Пользователь отдельно разрешил прошивку№6 при продолжающихработатьостальных.
+Свежийworkspace: publication431/draft10820, полныеlegacy/rootvoiceбанки иworking
+захвачены безподмены старой413. MasterA0:85:E3:E2:BC:D4/version0.8.8 продолжал
+шаг36/idmwl3wlcf-n74s3ss3ve, navigation115/transition132, runningtrue/LIVEfalse.
+
+Цельопределена поимени6вобеихпартитурах ифактическимMAC/role/status:
+**C0:4E:30:29:F4:8C,slave,0.8.7→0.8.9**,1124864B SHA
+`9bfb6e156c6b30b76f61b5052bfbc95b00f00f1135c8f5a0cfbf226316332075`, sourcea153868.
+РовноодинPOSTтольконаего`/update`; никакихPOSTнаmaster/другиеплаты, /stop-all,
+/command, GO/LIVE/navigation, новыхпараметров или тестовнагрузки. OTAhandler гасил
+только№6. После reboot новоеtoken/версия/профиль`legacy082-fixed200-stop-safe`,
+fixed200мкс/max200/pulseSettingSupportedfalse подтверждены. №6сампринял текущий
+продолжающийсяRUN431/36; дополнительныйGOне отправлялся. После возврата8/8плановготовы.
+
+До/после mastertoken/runtimeточносовпали, новыеWorkspace/всебанкисовпалиполностью.
+PWM12сохранён:active/saved25000Гц,8бит/gamma1/gray.5, уровни/инверсии/relaymode/
+UARTpollingпроверены. СтарыйpulseNVSигнорируется, не стирается; NVS/FS/таблицыразделов
+сохраняютсяapp-only. У6прочихordinaryslaves token/версии/выходысовпали иdelta
+PWM/relay1/relay2/OFFwrites0; пульттотжеboot/sentdelta0. Шлемуже былofflineдоOTA
+(age100746мс вfreshpreflight), поэтомуегоboot/outputневыдаётсязапроверенный;
+никакихкомандилиобновленийшлемаэтойоперациейнебыло.
+
+Финально№6ACqualifiedtrue/latchedfalse/faultok/requested0/paired0/pulse200,
+**физическаяустойчивостьприактивнойACнагрузкеещёне проверена**. Не утверждается,
+чтоисходнаяпричинаотключениянайденаилиустранена. FreshZ-Cприlossперезахватывается
+старымавтоматом, CPU/resourcehardзащитыостаются. Электрическихизмеренийнебыло.
+
+Свидетельства700/600: приватный`ota-fixture6-089-no-global-stop-20261121-210055/`
+(workspace/banks/status/image/hash/auth/одинPOST/newboot/rejoin/otherscomparison/final).
+Предыдущий`205906/` — прерванныйread-onlypreflight: одинHTTPнеответил, POSTнебыло;
+послеперечитыванияfreshсостояния созданаотдельнаязавершённаязапись, не blindOTA retry.
+HTTPfullflash/NVSdump/независимыйrunningflashSHA недоступны, этоявнонеобещается.
+
 ## 21.11.2026 — общий OTAрелиз0.8.7 + masterUI0.8.8, завершено10/10
 
 Пользователь явно разрешил общийSTOP и OTA master/шлем/пульт/1–7. ДоSTOP взята
