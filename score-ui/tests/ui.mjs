@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
+import { enterScore } from './launcher-steps.mjs';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url),
   { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
@@ -43,6 +44,7 @@ try {
     p = await ctx.newPage();
   watch(p);
   await p.goto(base);
+  await enterScore(p, { declineFirst: true });
   await p.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await p.waitForSelector('.parameter-row');
   assert.equal(await p.locator('.step-heading').count(), 1);
@@ -231,6 +233,7 @@ try {
   assert.equal(storage.draft.steps[1].devices[deviceId].dimmers['pwm-1'].value, 33);
   assert.equal(storage.published.project.steps[1].devices[deviceId].dimmers['pwm-1'].value, 20);
   await p.reload();
+  await enterScore(p);
   await p.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await p.waitForSelector('.parameter-row');
   assert.equal((await cell(p, 1, 'pwm-1').innerText()).replace(/\s/g, ''), '33%');
@@ -281,6 +284,7 @@ try {
   const big = await stress.newPage();
   watch(big);
   await big.goto(base);
+  await enterScore(big);
   await big.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await big.waitForSelector('.step-heading:nth-of-type(101)');
   assert.equal(await big.locator('.step-heading').count(), 100);
@@ -308,6 +312,7 @@ try {
       mobile = await context.newPage();
     watch(mobile);
     await mobile.goto(base);
+    await enterScore(mobile);
     await mobile.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
     await mobile.waitForSelector('.parameter-row');
     for (const name of ['Предыдущий шаг', 'Следующий шаг', 'Сдублировать шаг', 'Сеть']) {
@@ -346,6 +351,7 @@ try {
   const deletion = await confirmContext.newPage();
   watch(deletion);
   await deletion.goto(base);
+  await enterScore(deletion);
   await deletion.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await deletion.waitForSelector('.step-heading');
   for (let i = 0; i < 4; i++)
@@ -370,6 +376,7 @@ try {
   );
   await pause(400);
   await deletion.reload();
+  await enterScore(deletion);
   await deletion.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await deletion.waitForSelector('.step-heading');
   await remove();
@@ -382,6 +389,7 @@ try {
   const helmet = await helmetContext.newPage();
   watch(helmet);
   await helmet.goto(base);
+  await enterScore(helmet);
   await helmet.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await helmet.waitForSelector('.parameter-row');
   await helmet.getByRole('button', { name: 'Приборы', exact: true }).click();
@@ -408,6 +416,7 @@ try {
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'false');
   await pause(400);
   await helmet.reload();
+  await enterScore(helmet);
   await helmet.waitForSelector('.parameter-row');
   assert.equal(await helmet.locator('.parameter-row').count(), 155);
   await helmetContext.close();

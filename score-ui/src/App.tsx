@@ -69,6 +69,7 @@ import {
 import { historyReducer } from './domain/history.ts';
 import { Inspector } from './components/Inspector.tsx';
 import { HelmetDialog } from './components/HelmetDialog.tsx';
+import { VoiceLauncher } from './components/VoiceLauncher.tsx';
 import { voiceBank } from './domain/voice.ts';
 import { DevicesDialog } from './components/DevicesDialog.tsx';
 import { EffectsDialog } from './components/EffectsDialog.tsx';
@@ -107,6 +108,9 @@ function startup() {
 export default function App() {
   const ask = useConfirm();
   const [initial] = useState(startup);
+  const [view, setView] = useState<'launcher' | 'score'>('launcher'),
+    [viewBusy, setViewBusy] = useState(false);
+  const localEditConsent = useRef(false);
   const [editorLocked, setEditorLocked] = useState(true),
     [lockBusy, setLockBusy] = useState(false);
   const editLockRef = useRef(true),
@@ -229,8 +233,10 @@ export default function App() {
       const state = network.getSnapshot();
       if (!state.connected) return;
       if (state.editorLocked !== undefined) {
-        editLockRef.current = state.editorLocked;
-        setEditorLocked(state.editorLocked);
+        if (state.editorLocked) localEditConsent.current = false;
+        const locked = state.editorLocked || !localEditConsent.current;
+        editLockRef.current = locked;
+        setEditorLocked(locked);
       }
       if (
         !voicePending.current &&
@@ -453,6 +459,7 @@ export default function App() {
     try {
       const next = !editLockRef.current;
       if (network instanceof EspConsoleTransport) await network.setEditLock(next);
+      localEditConsent.current = !next;
       editLockRef.current = next;
       authoredSinceUnlock.current = false;
       setEditorLocked(next);
@@ -461,6 +468,73 @@ export default function App() {
     } finally {
       setLockBusy(false);
     }
+  };
+  const lockForView = async () => {
+    localEditConsent.current = false;
+    editLockRef.current = true;
+    authoredSinceUnlock.current = false;
+    setEditorLocked(true);
+    const state = network.getSnapshot();
+    if (network instanceof EspConsoleTransport && state.connected && state.editorLocked === false)
+      await network.setEditLock(true);
+  };
+  const enterScore = async () => {
+    if (viewBusy) return;
+    setViewBusy(true);
+    try {
+      if (
+        !(await ask({
+          message: 'Вы точно хотите редактировать партитуру?',
+          accept: 'Да',
+          cancel: 'Нет',
+        }))
+      ) {
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLButtonElement>('[aria-label="Меню голоса шлема"]')?.focus(),
+        );
+        return;
+      }
+      await lockForView();
+      setDialog(null);
+      setInspectorOpen(false);
+      setQuickEdit(null);
+      setShortcutHelp(false);
+      setBackupOpen(false);
+      setView('score');
+      requestAnimationFrame(() =>
+        document
+          .querySelector<HTMLButtonElement>('[aria-label="Разрешить редактирование"]')
+          ?.focus(),
+      );
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Не удалось открыть партитуру');
+    } finally {
+      setViewBusy(false);
+    }
+  };
+  const returnToLauncher = async () => {
+    if (viewBusy || lockBusy) return;
+    setViewBusy(true);
+    try {
+      await lockForView();
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Блокировка на master не подтверждена');
+    } finally {
+      setDialog(null);
+      setInspectorOpen(false);
+      setQuickEdit(null);
+      setShortcutHelp(false);
+      setBackupOpen(false);
+      setView('launcher');
+      setViewBusy(false);
+    }
+  };
+  const closeHelmetDialog = () => {
+    setDialog(null);
+    if (view === 'launcher')
+      requestAnimationFrame(() =>
+        document.querySelector<HTMLButtonElement>('[aria-label="Меню голоса шлема"]')?.focus(),
+      );
   };
   const saveGlobalVoice = (device: Device) => {
     if (!device.voice) return;
@@ -940,7 +1014,7 @@ export default function App() {
     setWorkspace((w) => ({ ...w, draft: moveEditorRow(w.draft, source, target) }), true);
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
-      if (!backendReady) return;
+      if (!backendReady || view !== 'score') return;
       const el = e.target instanceof Element ? e.target : null;
       if (
         el?.closest('input,textarea,select,[contenteditable="true"]') ||
@@ -1076,6 +1150,38 @@ export default function App() {
       onStep={changeStep}
     />
   );
+  const helmetEditor =
+    dialog === 'helmet' && helmetDevice ? (
+      <HelmetDialog
+        device={helmetDevice}
+        network={network}
+        onClose={closeHelmetDialog}
+        onChange={saveGlobalVoice}
+      />
+    ) : null;
+  const toastNotice = toast ? (
+    <div className="toast" role="status" onClick={() => setToast('')}>
+      {toast}
+    </div>
+  ) : null;
+  if (view === 'launcher')
+    return (
+      <div className={`app-shell launcher-shell ${editorLocked ? 'editing-locked' : ''}`}>
+        <VoiceLauncher
+          helmets={headerHelmets}
+          ready={backendReady}
+          busy={viewBusy}
+          onPreset={(device, id) => void chooseGlobalPreset(device, id)}
+          onSound={(id) => {
+            setHelmetDeviceId(id);
+            setDialog('helmet');
+          }}
+          onScore={() => void enterScore()}
+        />
+        {helmetEditor}
+        {toastNotice}
+      </div>
+    );
   return (
     <div className={`app-shell ${editorLocked ? 'editing-locked' : ''}`}>
       <header className="app-header">
@@ -1150,6 +1256,15 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          <button
+            aria-label="Вернуться к голосу шлема"
+            title="Стартовое окно"
+            disabled={viewBusy || lockBusy}
+            onClick={() => void returnToLauncher()}
+          >
+            <Waves size={17} />
+            Голос шлема
+          </button>
           <button
             className={`edit-lock-button ${editorLocked ? 'locked' : ''}`}
             aria-label={editorLocked ? 'Разрешить редактирование' : 'Заблокировать редактирование'}
@@ -1269,7 +1384,7 @@ export default function App() {
               className="icon-button publish-button"
               aria-label="Опубликовать"
               title="Опубликовать"
-              disabled={publishing || !dirty}
+              disabled={publishing || !dirty || editorLocked}
               onClick={publish}
             >
               <Radio size={18} />
@@ -1413,14 +1528,7 @@ export default function App() {
       {dialog === 'effects' && (
         <EffectsDialog project={project} onSave={saveEffects} onClose={() => setDialog(null)} />
       )}
-      {dialog === 'helmet' && helmetDevice && (
-        <HelmetDialog
-          device={helmetDevice}
-          network={network}
-          onClose={() => setDialog(null)}
-          onChange={saveGlobalVoice}
-        />
-      )}
+      {helmetEditor}
       {dialog === 'network' && (
         <NetworkDialog project={project} transport={network} onClose={() => setDialog(null)} />
       )}
@@ -1435,11 +1543,7 @@ export default function App() {
           onClose={() => setQuickEdit(null)}
         />
       )}
-      {toast && (
-        <div className="toast" role="status" onClick={() => setToast('')}>
-          {toast}
-        </div>
-      )}
+      {toastNotice}
     </div>
   );
 }

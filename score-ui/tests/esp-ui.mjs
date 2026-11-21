@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { editorChecks } from './editor-ui-steps.mjs';
 import { helmetDialogChecks } from './helmet-dialog-checks.mjs';
+import { enterScore, launcherChecks } from './launcher-steps.mjs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { INTERFACE_VERSION } from '../src/version.ts';
@@ -360,6 +361,7 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('http://127.0.0.1:5179');
+  await enterScore(page, { declineFirst: true });
   await page.waitForSelector('.parameter-row');
   await page.waitForFunction(
     () => document.querySelector('.device-group code')?.textContent === '192.168.50.33',
@@ -903,6 +905,8 @@ try {
   assert.equal(workspace.backup.minor, 1);
   assert.equal(navigationCalls(), beforeBackup);
   await page.reload();
+  await enterScore(page);
+  await page.getByRole('button', { name: 'Разрешить редактирование', exact: true }).click();
   await page.waitForSelector('.parameter-row');
   assert.equal(await page.getByLabel('Серия JSON', { exact: true }).inputValue(), '2');
   await page.evaluate(() => {
@@ -1043,6 +1047,15 @@ try {
   await page.setViewportSize({ width: 320, height: 844 });
   assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 320);
   await page.screenshot({ path: '/tmp/theatre-0715-helmet-320.png' });
+  await launcherChecks(page, {
+    getWorkspace: () => workspace,
+    getConsole: () => status.console,
+    calls,
+    mac: helmet.mac,
+    unlockElsewhere: () => {
+      status.console.editorLocked = false;
+    },
+  });
   assert.deepEqual(errors, []);
   console.log(
     'MOCK ESP production UI: helmet global presets/save/rename and per-scene reactive light/no hidden GO/mobile dialog, real/unknown firmware versions, 12-channel inversion/masks in LIVE, JSON dirty-only ten-minute reminders/snooze/manual series/download/reload/no GO, scene-driven Диммер220 without extra confirmation/ARM, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',

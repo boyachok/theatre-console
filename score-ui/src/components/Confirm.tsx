@@ -4,6 +4,7 @@ import { Modal } from './Modal.tsx';
 interface Options {
   message: string;
   accept?: string;
+  cancel?: string;
   remember?: 'delete-step';
 }
 interface Request extends Options {
@@ -70,7 +71,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             )}
           </div>
           <footer className="modal-footer">
-            <button onClick={() => finish(false)}>Отмена</button>
+            <button onClick={() => finish(false)}>{current.cancel ?? 'Отмена'}</button>
             <button className="primary-button" onClick={() => finish(true)}>
               {current.accept ?? 'Продолжить'}
             </button>
