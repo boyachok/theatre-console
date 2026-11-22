@@ -1,5 +1,14 @@
 # Общая версия и резервные копии
 
+**22.11.2026: USB-плата 84:FC:E6:66:F3:8C master0.7.13 → remote0.8.10** по прямому
+запросу пользователя. Full16MB backup, одна app-only запись в сохранённый app0,
+независимый app/prefix readback; новые role/MAC/version/OTA и три стабильных status
+подтверждены. ButtonTest=true (штатный first-boot commissioning): обе кнопки
+отпущены, sent0/diagSent0, FULL/LOW не калиброваны. YOUR_WIFI_SSID недоступна; нажатия,
+HTTP/master-link не проверены. Для навигации после подключения проводов:
+`stage-remote-66f38c.local/buttons` → «Завершить тест и разрешить навигацию».
+Новый backup master BFA8 и остальные не тронуты. [Запись](DEPLOYMENTS.md).
+
 **22.11.2026: 0.8.10 установлен на НОВЫЙ USB master A0:85:E3:E3:BF:A8**, не на
 прежний A0:85:E3:E2:BC:D4/0.8.8. Заводская MicroPython-разметка заменена с отдельного
 разрешения, полные16MB сохранены. App/вся flash проверены независимым чтением.
