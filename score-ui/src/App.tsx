@@ -46,13 +46,6 @@ import { EspConsoleTransport, useEspBackend } from './transport/esp.ts';
 import { DisconnectedNetworkTransport } from './transport/network.ts';
 import { Matrix } from './components/Matrix.tsx';
 import {
-  QuickToolbar,
-  QuickValueDialog,
-  ShortcutHelp,
-  type EditScope,
-} from './components/QuickEditor.tsx';
-import {
-  applyEdit,
   cellKey,
   columnCells,
   editorRows,
@@ -63,7 +56,6 @@ import {
   patchCells,
   rectangle,
   rowKey,
-  type EditField,
   type Modifiers,
 } from './domain/editor.ts';
 import { historyReducer } from './domain/history.ts';
@@ -139,18 +131,6 @@ export default function App() {
       }),
     [],
   );
-  const undo = useCallback(() => {
-    if (!editLockRef.current) {
-      authoredSinceUnlock.current = true;
-      dispatchHistory({ type: 'undo', at: Date.now() });
-    }
-  }, []);
-  const redo = useCallback(() => {
-    if (!editLockRef.current) {
-      authoredSinceUnlock.current = true;
-      dispatchHistory({ type: 'redo', at: Date.now() });
-    }
-  }, []);
   const project = workspace.draft,
     latest = useRef(workspace);
   latest.current = workspace;
@@ -190,11 +170,6 @@ export default function App() {
   selectedStepIdsRef.current = selectedStepIds;
   const anchorCell = useRef<CellSelection | null>(null),
     anchorStep = useRef(selectedStepId);
-  const [editScope, setEditScope] = useState<EditScope>('selection');
-  const [quickEdit, setQuickEdit] = useState<{ field: EditField; cells: CellSelection[] } | null>(
-    null,
-  );
-  const [shortcutHelp, setShortcutHelp] = useState(false);
   const visibleRows = useMemo(
     () => editorRows(project, collapsedDevices),
     [project, collapsedDevices],
@@ -497,8 +472,6 @@ export default function App() {
       await lockForView();
       setDialog(null);
       setInspectorOpen(false);
-      setQuickEdit(null);
-      setShortcutHelp(false);
       setBackupOpen(false);
       setView('score');
       requestAnimationFrame(() =>
@@ -522,8 +495,6 @@ export default function App() {
     } finally {
       setDialog(null);
       setInspectorOpen(false);
-      setQuickEdit(null);
-      setShortcutHelp(false);
       setBackupOpen(false);
       setView('launcher');
       setViewBusy(false);
@@ -975,41 +946,19 @@ export default function App() {
     setDeviceDialogId(id);
     setDialog('devices');
   }, []);
-  const scopedCells = (): CellSelection[] => {
-    const cells = selectedCells.length ? selectedCells : selection ? [selection] : [];
-    if (editScope === 'selection' || !cells.length) return cells;
-    const rows = editorRows(project);
-    if (editScope === 'allSteps') {
-      const keys = new Set(cells.map(rowKey));
-      return columnCells(
-        project,
-        rows.filter((r) => keys.has(rowKey(r))),
-        project.steps.map((s) => s.id),
-      );
-    }
-    return columnCells(
-      project,
-      editScope === 'device'
-        ? rows.filter((r) => r.device.id === (selection?.deviceId ?? deviceId))
-        : rows,
-      [selectedStepId],
+  const toggleLayout = () =>
+    setWorkspace(
+      (w) => ({
+        ...w,
+        draft: touch(w.draft, {
+          layout: {
+            mode: w.draft.layout?.mode === 'custom' ? 'devices' : 'custom',
+            order: w.draft.layout?.order ?? editorRows(w.draft).map(rowKey),
+          },
+        }),
+      }),
+      true,
     );
-  };
-  const applyQuick = (field: EditField, value: number | null, cells = scopedCells()) => {
-    if (editLockRef.current) return;
-    const result = applyEdit(latest.current.draft, cells, field, value);
-    if (result.count) setWorkspace((w) => ({ ...w, draft: result.project }));
-    setToast(
-      result.count ? `Изменено ячеек: ${result.count}` : 'Нет подходящих параметров в выделении',
-    );
-    setQuickEdit(null);
-  };
-  const openQuick = (field: EditField) => {
-    if (editLockRef.current) return;
-    const cells = scopedCells();
-    if (cells.length) setQuickEdit({ field, cells });
-    else setToast('Сначала выдели ячейки или шаги');
-  };
   const moveRow = (source: string, target: string) =>
     setWorkspace((w) => ({ ...w, draft: moveEditorRow(w.draft, source, target) }), true);
   useEffect(() => {
@@ -1021,17 +970,7 @@ export default function App() {
         document.querySelector('[role="dialog"]')
       )
         return;
-      if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
-        e.preventDefault();
-        if (e.shiftKey) redo();
-        else undo();
-        return;
-      }
-      if (e.key === '?' || e.code === 'F1') {
-        e.preventDefault();
-        setShortcutHelp(true);
-        return;
-      }
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const arrows: Record<string, [number, number]> = {
         ArrowLeft: [-1, 0],
         ArrowRight: [1, 0],
@@ -1046,12 +985,6 @@ export default function App() {
           selectStep(project.steps[Math.max(0, Math.min(project.steps.length - 1, i + dx))].id, {
             shiftKey: true,
           });
-          return;
-        }
-        if (e.altKey && dy && selection) {
-          const i = visibleRows.findIndex((r) => rowKey(r) === rowKey(selection)),
-            target = visibleRows[i + dy];
-          if (target) moveRow(rowKey(selection), rowKey(target));
           return;
         }
         const next = moveCursor(
@@ -1080,32 +1013,6 @@ export default function App() {
           });
         }
         return;
-      }
-      if (editLockRef.current || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'Enter' && el?.closest('.matrix-cell')) {
-        e.preventDefault();
-        openQuick('level');
-        return;
-      }
-      if (/^Digit[0-9]$/.test(e.code) || /^Numpad[0-9]$/.test(e.code)) {
-        e.preventDefault();
-        applyQuick('level', Number(e.code.slice(-1)) * 10);
-        return;
-      }
-      if (e.code === 'Equal' || e.code === 'NumpadAdd') {
-        e.preventDefault();
-        applyQuick('level', 100);
-        return;
-      }
-      const fields: Record<string, EditField> = {
-        KeyI: 'fadeIn',
-        KeyO: 'fadeOut',
-        KeyD: 'startDelay',
-        KeyV: 'level',
-      };
-      if (fields[e.code]) {
-        e.preventDefault();
-        openQuick(fields[e.code]);
       }
       if (e.key === 'Escape') {
         setSelectedCells([]);
@@ -1190,9 +1097,7 @@ export default function App() {
             <Layers3 size={20} />
           </span>
           <div>
-            <h1>
-              {PRODUCT_NAME} <small>{INTERFACE_VERSION}</small>
-            </h1>
+            <h1>{PRODUCT_NAME}</h1>
             <input
               className="project-name"
               disabled={!backendReady || editorLocked}
@@ -1275,7 +1180,7 @@ export default function App() {
               lockBusy
             }
             onClick={() => void changeEditorLock()}
-            title="Блокировка партитуры; спектакль и пульт продолжают работать"
+            title={editorLocked ? 'Разрешить редактирование' : 'Заблокировать редактирование'}
           >
             {editorLocked ? <LockKeyhole size={17} /> : <LockKeyholeOpen size={17} />}
             {editorLocked ? 'Просмотр' : 'Редактирование'}
@@ -1287,7 +1192,7 @@ export default function App() {
               aria-label={`Пресет голоса · ${device.name}`}
               value={voiceBank(device).selected}
               disabled={!backendReady}
-              title="Независимый голос: применяется сразу, не переключая сцену"
+              title="Голос шлема"
               onChange={(e) => void chooseGlobalPreset(device, e.target.value)}
             >
               {voiceBank(device).presets.map((preset) => (
@@ -1297,10 +1202,7 @@ export default function App() {
               ))}
             </select>
           ))}
-          <label
-            className="preview-toggle"
-            title="Включён: выбор и правки сразу исполняются. Выключен: синхронизация памяти без автозапуска."
-          >
+          <label className="preview-toggle" title="Предпросмотр">
             <input
               type="checkbox"
               role="switch"
@@ -1316,14 +1218,12 @@ export default function App() {
               {!backendReady
                 ? 'Чтение партитуры…'
                 : network.getSnapshot().startupPending
-                  ? `Автостарт · память ${preload.stored}/${preload.total}`
+                  ? 'Ожидание приборов…'
                   : publishing || editorSyncing
                     ? 'Синхронизация…'
                     : preload.pending
-                      ? `Память ${preload.stored}/${preload.total}`
-                      : !showMode
-                        ? 'Черновик · LIVE'
-                        : 'Память контроллеров'}
+                      ? 'Подготовка…'
+                      : ''}
             </span>
           )}
           <button
@@ -1390,12 +1290,6 @@ export default function App() {
               <Radio size={18} />
             </button>
           )}
-          {published && (
-            <span className="version-chip" title="Сохранённая версия">
-              v{published.version}
-              {dirty ? '*' : ''}
-            </span>
-          )}
           <span
             className={`save-dot ${network.getSnapshot().helmetVoiceSaved === false ? 'pending' : saveState}`}
             title={
@@ -1442,36 +1336,10 @@ export default function App() {
       )}
       <main className="workspace" inert={!backendReady} aria-busy={!backendReady}>
         <section className="matrix-area">
-          <QuickToolbar
-            count={selectedCells.length || (selection ? 1 : 0)}
-            scope={editScope}
-            onScope={setEditScope}
-            onEdit={openQuick}
-            onLevel={(n) => applyQuick('level', n)}
-            onHelp={() => setShortcutHelp(true)}
-            custom={project.layout?.mode === 'custom'}
-            onLayout={() =>
-              setWorkspace(
-                (w) => ({
-                  ...w,
-                  draft: touch(w.draft, {
-                    layout: {
-                      mode: w.draft.layout?.mode === 'custom' ? 'devices' : 'custom',
-                      order: w.draft.layout?.order ?? editorRows(w.draft).map(rowKey),
-                    },
-                  }),
-                }),
-                true,
-              )
-            }
-            canUndo={!!history.past.length}
-            canRedo={!!history.future.length}
-            onUndo={undo}
-            onRedo={redo}
-          />
           <Matrix
-            network={network}
             project={project}
+            readOnly={editorLocked}
+            onLayout={toggleLayout}
             selectedStepId={selectedStepId}
             activeStepId={activeId}
             selection={selection}
@@ -1531,17 +1399,6 @@ export default function App() {
       {helmetEditor}
       {dialog === 'network' && (
         <NetworkDialog project={project} transport={network} onClose={() => setDialog(null)} />
-      )}
-      {shortcutHelp && <ShortcutHelp onClose={() => setShortcutHelp(false)} />}
-      {quickEdit && (
-        <QuickValueDialog
-          field={quickEdit.field}
-          count={quickEdit.cells.length}
-          devices={new Set(quickEdit.cells.map((c) => c.deviceId)).size}
-          steps={new Set(quickEdit.cells.map((c) => c.stepId)).size}
-          onApply={(n) => applyQuick(quickEdit.field, n, quickEdit.cells)}
-          onClose={() => setQuickEdit(null)}
-        />
       )}
       {toastNotice}
     </div>

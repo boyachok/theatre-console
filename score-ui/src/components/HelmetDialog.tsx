@@ -77,14 +77,9 @@ export function HelmetDialog({
   return (
     <Modal title={`Звук шлема · ${device.name}`} onClose={onClose} className="helmet-modal">
       <div className="helmet-content">
-        <p className="muted helmet-note">
-          Независимый звук шлема: настройки применяются сразу, без переключения сцены, в том числе
-          при заблокированной партитуре. Сцены задают только включение голоса и свет.
-        </p>
         {snapshot.helmetVoiceReady === false && (
           <p className="helmet-note" role="status">
-            Независимый звук ещё не подтверждён шлемом: нужны новые прошивки master и helmet. Сцену
-            это не переключает.
+            Ожидание шлема…
           </p>
         )}
         <div className="helmet-preset-fields">
@@ -135,10 +130,6 @@ export function HelmetDialog({
             />
             Эквалайзер: 3 полосы
           </label>
-          <p className="muted helmet-note">
-            Частота / усиление / Q. Меньше Q — шире полоса. Начните с ослабления лишнего; сильное
-            усиление может вызвать акустическую обратную связь.
-          </p>
           <div className="helmet-fields">
             {eq.bands.map((band, index) => (
               <div className="helmet-eq-band" key={index}>
@@ -222,11 +213,6 @@ export function HelmetDialog({
             />
             Полоса разборчивости
           </label>
-          <p className="muted helmet-note">
-            Параллельная полоса из чистого микрофона после gate: сохраняет согласные поверх
-            роботизации. Мягкая сатурация только в выбранном диапазоне; после неё полоса фильтруется
-            снова. Начните с небольшого подмешивания.
-          </p>
           <div className="helmet-fields">
             {(
               [
@@ -298,25 +284,22 @@ export function HelmetDialog({
             Удалить пресет
           </button>
         </div>
-        <p className="muted helmet-note">
-          {bank.working
-            ? 'Параметры отличаются от сохранённого пресета.'
-            : 'Выбран сохранённый пресет.'}{' '}
-          Пресеты и текущие параметры входят в JSON-бэкап.
-        </p>
+        {bank.working && (
+          <span className="preset-dirty" role="status">
+            Изменено
+          </span>
+        )}
         <p role="status" className="helmet-status">
           {!node?.online
-            ? 'Шлем не подтверждён в сети'
-            : !v
-              ? 'Нет аудиотелеметрии'
-              : v.ageMs > 3000
-                ? 'Аудиоданные устарели'
-                : v.ready
-                  ? `Аудиодвижок готов · DSP ${v.load.toFixed(1)}% · ошибок ${v.errors} · просрочек ${v.late}`
-                  : 'Аудиодвижок недоступен'}
+            ? 'Нет связи со шлемом'
+            : !v || v.ageMs > 3000
+              ? 'Нет данных микрофона'
+              : !v.ready
+                ? 'Звук недоступен'
+                : ''}
         </p>
         <label className="field">
-          <span>Уровень микрофона (после усиления)</span>
+          <span>Микрофон</span>
           <meter
             aria-label="Уровень микрофона шлема"
             min={0}
@@ -457,10 +440,6 @@ export function HelmetDialog({
               </label>
             </div>
           </div>
-          <p className="muted helmet-note">
-            Порог сравнивается с микрофоном до усиления; ближе к −25 дБ — сильнее отсечение. −90…−89
-            дБ — без отсечения. Изменения прослушиваются в LIVE.
-          </p>
         </details>
       </div>
       <footer className="modal-footer">

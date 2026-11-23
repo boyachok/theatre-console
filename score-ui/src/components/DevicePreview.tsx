@@ -57,7 +57,7 @@ export function DevicePreview({
             className="preview-light"
             data-live-parameter="ac-220"
             data-live-value={Math.round(runtime.ac.value)}
-            title="Расчёт команды Диммер220; не измерение сети"
+            title="Диммер220"
           >
             <div>
               <span>220{runtime.ac.startAt != null ? ' ◷' : ''}</span>
@@ -89,12 +89,6 @@ export function DevicePreview({
             </span>
           ))}
       </div>
-      {device.profile === 'helmet' && device.audio.enabled && (
-        <p className="muted">
-          Голос: локальная обработка в шлеме. Настройки и микрофон — в окне шлема; браузер звук не
-          синтезирует.
-        </p>
-      )}
       {device.audio.enabled && device.profile !== 'helmet' && (
         <div className="preview-audio">
           <span>{device.audio.name}</span>

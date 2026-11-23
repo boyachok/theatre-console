@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { editorChecks } from './editor-ui-steps.mjs';
 import { helmetDialogChecks } from './helmet-dialog-checks.mjs';
 import { enterScore, launcherChecks } from './launcher-steps.mjs';
+import { operatorDeviceChecks } from './operator-ui-steps.mjs';
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { INTERFACE_VERSION } from '../src/version.ts';
@@ -364,8 +365,10 @@ try {
   await enterScore(page, { declineFirst: true });
   await page.waitForSelector('.parameter-row');
   await page.waitForFunction(
-    () => document.querySelector('.device-group code')?.textContent === '192.168.50.33',
+    (id) => document.querySelector('.parameter-row')?.dataset.device === id,
+    project.devices[0].id,
   );
+  assert.equal(await page.locator('.device-group code').count(), 0);
   assert.equal(status.console.editorLocked, true);
   const lockedDraft = JSON.stringify(workspace.draft);
   await page
@@ -408,128 +411,11 @@ try {
     },
   });
   await page.waitForTimeout(1100);
-  const beforeFrequency = calls.length;
-  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
-  let frequencyDialog = page.getByRole('dialog', { name: 'Приборы', exact: true });
-  await frequencyDialog
-    .getByRole('button', { name: /^Настроить / })
-    .first()
-    .click();
-  const frequencyField = frequencyDialog.getByLabel('Частота PWM DIM1–12', { exact: true });
-  for (const text of ['', '0', '1999', '2000.5', '25001']) {
-    await frequencyField.fill(text);
-    assert(
-      await frequencyDialog
-        .getByRole('button', { name: 'Сохранить частоту PWM', exact: true })
-        .isDisabled(),
-    );
-  }
-  await frequencyField.fill('2001');
-  await frequencyDialog.getByRole('button', { name: 'Сохранить частоту PWM', exact: true }).click();
-  await page.getByRole('button', { name: 'Сохранить частоту', exact: true }).click();
-  await frequencyDialog
-    .getByText('Сохранено. Применится после отдельного перезапуска платы.', { exact: true })
-    .waitFor();
-  assert.equal(peer.pwmFrequency.activeHz, 25000);
-  assert.equal(peer.pwmFrequency.savedHz, 2001);
-  assert.equal(peer.pwmFrequency.rebootRequired, true);
-  assert.equal(calls.slice(beforeFrequency).filter((c) => c.path === '/command').length, 1);
-  assert(
-    !calls
-      .slice(beforeFrequency)
-      .some(
-        (c) =>
-          c.path.endsWith('/publish') ||
-          c.path.endsWith('/draft') ||
-          c.path.includes('/go') ||
-          c.path.includes('/reboot') ||
-          c.path.includes('stop'),
-      ),
-  );
-  const frequencyViewport = page.viewportSize();
-  for (const width of [320, 375, 390]) {
-    await page.setViewportSize({ width, height: 700 });
-    assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= width);
-    const bounds = await frequencyField.boundingBox();
-    assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width);
-    if (width === 320) await page.screenshot({ path: '/tmp/theatre-086-frequency-320.png' });
-  }
-  await page.setViewportSize(frequencyViewport);
-  await frequencyDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  peer.acDimmer = {
-    pulseUs: 200,
-    minUs: 200,
-    maxUs: 400,
-    configFault: false,
-    enabled: true,
-    qualified: true,
-    requested: 0,
-    paired: 0,
-    latched: false,
-    halfUs: 10000,
-    goodZero: 123,
-    scheduled: 50,
-    late: 0,
-    skippedPulses: 0,
-    syncLosses: 0,
-    fault: 'ok',
-    ageMs: 10,
-  };
-  await page.waitForTimeout(1100);
-  const beforePulse = calls.length;
-  await page.getByRole('button', { name: 'Приборы', exact: true }).click();
-  const pulseDialog = page.getByRole('dialog', { name: 'Приборы', exact: true });
-  await pulseDialog
-    .getByRole('button', { name: /^Настроить / })
-    .first()
-    .click();
-  const pulseField = pulseDialog.getByLabel('Импульс открытия220, мкс', { exact: true }),
-    pulseSave = pulseDialog.getByRole('button', { name: 'Сохранить импульс220', exact: true });
-  for (const text of ['', '0', '199', '401', '300.5']) {
-    await pulseField.fill(text);
-    assert(await pulseSave.isDisabled());
-  }
-  await pulseField.fill('300');
-  await pulseSave.click();
-  await page.getByRole('button', { name: 'Подтвердить импульс220', exact: true }).click();
-  await pulseDialog
-    .getByText('Импульс сохранён. Для испытания нужен отдельный запуск сцены.', { exact: true })
-    .waitFor();
-  assert.equal(peer.acDimmer.pulseUs, 300);
-  for (const width of [320, 375, 390]) {
-    await page.setViewportSize({ width, height: 700 });
-    await pulseField.scrollIntoViewIfNeeded();
-    assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= width);
-    const b = await pulseField.boundingBox();
-    assert(b && b.x >= 0 && b.x + b.width <= width);
-    if (width === 320) await page.screenshot({ path: '/tmp/theatre-087-ac-pulse-320.png' });
-  }
-  await page.setViewportSize(frequencyViewport);
-  await pulseDialog.getByRole('button', { name: 'Ввести исходные200 мкс', exact: true }).click();
-  await pulseSave.click();
-  await page.getByRole('button', { name: 'Подтвердить импульс220', exact: true }).click();
-  await page.waitForTimeout(500);
-  assert.equal(peer.acDimmer.pulseUs, 200);
-  assert.equal(calls.slice(beforePulse).filter((c) => c.path === '/command').length, 2);
-  assert(
-    !calls
-      .slice(beforePulse)
-      .some(
-        (c) =>
-          c.path.endsWith('/publish') ||
-          c.path.endsWith('/draft') ||
-          c.path.includes('/go') ||
-          c.path.includes('/reboot') ||
-          c.path.includes('stop'),
-      ),
-  );
-  await pulseDialog.getByRole('button', { name: 'Закрыть', exact: true }).click();
-  delete peer.acDimmer;
+  await operatorDeviceChecks(page, { workspace: () => workspace, peer, calls });
   delete peer.pwmFrequency;
   await page.getByLabel('Название спектакля', { exact: true }).fill('MOCK ESP test');
-  await page.waitForFunction(() =>
-    document.querySelector('.version-chip')?.textContent.includes('v1'),
-  );
+  for (let i = 0; i < 100 && status.console.version < 1; i++) await page.waitForTimeout(100);
+  assert(status.console.version >= 1);
   assert.equal(status.console.step, null);
   assert.equal(status.console.running, false); // Initial sync cannot execute.
   const cell = page.locator('.parameter-row[data-parameter="pwm-1"]').first().locator('td').first();
@@ -603,13 +489,12 @@ try {
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
   const panel = page.getByRole('dialog', { name: 'Сеть', exact: true });
   await panel.getByText('Подключено', { exact: true }).waitFor();
-  assert.equal(await panel.locator('tbody tr').count(), 3);
-  assert((await panel.locator('[data-master-firmware]').textContent()).includes(INTERFACE_VERSION));
-  assert.deepEqual(await panel.locator('[data-firmware-version]').allTextContents(), [
-    INTERFACE_VERSION,
-    '—',
-    '0.7.8',
-  ]);
+  assert.equal(await panel.locator('[data-network-device]').count(), 3);
+  assert.equal(
+    await panel.locator('[data-master-firmware],[data-firmware-version],.network-chart').count(),
+    0,
+  );
+  assert.equal(await panel.getByRole('switch', { name: 'Пинг-тест', exact: true }).count(), 0);
   await panel.getByRole('button', { name: 'Мигать remote', exact: true }).click();
   await page.waitForTimeout(80);
   assert(
@@ -617,51 +502,72 @@ try {
       (c) => c.path.endsWith('/identify') && new URLSearchParams(c.raw).get('mac') === remote.mac,
     ),
   );
-  const sceneRow = panel.locator('tbody tr').first();
-  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '—');
+  const sceneRow = panel.locator('[data-network-device]').first();
+  assert((await sceneRow.innerText()).includes('RTT'));
+  assert((await sceneRow.innerText()).includes('RSSI'));
   peer.confirmedStep = 1;
   peer.sceneStatus = 'applied';
   peer.scoreReceived++;
-  await panel.getByText('Применена', { exact: true }).waitFor();
-  assert.equal((await sceneRow.locator('td').nth(9).textContent()).trim(), '1');
-  await panel.getByRole('switch', { name: 'Пинг-тест', exact: true }).click();
   await page.waitForTimeout(250);
-  assert.equal(status.measuring, false);
+  assert.equal(status.measuring, true, 'Operator UI never changes the measurement service');
   await panel.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await page.getByRole('button', { name: 'Приборы', exact: true }).click();
   const settings = page.getByRole('dialog', { name: 'Приборы', exact: true });
-  await settings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
+  const firstSettings = settings.locator('[data-config-device]').first();
+  const hiddenChannelsBefore = JSON.stringify(workspace.draft.devices[0].dimmers.slice(8));
+  const stripHardwareBefore = JSON.stringify([
+    workspace.draft.devices[0].ledCount,
+    workspace.draft.devices[0].stripOrder,
+    workspace.draft.devices[0].stripRate,
+  ]);
   assert.equal(
-    await settings
+    await firstSettings
       .getByLabel('Контроллер прибора', { exact: true })
       .locator(`option[value="${remote.mac}"]`)
       .count(),
     0,
   );
-  const inversion = settings.getByRole('checkbox', { name: 'Инвертировать DIM12', exact: true });
+  assert.equal(
+    await settings.getByRole('checkbox', { name: 'Инвертировать DIM12', exact: true }).count(),
+    0,
+  );
+  const inversion = firstSettings.getByRole('checkbox', {
+    name: 'Инвертировать DIM8',
+    exact: true,
+  });
   assert.equal(await inversion.isChecked(), false);
   await inversion.check();
   await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.waitForTimeout(650);
   assert.equal(draft.devices[0].cues[0].inversionSet, 4095);
-  assert.equal(draft.devices[0].cues[0].invertedMask, 2048);
+  assert.equal(draft.devices[0].cues[0].invertedMask, 128);
+  assert.equal(JSON.stringify(workspace.draft.devices[0].dimmers.slice(8)), hiddenChannelsBefore);
+  assert.equal(
+    JSON.stringify([
+      workspace.draft.devices[0].ledCount,
+      workspace.draft.devices[0].stripOrder,
+      workspace.draft.devices[0].stripRate,
+    ]),
+    stripHardwareBefore,
+  );
   assert.equal(calls.filter((c) => c.path.endsWith('/publish')).length, publications);
   await page.getByRole('button', { name: 'Приборы', exact: true }).click();
-  await settings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
   assert.equal(
-    await settings.getByRole('checkbox', { name: 'Инвертировать DIM12', exact: true }).isChecked(),
+    await firstSettings
+      .getByRole('checkbox', { name: 'Инвертировать DIM8', exact: true })
+      .isChecked(),
     true,
   );
-  await settings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
+  await firstSettings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
   assert.equal(
-    await settings
+    await firstSettings
       .getByLabel('Контроллер прибора', { exact: true })
       .locator(`option[value="${helmet.mac}"]`)
       .count(),
     1,
   );
   assert.equal(
-    await settings
+    await firstSettings
       .getByLabel('Контроллер прибора', { exact: true })
       .locator(`option[value="${mac}"]`)
       .count(),
@@ -836,14 +742,10 @@ try {
   );
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByRole('button', { name: 'Сеть', exact: true }).click();
-  await page.getByRole('button', { name: 'Сбросить сеть', exact: true }).click();
-  await page
-    .getByRole('dialog', { name: 'Подтверждение', exact: true })
-    .getByRole('button', { name: 'Сбросить', exact: true })
-    .click();
-  await page.waitForFunction(
-    () => document.querySelectorAll('.network-table tbody tr').length === 0,
-  );
+  assert.equal(await page.getByRole('button', { name: 'Сбросить сеть', exact: true }).count(), 0);
+  status.nodes = [];
+  status.remotes = [];
+  await page.waitForFunction(() => document.querySelectorAll('[data-network-device]').length === 0);
   await page
     .getByRole('dialog', { name: 'Сеть', exact: true })
     .getByRole('button', { name: 'Закрыть', exact: true })
@@ -873,7 +775,8 @@ try {
   await download1.saveAs('/tmp/theatre-0713-ui-json-1.json');
   const backup1 = JSON.parse(await readFile('/tmp/theatre-0713-ui-json-1.json', 'utf8'));
   assert.equal(backup1.backup.minor, 1);
-  assert.equal(backup1.draft.devices[0].dimmers[11].inverted, true);
+  assert.equal(backup1.draft.devices[0].dimmers[7].inverted, true);
+  assert.equal(backup1.draft.devices[0].dimmers[11].inverted, false);
   const otherClient = await page.request.post('http://127.0.0.1:5179/api/console/backup-sequence', {
     form: { token: status.token, project: project.id, major: '1', floor: '1' },
   });
@@ -950,9 +853,8 @@ try {
   await page.waitForTimeout(800);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: 'Приборы', exact: true }).click();
-  await settings.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
-  await settings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
-  await settings.getByLabel('Контроллер прибора', { exact: true }).selectOption(helmet.mac);
+  await firstSettings.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
+  await firstSettings.getByLabel('Контроллер прибора', { exact: true }).selectOption(helmet.mac);
   await settings.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await page.waitForTimeout(1000);
   const legacySceneVoices = JSON.stringify(draft.devices[0].cues.map((c) => c.v));
@@ -1058,7 +960,7 @@ try {
   });
   assert.deepEqual(errors, []);
   console.log(
-    'MOCK ESP production UI: helmet global presets/save/rename and per-scene reactive light/no hidden GO/mobile dialog, real/unknown firmware versions, 12-channel inversion/masks in LIVE, JSON dirty-only ten-minute reminders/snooze/manual series/download/reload/no GO, scene-driven Диммер220 without extra confirmation/ARM, AC compile/fade/delay/animation; per-DIM delay and loop checkbox LIVE/OFF without GO; audio start delay seconds→ms and zero-safe slider, LIVE/OFF without GO; five DIM animations/phase/uint32 seed/floor/smoothing and per-channel LIVE+OFF sync without GO, preview switch, full draft/patches, live edits without publication, remote draft/show cursor follow + inspector without echo, auto flash sync without GO, real ACK distinction/preload block, remote exclusion/helmet profile, ping/identify/reset, 320/375/390 header passed; NOT physical GPIO/RF tests.',
+    'MOCK ESP production UI: compact4x4 cards and truthful health, hidden DIM9–12/strip retention, visible DIM8 inversion and12-bit masks, no quick panel/editing keys/network tests/reset; pointer/keyboard selection, double click, native drag; full helmet presets/EQ/working/mobile, JSON reminder/series/reload, AC/DIM/audio delay/fades/animations, LIVE/OFF patches without hidden GO/publication, remote cursor follow without echo, flash sync and ACK/preload distinction, role binding, explicit identify, separate view consent/lock;320/375/390/landscape/low-height passed. NOT physical GPIO/RF tests.',
   );
 } finally {
   await browser.close();

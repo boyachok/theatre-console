@@ -197,18 +197,6 @@ export function Inspector({
                   suffix="с"
                   onChange={(startDelay) => change({ startDelay })}
                 />
-                <p className="muted">
-                  До перехода сохраняется предыдущий свет и его анимация. После задержки начинаются
-                  новый фейд и новая анимация. Новый шаг задаёт новую задержку.
-                </p>
-                {selection.kind === 'ac' && (
-                  <p className="muted">
-                    220 В · GPIO41 Z-C → GPIO40 PSM. Только фазовое управление, не PWM. Нужны
-                    проверенные уровни 3.3 В, изоляция и охлаждение. Без Z-C импульсов нет; после
-                    краткого сбоя синхронизация восстанавливается автоматически. Предпросмотр не
-                    измеряет сеть.
-                  </p>
-                )}
                 <DimmerAnimationEditor
                   key={`${step.id}/${device.id}/${selection.parameterId}`}
                   cue={light}
@@ -234,10 +222,6 @@ export function Inspector({
                     ВЫКЛ
                   </button>
                 </div>
-                <p className="muted">
-                  Живой голос INMP441 → локальный DSP → PCM5102A. Звуковой пресет общий для этого
-                  шлема во всех сценах.
-                </p>
               </Section>
             )}
             {selection.kind === 'audio' && device.profile !== 'helmet' && (
@@ -279,10 +263,6 @@ export function Inspector({
                   suffix="с"
                   onChange={(startDelay) => change({ startDelay })}
                 />
-                <p className="muted">
-                  От начала сцены до команды запуска. Фейд начинается с PLAY; уже играющий тот же
-                  трек продолжает звучать без новой задержки.
-                </p>
                 {fadeFields('audio')}
               </>
             )}
@@ -365,9 +345,6 @@ export function Inspector({
                 </label>
                 {stripEffect && (
                   <>
-                    <p className="muted">
-                      Параметры света только этой сцены; библиотечный эффект не меняется.
-                    </p>
                     <StripEditor
                       effect={stripEffect}
                       onChange={(patch) => change({ settings: { ...stripEffect, ...patch } })}
@@ -380,7 +357,7 @@ export function Inspector({
         )}
       </fieldset>
       {device.profile === 'helmet' && (
-        <Section title="Звук шлема · независимо от сцен">
+        <Section title="Звук шлема">
           <label className="field">
             <span>Пресет голоса</span>
             <select

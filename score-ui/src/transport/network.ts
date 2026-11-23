@@ -1,9 +1,11 @@
+import type { LinkHealth } from '../domain/link-health.ts';
 export interface NetworkSample {
   at: number;
   rttMs: number | null;
   rssi: number | null;
 }
 export interface NetworkDeviceStatus {
+  health?: LinkHealth;
   voice?: {
     ready: boolean;
     enabled: boolean;

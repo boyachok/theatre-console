@@ -26,6 +26,13 @@ export async function helmetDialogChecks(page, dialog) {
     await page.waitForFunction(() => document.querySelector('.helmet-content')?.scrollTop > 0);
     const range = dialog.getByLabel('Ползунок: Усиление микрофона', { exact: true });
     await range.scrollIntoViewIfNeeded();
+    await range.evaluate((input) => {
+      const body = input.closest('.helmet-content');
+      body.scrollTop +=
+        input.getBoundingClientRect().top -
+        body.getBoundingClientRect().top -
+        body.clientHeight / 4;
+    });
     await range.focus();
     await range.hover();
     const valueBefore = await range.inputValue(),

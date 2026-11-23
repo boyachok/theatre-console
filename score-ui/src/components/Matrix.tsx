@@ -1,12 +1,4 @@
-import {
-  Fragment,
-  memo,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
+import { Fragment, memo, useCallback, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent } from 'react';
 import {
   ChevronDown,
@@ -35,22 +27,10 @@ const ROW_MIME = 'application/x-theatre-row',
   DEVICE_MIME = 'application/x-theatre-device';
 type Dragging = { kind: 'rows'; keys: string[] } | { kind: 'device'; id: string };
 type DropTarget = { kind: 'rows' | 'device'; key: string; position: RowDropPosition };
-import type { NetworkTransport } from '../transport/network.ts';
-const DeviceIP = ({
-  mac,
-  fallback,
-  network,
-}: {
-  mac?: string | null;
-  fallback?: string | null;
-  network: NetworkTransport;
-}) => {
-  const snapshot = useSyncExternalStore(network.subscribe, network.getSnapshot);
-  return <code>{snapshot.devices[mac?.toUpperCase() ?? '']?.ip ?? fallback ?? '—'}</code>;
-};
 interface Props {
-  network: NetworkTransport;
   project: Project;
+  readOnly?: boolean;
+  onLayout: () => void;
   selectedStepId: string;
   activeStepId: string | null;
   selection: CellSelection | null;
@@ -169,7 +149,7 @@ const ScoreCell = memo(function ScoreCell(p: {
         className={`value-button ${lit ? 'lit' : 'zero'} ${kind === 'strip' ? 'strip-value' : ''}`}
         aria-label={label}
         aria-pressed={lit}
-        title="Клик — выделить; двойной клик — включить/выключить. Shift — диапазон, ⌘/Ctrl — добавить."
+        title={parameter.name}
         onClick={(e) => p.onSelectCell(cell, e)}
         onDoubleClick={() => {
           if (patch) p.onChangeCell(cell, patch);
@@ -196,6 +176,10 @@ export function Matrix(p: Props) {
     setDropTarget(null);
   };
   const startRow = (e: DragEvent, row: Column) => {
+    if (p.readOnly) {
+      e.preventDefault();
+      return;
+    }
     e.stopPropagation();
     const key = rowKey(row),
       keys =
@@ -209,6 +193,10 @@ export function Matrix(p: Props) {
     if (!selectedRows.has(key)) p.onSelectRow(key, {});
   };
   const startDevice = (e: DragEvent, id: string) => {
+    if (p.readOnly) {
+      e.preventDefault();
+      return;
+    }
     e.stopPropagation();
     e.dataTransfer.setData(DEVICE_MIME, id);
     e.dataTransfer.effectAllowed = 'move';
@@ -343,7 +331,7 @@ export function Matrix(p: Props) {
               onDragStart={(e) => startRow(e, row)}
               aria-label={`Выделить канал ${row.device.name} · ${row.parameter.name}`}
               aria-pressed={selectedRows.has(key)}
-              title="Выделить канал во всех шагах; Shift — диапазон, ⌘/Ctrl — несколько каналов. Перетаскивай за название."
+              title="Выделить канал"
               onClick={(e) => p.onSelectRow(key, e)}
             >
               <span
@@ -428,7 +416,16 @@ export function Matrix(p: Props) {
         </colgroup>
         <thead>
           <tr>
-            <th className="parameter-column corner-cell">{custom ? 'Своя партитура' : 'Прибор'}</th>
+            <th className="parameter-column corner-cell">
+              <button
+                className="layout-switch"
+                disabled={p.readOnly}
+                aria-pressed={custom}
+                onClick={p.onLayout}
+              >
+                {custom ? 'По приборам' : 'Вид сортировки'}
+              </button>
+            </th>
             {project.steps.map((step, index) => (
               <th
                 key={step.id}
@@ -465,7 +462,7 @@ export function Matrix(p: Props) {
                 <button
                   className="step-select"
                   aria-label={`Редактировать шаг ${index + 1}`}
-                  title="Shift — диапазон шагов; ⌘/Ctrl — добавить шаг"
+                  title="Выделить шаг"
                   onClick={(e) => p.onSelectStep(step.id, e)}
                 >
                   <span className={`step-indicator ${p.activeStepId === step.id ? 'live' : ''}`} />
@@ -530,7 +527,6 @@ export function Matrix(p: Props) {
                           <Settings2 size={14} />
                         </button>
                       </div>
-                      <DeviceIP mac={device.mac} fallback={device.ip} network={p.network} />
                     </th>
                     {project.steps.map((step) => (
                       <td

@@ -146,10 +146,6 @@ export function DimmerAnimationEditor({
               suffix="с"
               onChange={(period) => patch({ period: effectPeriod(period) })}
             />
-            <p className="muted">
-              {1 / a.period >= 1 ? (1 / a.period).toFixed(2) : (1 / a.period).toPrecision(2)} Гц ·
-              яркость ячейки задаёт максимум
-            </p>
             {a.mode === 'random' ? (
               <label className="field">
                 <span>Seed рандома</span>
@@ -191,7 +187,6 @@ export function DimmerAnimationEditor({
               suffix="%"
               onChange={(floor) => patch({ floor })}
             />
-            <p className="muted">Доля от максимума: 25% при яркости40% даёт минимум10%.</p>
             {(a.mode === 'square' || a.mode === 'ramp') && (
               <Slider
                 label={a.mode === 'square' ? 'Скважность · время ВКЛ' : 'Вершина рампы'}
@@ -199,9 +194,6 @@ export function DimmerAnimationEditor({
                 suffix="%"
                 onChange={(duty) => patch({ duty })}
               />
-            )}
-            {a.mode === 'ramp' && (
-              <p className="muted">0% — спад, 50% — треугольник, 100% — подъём.</p>
             )}
             {a.mode === 'random' && (
               <Slider
@@ -211,12 +203,7 @@ export function DimmerAnimationEditor({
                 onChange={(smooth) => patch({ smooth })}
               />
             )}
-            {a.mode === 'square' && (
-              <p className="animation-warning">
-                Стробоскоп: риск фотосенситивных реакций. Импульсы квантуются с шагом около1мс; это
-                расчётный шаг, реальная точность зависит от загрузки и проверяется на нагрузке.
-              </p>
-            )}
+            {a.mode === 'square' && <p className="animation-warning">Осторожно: стробоскоп.</p>}
           </>
         )}
         <svg
@@ -228,11 +215,6 @@ export function DimmerAnimationEditor({
           <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" />
         </svg>
       </fieldset>
-      <p className="muted">
-        Настройка только этого DIM в этом шаге прибора. Новая сцена начинает цикл с фазы;
-        LIVE-правка яркости/скорости сохраняет ход. При Предпросмотр OFF правки только сохраняются;
-        уже принятая анимация продолжает работать.
-      </p>
     </Section>
   );
 }

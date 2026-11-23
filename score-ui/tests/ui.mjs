@@ -157,15 +157,16 @@ try {
   assert.equal(await current(p), '2');
   await p.getByRole('button', { name: 'Приборы', exact: true }).click();
   const devices = p.getByRole('dialog', { name: 'Приборы', exact: true });
-  assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
-  assert.equal(await devices.locator('input[type=checkbox]').count(), 170);
-  assert.equal(await devices.locator('input[type=checkbox]:checked').count(), 170);
+  assert.equal(await devices.locator('[data-config-device]').count(), 10);
+  assert.equal(await devices.locator('[data-parameter-cell]').count(), 130);
+  assert.equal(await devices.locator('input[type=checkbox]').count(), 210);
+  assert.equal(await devices.locator('.parameter-cell-toggle input:checked').count(), 130);
   assert(await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).isDisabled());
   await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
   await p.getByRole('dialog', { name: 'Подтверждение', exact: true }).waitFor();
   await p.keyboard.press('Escape');
   assert(await devices.isVisible());
-  assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
+  assert.equal(await devices.locator('[data-config-device]').count(), 10);
   await devices.getByRole('button', { name: 'Удалить Прибор 10', exact: true }).click();
   await p.keyboard.press('Tab');
   assert(
@@ -177,18 +178,18 @@ try {
     .getByRole('dialog', { name: 'Подтверждение', exact: true })
     .getByRole('button', { name: 'Удалить', exact: true })
     .click();
-  assert.equal(await devices.locator('tr[data-config-device]').count(), 9);
+  assert.equal(await devices.locator('[data-config-device]').count(), 9);
   await devices.getByRole('button', { name: 'Добавить прибор', exact: true }).click();
-  assert.equal(await devices.locator('tr[data-config-device]').count(), 10);
-  await devices.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
-  assert.equal(await devices.getByLabel('IP прибора', { exact: true }).inputValue(), '—');
-  assert(await devices.getByLabel('IP прибора', { exact: true }).evaluate((el) => el.readOnly));
-  await devices.getByLabel('Название прибора', { exact: true }).fill('Галерея');
-  await devices.getByLabel('Название DIM1', { exact: true }).fill('Красный фронт');
-  await devices.getByLabel('Цвет DIM1', { exact: true }).selectOption('red');
+  assert.equal(await devices.locator('[data-config-device]').count(), 10);
+  const firstDevice = devices.locator('[data-config-device]').first();
+  assert.equal(await devices.getByLabel('IP прибора', { exact: true }).count(), 0);
+  assert.equal(await devices.getByLabel('Название DIM9', { exact: true }).count(), 0);
+  await firstDevice.getByLabel('Название прибора', { exact: true }).fill('Галерея');
+  await firstDevice.getByLabel('Название DIM1', { exact: true }).fill('Красный фронт');
+  await firstDevice.getByLabel('Цвет DIM1', { exact: true }).selectOption('red');
   await devices.getByLabel('Галерея · REL2', { exact: true }).uncheck();
   await devices.getByRole('button', { name: 'Сохранить', exact: true }).click();
-  assert.equal(await p.locator('.parameter-row').count(), 169);
+  assert.equal(await p.locator('.parameter-row').count(), 165);
   assert((await paramRow(p, 'pwm-1').innerText()).includes('Красный фронт'));
   await p.getByRole('button', { name: 'Эффекты ленты', exact: true }).click();
   const effects = p.getByRole('dialog', { name: 'Эффекты ленты' });
@@ -200,20 +201,15 @@ try {
   await effects.getByRole('button', { name: 'Сохранить', exact: true }).click();
   await p.getByRole('button', { name: 'Сеть', exact: true }).click();
   const network = p.getByRole('dialog', { name: 'Сеть', exact: true });
-  assert(await network.getByText('Нет подключения', { exact: true }).isVisible());
-  assert.equal(await network.locator('tbody tr').count(), 10);
-  assert.equal(await network.locator('polyline').count(), 0);
-  await network.getByRole('switch', { name: 'Пинг-тест', exact: true }).check();
-  await pause(100);
-  assert.equal(await network.locator('polyline').count(), 0);
-  assert((await network.locator('tbody tr').first().innerText()).includes('—'));
-  await network.getByRole('button', { name: 'RSSI', exact: true }).click();
-  assert(await network.getByRole('img', { name: 'График RSSI', exact: true }).isVisible());
-  await network.getByRole('switch', { name: 'Пинг-тест', exact: true }).uncheck();
+  assert(await network.getByText('Нет связи', { exact: true }).isVisible());
+  assert.equal(await network.locator('[data-network-device]').count(), 10);
+  assert.equal(await network.locator('svg.network-chart,polyline').count(), 0);
+  assert.equal(await network.getByRole('switch', { name: 'Пинг-тест', exact: true }).count(), 0);
+  assert((await network.locator('[data-network-device]').first().innerText()).includes('—'));
   await network.getByRole('button', { name: 'Закрыть', exact: true }).click();
   await p.getByRole('button', { name: 'Опубликовать', exact: true }).click();
-  await p.waitForFunction(() =>
-    document.querySelector('.version-chip')?.textContent.includes('v1'),
+  await p.waitForFunction(
+    () => JSON.parse(localStorage.getItem('theatre-score.workspace.v1'))?.published?.version === 1,
   );
   const downloaded = p.waitForEvent('download');
   await p.getByRole('button', { name: 'Скачать JSON', exact: true }).click();
@@ -289,7 +285,7 @@ try {
   await big.waitForSelector('.step-heading:nth-of-type(101)');
   assert.equal(await big.locator('.step-heading').count(), 100);
   assert.equal(await big.locator('.parameter-row td').count(), 17000);
-  assert((await big.locator('.device-group').first().innerText()).includes('192.168.50.33'));
+  assert(!(await big.locator('.device-group').first().innerText()).includes('192.168.50.33'));
   const cursorStart = Date.now(),
     playingBefore = await current(big);
   await big.keyboard.press('ArrowRight');
@@ -335,8 +331,8 @@ try {
     await mobile.screenshot({ path: `/tmp/theatre-score-phone-${width}-v071.png`, fullPage: true });
     await mobile.getByRole('button', { name: 'Приборы', exact: true }).click();
     const modal = mobile.getByRole('dialog', { name: 'Приборы', exact: true });
-    assert.equal(await modal.locator('tr[data-config-device]').count(), 10);
-    assert.equal(await modal.locator('input[type=checkbox]').count(), 170);
+    assert.equal(await modal.locator('[data-config-device]').count(), 10);
+    assert.equal(await modal.locator('[data-parameter-cell]').count(), 130);
     await modal.getByRole('button', { name: 'Закрыть', exact: true }).click();
     await context.close();
   }
@@ -394,12 +390,10 @@ try {
   await helmet.waitForSelector('.parameter-row');
   await helmet.getByRole('button', { name: 'Приборы', exact: true }).click();
   const helmetModal = helmet.getByRole('dialog', { name: 'Приборы', exact: true });
-  await helmetModal.getByRole('button', { name: 'Настроить Прибор 1', exact: true }).click();
-  await helmetModal.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
-  const hardware = helmetModal.locator('tr[data-config-device]').first();
-  assert.equal(await hardware.locator('input:disabled').count(), 15);
-  assert.equal(await helmetModal.locator('.parameter-config').count(), 2);
-  await helmetModal.getByLabel('Точек WS2811', { exact: true }).fill('127');
+  const hardware = helmetModal.locator('[data-config-device]').first();
+  await hardware.getByLabel('Тип прибора', { exact: true }).selectOption('helmet');
+  assert.equal(await hardware.locator('[data-parameter-cell]').count(), 2);
+  assert.equal(await helmetModal.getByLabel('Точек WS2811', { exact: true }).count(), 0);
   await helmetModal.getByRole('button', { name: 'Сохранить', exact: true }).click();
   assert.equal(await helmet.locator('.parameter-row').count(), 155);
   const voiceCell = helmet
@@ -411,7 +405,9 @@ try {
   await voiceCell.dblclick();
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'true');
   assert.equal(await helmet.getByLabel('Номер трека', { exact: true }).count(), 0);
-  await helmet.getByText('Живой голос INMP441', { exact: false }).waitFor({ state: 'visible' });
+  await helmet
+    .getByRole('button', { name: 'Настройки шлема', exact: true })
+    .waitFor({ state: 'visible' });
   await voiceCell.dblclick();
   assert.equal(await voiceCell.getAttribute('aria-pressed'), 'false');
   await pause(400);
@@ -423,7 +419,7 @@ try {
   assert.equal(failures.length, 0, failures.join('\n'));
   assert.equal(externals.length, 0, externals.join('\n'));
   console.log(
-    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, device feature matrix and CRUD, readonly IP, static FX, truthful offline network controls, versions/JSON, 100x170 cells, select/double-click light/audio, custom confirmations (native blocked / cancel / skip until reload / Escape / nested focus), 390/375/320px.',
+    'UI passed: horizontal numbered steps, vertical instruments, header-only controls, no footer/comments, reorder/copy, compact device cards and CRUD, hidden DIM/WS fields, static FX, truthful offline network controls, versions/JSON, 100x170 cells, select/double-click light/audio, custom confirmations (native blocked / cancel / skip until reload / Escape / nested focus), 390/375/320px.',
   );
 } finally {
   await browser.close();

@@ -5,6 +5,7 @@ import { parseBackup } from '../domain/validation.ts';
 import type { ScoreTransport } from './preview.ts';
 import type { NetworkSnapshot, NetworkTransport, NetworkDeviceStatus } from './network.ts';
 import { INTERFACE_VERSION } from '../version.ts';
+import { parseLinkHealth } from '../domain/link-health.ts';
 import type { VoiceBank } from '../domain/voice.ts';
 import { compileDraft, draftDelta, type DraftPlan } from '../domain/programming.ts';
 // Retry only idempotent editor reconciliation; never automatically replay GO or I/O commands.
@@ -128,6 +129,7 @@ export class EspConsoleTransport implements ScoreTransport, NetworkTransport {
       const history = prior && n.sent >= prior.sent ? prior.history : [];
       devices[key] = {
         mac: key,
+        health: parseLinkHealth(n.health),
         voice:
           n.role === 'helmet' && n.voice && Number.isFinite(n.voice.inputLevel) ? n.voice : null,
         acDimmer: n.acDimmer ?? null,

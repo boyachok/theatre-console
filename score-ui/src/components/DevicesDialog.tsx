@@ -1,9 +1,8 @@
-import { Fragment, useState, useSyncExternalStore } from 'react';
-import { Check, Plus, Settings2, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Check, Plus, Trash2 } from 'lucide-react';
 import type { Device, Parameter, Project } from '../domain/schema.ts';
 import { COLORS } from '../domain/schema.ts';
 import {
-  clamp,
   clone,
   createDevice,
   deviceProfile,
@@ -13,9 +12,9 @@ import {
 } from '../domain/project.ts';
 import { Modal } from './Modal.tsx';
 import { useConfirm } from './Confirm.tsx';
-import { PwmFrequencySettings } from './PwmFrequencySettings.tsx';
-import { AcPulseSettings } from './AcPulseSettings.tsx';
+import { IdentifyButton, LinkStatus } from './LinkStatus.tsx';
 import type { NetworkTransport } from '../transport/network.ts';
+
 export function DevicesDialog({
   project,
   initialId,
@@ -32,9 +31,18 @@ export function DevicesDialog({
   const ask = useConfirm();
   const status = useSyncExternalStore(network.subscribe, network.getSnapshot);
   const [devices, setDevices] = useState(() => clone(project.devices));
-  const [selected, setSelected] = useState<string | null>(initialId ?? null);
+  const [error, setError] = useState(''),
+    [identifying, setIdentifying] = useState<string | null>(null);
+  const cards = useRef(new Map<string, HTMLElement>());
+  useEffect(() => {
+    if (initialId) cards.current.get(initialId)?.scrollIntoView({ block: 'start' });
+  }, [initialId]);
   const update = (id: string, patch: Partial<Device>) =>
     setDevices((list) => list.map((d) => (d.id === id ? { ...d, ...patch } : d)));
+  const parameters = (d: Device) =>
+    d.profile === 'helmet'
+      ? [d.strip, d.audio]
+      : [...d.dimmers.slice(0, 8), ...d.relays, acParameter(d), d.audio, d.strip];
   const parameterChange = (device: Device, parameter: Parameter, patch: Partial<Parameter>) => {
     const transform = (p: Parameter) => (p.id === parameter.id ? { ...p, ...patch } : p);
     update(device.id, {
@@ -51,9 +59,13 @@ export function DevicesDialog({
     if (devices.length >= 10) return;
     let n = 1;
     while (devices.some((d) => d.name === `Прибор ${n}`)) n++;
-    const device = createDevice(n - 1);
+    const fresh = createDevice(n - 1);
+    const device = {
+      ...fresh,
+      dimmers: fresh.dimmers.map((p, i) => (i < 8 ? p : { ...p, enabled: false })),
+    };
     setDevices((list) => [...list, device]);
-    setSelected(device.id);
+    requestAnimationFrame(() => cards.current.get(device.id)?.scrollIntoView({ block: 'start' }));
   };
   const remove = async (device: Device) => {
     if (
@@ -62,372 +74,253 @@ export function DevicesDialog({
     )
       return;
     setDevices((list) => list.filter((d) => d.id !== device.id));
-    if (selected === device.id) setSelected(null);
   };
-  const parameters = (d: Device) => [...d.dimmers, ...d.relays, d.strip, d.audio, acParameter(d)];
+  const identify = async (device: Device) => {
+    if (!device.mac || !network.identify || identifying) return;
+    setError('');
+    setIdentifying(device.id);
+    try {
+      await network.identify(device.mac);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Нет связи');
+    } finally {
+      setIdentifying(null);
+    }
+  };
   const save = () => {
-    onSave(
-      devices.map((device, index) => {
-        const original = project.devices.find((d) => d.id === device.id);
-        const report = status.devices[device.mac?.toUpperCase() ?? ''];
-        const measured = captureDevicePolarity(
-          device,
-          report?.online === true ? report.dimmerInverted : undefined,
-        );
-        const normalize = (p: Parameter) => ({
-          ...p,
-          name:
-            p.name.trim() ||
-            (original ? parameters(original).find((item) => item.id === p.id)?.name : null) ||
-            parameterCode(device, p),
-        });
-        return {
-          ...device,
-          name: device.name.trim() || original?.name || `Прибор ${index + 1}`,
-          dimmers: measured.dimmers.map(normalize),
-          relays: device.relays.map(normalize),
-          strip: normalize(device.strip),
-          audio: normalize(device.audio),
-          ...(device.acDimmer ? { acDimmer: normalize(device.acDimmer) } : {}),
-        };
-      }),
-    );
+    const next = devices.map((device, index) => {
+      const original = project.devices.find((d) => d.id === device.id);
+      const report = status.devices[device.mac?.toUpperCase() ?? ''];
+      const measured = captureDevicePolarity(
+        device,
+        report?.online === true ? report.dimmerInverted : undefined,
+      );
+      const all = (d: Device) => [...d.dimmers, ...d.relays, d.strip, d.audio, acParameter(d)];
+      const normalize = (p: Parameter) => ({
+        ...p,
+        name:
+          p.name.trim() ||
+          (original ? all(original).find((item) => item.id === p.id)?.name : null) ||
+          parameterCode(device, p),
+      });
+      return {
+        ...device,
+        name: device.name.trim() || original?.name || `Прибор ${index + 1}`,
+        // Hidden DIM9–12 and strip hardware settings are retained, not reset by this UI.
+        dimmers: measured.dimmers.map((p, i) => (i < 8 ? normalize(p) : device.dimmers[i])),
+        relays: device.relays.map(normalize),
+        strip: normalize(device.strip),
+        audio: normalize(device.audio),
+        ...(device.acDimmer ? { acDimmer: normalize(device.acDimmer) } : {}),
+      };
+    });
+    onSave(next);
     onClose();
   };
   return (
-    <Modal title="Приборы" onClose={onClose} className="devices-modal">
-      <div className="devices-toolbar">
-        <button
-          className="icon-button"
-          aria-label="Добавить прибор"
-          title={devices.length >= 10 ? 'Максимум 10 приборов' : 'Добавить прибор'}
-          disabled={devices.length >= 10}
-          onClick={add}
-        >
-          <Plus size={19} />
-        </button>
-      </div>
-      <p className="field-help">
-        Диммер220: GPIO41 — Z-C 3,3 В, GPIO40 — PSM. Работает по сцене без отдельного разрешения.
-        Нужна изолированная логика; GND не соединять с N/PE.
-      </p>
-      <div className="feature-matrix-scroll">
-        <table className="feature-matrix" aria-label="Состав приборов">
-          <thead>
-            <tr>
-              <th>Прибор</th>
-              {[
-                'DIM1',
-                'DIM2',
-                'DIM3',
-                'DIM4',
-                'DIM5',
-                'DIM6',
-                'DIM7',
-                'DIM8',
-                'DIM9',
-                'DIM10',
-                'DIM11',
-                'DIM12',
-                'REL1',
-                'REL2',
-                'LED',
-                'SOU1',
-                'Диммер220',
-              ].map((code) => (
-                <th key={code}>{code}</th>
-              ))}
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {devices.map((device) => (
-              <Fragment key={device.id}>
-                <tr data-config-device={device.id}>
-                  <th>
-                    <button
-                      className="device-name"
-                      onClick={() => setSelected(selected === device.id ? null : device.id)}
+    <Modal title="Приборы" onClose={onClose} className="devices-modal operator-devices-modal">
+      <div className="device-cards-scroll">
+        {error && (
+          <p className="network-error" role="alert">
+            {error}
+          </p>
+        )}
+        {devices.map((device) => {
+          const report = status.devices[device.mac?.toUpperCase() ?? ''];
+          const helmet = device.profile === 'helmet';
+          const candidates = Object.entries(status.devices).filter(
+            ([, info]) =>
+              info.role !== 'remote' && (helmet ? info.role === 'helmet' : info.role !== 'helmet'),
+          );
+          return (
+            <section
+              key={device.id}
+              className={`device-card ${helmet ? 'helmet-device-card' : ''}`}
+              data-config-device={device.id}
+              ref={(el) => {
+                if (el) cards.current.set(device.id, el);
+                else cards.current.delete(device.id);
+              }}
+            >
+              <header className="device-card-heading">
+                <input
+                  aria-label="Название прибора"
+                  value={device.name}
+                  maxLength={120}
+                  onChange={(e) => update(device.id, { name: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="icon-button delete-button"
+                  aria-label={`Удалить ${device.name}`}
+                  disabled={devices.length <= 1}
+                  onClick={() => void remove(device)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </header>
+              <div className="device-parameter-grid">
+                {parameters(device).map((p) => {
+                  const code = parameterCode(device, p),
+                    dimmer = device.dimmers.findIndex((x) => x.id === p.id),
+                    relay = device.relays.some((x) => x.id === p.id);
+                  return (
+                    <div
+                      key={p.id}
+                      className={`parameter-cell ${p.enabled ? '' : 'parameter-cell-off'}`}
+                      data-parameter-cell={p.id}
                     >
-                      {device.name || '—'}
-                    </button>
-                    <code>
-                      {status.devices[device.mac?.toUpperCase() ?? '']?.ip ?? device.ip ?? '—'}
-                    </code>
-                  </th>
-                  {parameters(device).map((parameter) => (
-                    <td key={parameter.id}>
-                      <input
-                        type="checkbox"
-                        aria-label={`${device.name} · ${parameterCode(device, parameter)}`}
-                        checked={parameter.enabled}
-                        disabled={
-                          device.profile === 'helmet' &&
-                          [...device.dimmers, ...device.relays, acParameter(device)].some(
-                            (p) => p.id === parameter.id,
-                          )
-                        }
-                        onChange={(e) =>
-                          parameterChange(device, parameter, { enabled: e.target.checked })
-                        }
-                      />
-                    </td>
-                  ))}
-                  <td className="device-actions">
-                    <button
-                      className="icon-button"
-                      aria-label={`Настроить ${device.name}`}
-                      onClick={() => setSelected(selected === device.id ? null : device.id)}
-                    >
-                      <Settings2 size={15} />
-                    </button>
-                    <button
-                      className="icon-button delete-button"
-                      aria-label={`Удалить ${device.name}`}
-                      disabled={devices.length <= 1}
-                      onClick={() => remove(device)}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </td>
-                </tr>
-                {selected === device.id && (
-                  <tr className="device-details">
-                    <td colSpan={19}>
-                      <div className="device-detail-form">
-                        {device.profile !== 'helmet' && (
-                          <PwmFrequencySettings
-                            key={device.mac ?? device.id}
-                            mac={device.mac ?? null}
-                            network={network}
-                            status={status}
-                          />
-                        )}
-                        {device.profile !== 'helmet' && (
-                          <AcPulseSettings
-                            key={`ac-${device.mac ?? device.id}`}
-                            mac={device.mac ?? null}
-                            network={network}
-                            status={status}
-                          />
-                        )}
-                        <div className="device-detail-top">
-                          <label className="field">
-                            <span>Название прибора</span>
+                      <label className="parameter-cell-toggle">
+                        <input
+                          type="checkbox"
+                          aria-label={`${device.name} · ${code}`}
+                          checked={p.enabled}
+                          onChange={(e) =>
+                            parameterChange(device, p, { enabled: e.target.checked })
+                          }
+                        />
+                        <strong>{code}</strong>
+                      </label>
+                      <fieldset disabled={!p.enabled} className="parameter-cell-fields">
+                        <input
+                          aria-label={`Название ${code}`}
+                          value={p.name}
+                          maxLength={120}
+                          onChange={(e) => parameterChange(device, p, { name: e.target.value })}
+                        />
+                        <select
+                          className="parameter-color-select"
+                          aria-label={`Цвет ${code}`}
+                          value={p.color}
+                          style={{ borderLeftColor: COLORS[p.color].hex }}
+                          onChange={(e) =>
+                            parameterChange(device, p, {
+                              color: e.target.value as Parameter['color'],
+                            })
+                          }
+                        >
+                          {Object.entries(COLORS).map(([key, color]) => (
+                            <option key={key} value={key}>
+                              {color.name}
+                            </option>
+                          ))}
+                        </select>
+                        {dimmer >= 0 && (
+                          <label className="parameter-inversion">
                             <input
-                              aria-label="Название прибора"
-                              value={device.name}
-                              maxLength={120}
-                              onChange={(e) => update(device.id, { name: e.target.value })}
-                            />
-                          </label>
-                          <label className="field">
-                            <span>Тип прибора</span>
-                            <select
-                              aria-label="Тип прибора"
-                              value={device.profile ?? 'standard'}
+                              type="checkbox"
+                              aria-label={`Инвертировать ${code}`}
+                              checked={
+                                p.inverted ?? !!((report?.dimmerInverted ?? 0) & (1 << dimmer))
+                              }
                               onChange={(e) =>
-                                update(device.id, {
-                                  ...deviceProfile(device, e.target.value as 'standard' | 'helmet'),
-                                  mac: null,
-                                  ip: null,
-                                })
-                              }
-                            >
-                              <option value="standard">Стандартный</option>
-                              <option value="helmet">Helmet · лента + голос</option>
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>IP</span>
-                            <input
-                              aria-label="IP прибора"
-                              readOnly
-                              value={
-                                status.devices[device.mac?.toUpperCase() ?? '']?.ip ??
-                                device.ip ??
-                                '—'
+                                parameterChange(device, p, { inverted: e.target.checked })
                               }
                             />
+                            Инверсия
                           </label>
-                          <label className="field">
-                            <span>Точек WS2811</span>
-                            <input
-                              aria-label="Точек WS2811"
-                              type="number"
-                              min="1"
-                              max="1024"
-                              value={device.ledCount}
-                              onChange={(e) =>
-                                update(device.id, {
-                                  ledCount: Math.round(clamp(Number(e.target.value), 1, 1024)),
-                                })
-                              }
-                            />
-                          </label>
-                        </div>
-                        <label className="field">
-                          <span>Контроллер</span>
+                        )}
+                        {relay && (
                           <select
-                            aria-label="Контроллер прибора"
-                            value={device.mac ?? ''}
+                            aria-label={`Уровень ${code}`}
+                            value={p.relayMode ?? 0}
                             onChange={(e) =>
-                              update(device.id, {
-                                mac: e.target.value || null,
-                                ip: status.devices[e.target.value]?.ip ?? null,
+                              parameterChange(device, p, {
+                                relayMode: Number(e.target.value) as 0 | 1 | 2,
                               })
                             }
                           >
-                            <option value="">Не назначен</option>
-                            {device.mac && !status.devices[device.mac] && (
-                              <option value={device.mac}>{device.mac}</option>
-                            )}
-                            {Object.entries(status.devices)
-                              .filter(
-                                ([, info]) =>
-                                  info.role !== 'remote' &&
-                                  (device.profile === 'helmet'
-                                    ? info.role === 'helmet'
-                                    : info.role !== 'helmet'),
-                              )
-                              .map(([mac, info]) => (
-                                <option key={mac} value={mac}>
-                                  {info.name ?? mac} · {info.ip ?? mac} ·{' '}
-                                  {info.firmwareVersion ?? 'версия неизвестна'}
-                                </option>
-                              ))}
+                            <option value="0">—</option>
+                            <option value="1">HIGH</option>
+                            <option value="2">LOW</option>
                           </select>
-                        </label>
-                        <div className="device-general-fields">
-                          <label className="field">
-                            <span>WS2811</span>
-                            <select
-                              aria-label="Порядок цветов ленты"
-                              value={device.stripOrder ?? 'RGB'}
-                              onChange={(e) =>
-                                update(device.id, { stripOrder: e.target.value as 'RGB' | 'GRB' })
-                              }
-                            >
-                              <option>RGB</option>
-                              <option>GRB</option>
-                            </select>
-                          </label>
-                          <label className="field">
-                            <span>Сигнал DATA</span>
-                            <select
-                              aria-label="Частота ленты"
-                              value={device.stripRate ?? 800}
-                              onChange={(e) =>
-                                update(device.id, {
-                                  stripRate: Number(e.target.value) as 800 | 400,
-                                })
-                              }
-                            >
-                              <option value="800">800 кГц</option>
-                              <option value="400">400 кГц</option>
-                            </select>
-                          </label>
-                        </div>
-                        {device.dimmers.some((p) => p.inverted === undefined) &&
-                          device.profile !== 'helmet' && (
-                            <p className="muted">
-                              Старые каналы наследуют полярность платы. «Сохранить» запишет в
-                              партитуру полученные от неё значения. Если плата недоступна, задайте
-                              инверсию вручную перед заменой.
-                            </p>
+                        )}
+                      </fieldset>
+                    </div>
+                  );
+                })}
+                <div className="device-meta-cell">
+                  <label className="field">
+                    <span>Тип контроллера</span>
+                    <select
+                      aria-label="Тип прибора"
+                      value={device.profile ?? 'standard'}
+                      onChange={(e) =>
+                        update(device.id, {
+                          ...deviceProfile(device, e.target.value as 'standard' | 'helmet'),
+                          mac: null,
+                          ip: null,
+                        })
+                      }
+                    >
+                      <option value="standard">Слейв</option>
+                      <option value="helmet">Шлем</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="device-meta-cell controller-binding-cell">
+                  <label className="field">
+                    <span>Ведомый</span>
+                    <select
+                      aria-label="Контроллер прибора"
+                      value={device.mac?.toUpperCase() ?? ''}
+                      onChange={(e) =>
+                        update(device.id, {
+                          mac: e.target.value || null,
+                          ip: status.devices[e.target.value]?.ip ?? null,
+                        })
+                      }
+                    >
+                      <option value="">Не назначен</option>
+                      {device.mac &&
+                        !candidates.some(([mac]) => mac === device.mac?.toUpperCase()) && (
+                          <option value={device.mac.toUpperCase()}>{device.mac}</option>
+                        )}
+                      {candidates.map(([mac, info]) => (
+                        <option
+                          key={mac}
+                          value={mac}
+                          disabled={devices.some(
+                            (d) => d.id !== device.id && d.mac?.toUpperCase() === mac,
                           )}
-                        <div className="parameter-fine-grid">
-                          {parameters(device)
-                            .filter(
-                              (p) =>
-                                device.profile !== 'helmet' ||
-                                p.id === device.strip.id ||
-                                p.id === device.audio.id,
-                            )
-                            .map((p) => {
-                              const code = parameterCode(device, p);
-                              return (
-                                <div className="parameter-config" key={p.id}>
-                                  <code>{code}</code>
-                                  <input
-                                    aria-label={`Название ${code}`}
-                                    value={p.name}
-                                    maxLength={120}
-                                    onChange={(e) =>
-                                      parameterChange(device, p, { name: e.target.value })
-                                    }
-                                  />
-                                  <select
-                                    aria-label={`Цвет ${code}`}
-                                    value={p.color}
-                                    onChange={(e) =>
-                                      parameterChange(device, p, {
-                                        color: e.target.value as Parameter['color'],
-                                      })
-                                    }
-                                    style={{ color: COLORS[p.color].hex }}
-                                  >
-                                    {Object.entries(COLORS).map(([key, color]) => (
-                                      <option key={key} value={key}>
-                                        {color.name}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  {device.dimmers.some((item) => item.id === p.id) && (
-                                    <label
-                                      className="pwm-inversion"
-                                      title={
-                                        p.inverted === undefined
-                                          ? 'Унаследованная настройка платы; сохранение прибора зафиксирует полученную полярность в партитуре'
-                                          : 'Инверсия только физического PWM: 0 → 255, 255 → 0'
-                                      }
-                                    >
-                                      <input
-                                        type="checkbox"
-                                        aria-label={`Инвертировать ${code}`}
-                                        checked={
-                                          p.inverted ??
-                                          !!(
-                                            (status.devices[device.mac?.toUpperCase() ?? '']
-                                              ?.dimmerInverted ?? 0) &
-                                            (1 <<
-                                              device.dimmers.findIndex((item) => item.id === p.id))
-                                          )
-                                        }
-                                        onChange={(e) =>
-                                          parameterChange(device, p, { inverted: e.target.checked })
-                                        }
-                                      />
-                                      Инверсия PWM
-                                    </label>
-                                  )}
-                                  {device.relays.some((item) => item.id === p.id) && (
-                                    <select
-                                      aria-label={`Уровень ${code}`}
-                                      value={p.relayMode ?? 0}
-                                      onChange={(e) =>
-                                        parameterChange(device, p, {
-                                          relayMode: Number(e.target.value) as 0 | 1 | 2,
-                                        })
-                                      }
-                                    >
-                                      <option value="0">Не настроено</option>
-                                      <option value="1">HIGH включает</option>
-                                      <option value="2">LOW включает</option>
-                                    </select>
-                                  )}
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                        >
+                          {info.name ? `${info.name} · ` : ''}
+                          {mac}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="device-meta-cell device-link-cell">
+                  <div className="device-link-heading">
+                    <span>Связь</span>
+                    <IdentifyButton
+                      name={device.name}
+                      disabled={
+                        !status.connected ||
+                        !network.identify ||
+                        !device.mac ||
+                        report?.online !== true
+                      }
+                      busy={identifying === device.id}
+                      onClick={() => void identify(device)}
+                    />
+                  </div>
+                  <LinkStatus report={report} connected={status.connected} />
+                </div>
+              </div>
+            </section>
+          );
+        })}
+        <button
+          type="button"
+          className="add-device-button"
+          disabled={devices.length >= 10}
+          onClick={add}
+        >
+          <Plus size={17} />
+          Добавить прибор
+        </button>
       </div>
       <footer className="modal-footer">
         <button onClick={onClose}>Отмена</button>
