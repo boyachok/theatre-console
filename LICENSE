@@ -1,0 +1,79 @@
+Theatre Console Noncommercial License with Theatre Exception
+Version 1.0
+SPDX-License-Identifier: LicenseRef-Theatre-Console-NC-1.0
+
+Copyright (c) 2026 boyachok and the respective contributors.
+
+1. Scope and definitions
+
+"Software" means the Theatre console source code, documentation and other
+project material distributed under this license, including modifications.
+"Licensor" means the copyright holder granting rights under this license.
+This license grants only rights that the Licensor is entitled to grant.
+Third-party material is excluded where it has its own terms; see NOTICE.md.
+
+"Authorized Theatre" means the theatre for which the original Theatre console
+project (https://github.com/boyachok/theatre-console) was developed, as designated
+by the project owner. This designation does not change when the Software is
+forked or modified. The project owner may document the theatre's legal identity
+separately without publishing it in this repository.
+
+"Commercial Use" means use primarily intended for commercial advantage or
+monetary compensation, including sale, paid licensing, commercial distribution,
+paid services based on the Software, or use in revenue-generating performances
+or venues, except as expressly allowed in section 3.
+
+2. Noncommercial permission
+
+Subject to this license, permission is granted, free of charge, to use, copy,
+study, modify, build and redistribute the Software, in source or binary form,
+for noncommercial purposes. Copies and modifications must retain this license,
+copyright and attribution notices, and clearly identify material modifications.
+Modified versions must be distributed under these same noncommercial terms;
+no additional commercial rights may be granted without the relevant copyright
+holder's separate written permission.
+
+3. Authorized Theatre exception
+
+The Authorized Theatre may use, copy, install, build, operate, maintain and modify
+the Software for its own activities, including performances with paid admission.
+Its employees and technical specialists or contractors acting on its behalf
+may do the same solely for that theatre's activities. They may receive payment
+for their work and supply source code, builds and backups to the theatre and
+its authorized technical specialists. The theatre may retain copies and engage
+replacement technical specialists without losing this permission.
+
+This exception does not permit selling or licensing the Software as a commercial
+product, providing it as a paid service to other venues, or extending commercial
+permission to other theatres or customers. A contractor may not rely on this
+exception for unrelated clients. Those activities require separate written
+permission from the relevant copyright holder.
+
+4. Redistribution and third parties
+
+Public access to the repository does not grant unrestricted commercial rights.
+Recipients receive only the rights granted by this license or by applicable
+third-party licenses. Do not remove third-party notices or claim ownership of
+third-party material. This license does not replace their original terms.
+No trademark, endorsement, patent or other rights are granted by implication.
+
+5. No warranty; hardware safety
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE AND NONINFRINGEMENT. TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW,
+THE LICENSOR AND CONTRIBUTORS SHALL NOT BE LIABLE FOR CLAIMS, DAMAGES OR OTHER
+LIABILITY ARISING FROM THE SOFTWARE OR ITS USE.
+
+The Software is not an electrical safety system or a substitute for physical
+isolation, emergency controls, qualified installation or load-specific testing.
+The user is responsible for safe operation of connected equipment.
+
+6. Termination
+
+The permissions granted to a recipient terminate if that recipient violates
+these terms. Separate written permission may be obtained from the relevant
+copyright holder. Rights that cannot lawfully be excluded remain unaffected.
+
+This is a custom source-available license, not an OSI-approved open-source
+license. Other commercial uses require separate written permission.

@@ -3,7 +3,7 @@
 #include "../control/wifi_transport.h"
 int main(){
   mockNow=100;WifiTransport net;net.begin(true);
-  assert(WiFi.ssid=="YOUR_WIFI_SSID"&&WiFi.password=="YOUR_WIFI_PASSWORD");
+  assert(WiFi.ssid==STAGE_WIFI_SSID&&WiFi.password==STAGE_WIFI_PASSWORD);
   assert(WiFi.STA.begins==1&&validSourceMAC(net.mac));
   assert(WiFi.host==net.hostname.c_str());
   assert(!memcmp(net.mac,WiFi.ownMac,6));

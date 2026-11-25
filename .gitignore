@@ -10,6 +10,7 @@ console/web_assets.h
 .env
 .env.*
 !.env.example
+**/network_local.h
 *.pem
 *.key
 *.p12

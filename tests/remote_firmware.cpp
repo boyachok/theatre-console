@@ -11,7 +11,7 @@ void heartbeat(uint32_t at){Packet p=packet(REMOTE_PING,77,++pingSeq);p.deviceBo
 void acknowledge(uint32_t id,uint32_t at){Packet p=packet(REMOTE_ACK,77,id);p.deviceBoot=selfBoot;p.commandId=id;p.result=APPLIED;p.value=1;p.padding[0]='R';p.padding[1]=1;inject(p);tick(at);}
 int main(){
  mockPrefsBytes["buttonTest"]={0}; // Already commissioned: normal navigation fixture.
- mockLevels[13]=mockLevels[14]=HIGH;mockNow=100;setup();assert(mockModes[13]==INPUT_PULLUP&&mockModes[14]==INPUT_PULLUP);assert(WiFi.ssid=="YOUR_WIFI_SSID"&&WiFi.password=="YOUR_WIFI_PASSWORD"&&WiFi.host.find("stage-remote-")==0);
+ mockLevels[13]=mockLevels[14]=HIGH;mockNow=100;setup();assert(mockModes[13]==INPUT_PULLUP&&mockModes[14]==INPUT_PULLUP);assert(WiFi.ssid==STAGE_WIFI_SSID&&WiFi.password==STAGE_WIFI_PASSWORD&&WiFi.host.find("stage-remote-")==0);
  WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,88);tick(1000);assert(MDNS.services==1&&httpReady&&!masterKnown);
  inject(packet(DISCOVER,77));tick(1001);tick(1500);auto hello=last(REMOTE_HELLO);assert(remoteTag(hello)&&hello.deviceBoot==selfBoot);
  heartbeat(1501);assert(last(REMOTE_PONG).seq==pingSeq);tick(1535);assert(canOperate(mockNow)&&mockRgbColor==0x14);

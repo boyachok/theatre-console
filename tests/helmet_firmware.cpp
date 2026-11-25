@@ -13,7 +13,7 @@ int main(){
  mockPartitionData.fill(255);mockPartitionReadOK=false;assert(!mountShowFS()&&LittleFS.formats==0);
  mockPartitionReadOK=true;assert(mountShowFS()&&LittleFS.formats==1);
  setup();assert(HELMET_STRIP_PIN==47&&mockRmtPin==47&&runner.ready&&storageReady&&runner.active&&runner.standalone);
- assert(WiFi.ssid=="YOUR_WIFI_SSID"&&WiFi.password=="YOUR_WIFI_PASSWORD"&&WiFi.host.find("stage-helmet-")==0);
+ assert(WiFi.ssid==STAGE_WIFI_SSID&&WiFi.password==STAGE_WIFI_PASSWORD&&WiFi.host.find("stage-helmet-")==0);
  assert(runner.voice.available()&&runner.voice.requested()&&mockUARTOut.empty());
  WiFi.state=WL_CONNECTED;WiFi.address=IPAddress(192,168,50,65);tick(1000);assert(MDNS.services==1&&httpReady);web.request("/api/status",HTTP_GET);assert(web.code==200&&web.response.find("\"otaSupported\":true")!=std::string::npos);
  inject(packet(DISCOVER,77));tick(1001);tick(1500);assert(helmetTag(last(HELLO))&&last(HELLO).deviceBoot==selfBoot);
