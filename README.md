@@ -86,6 +86,6 @@ VITE_CONSOLE_BACKEND=0 npm run dev -- --host 127.0.0.1
 `remote/` — пульт, `score-ui/` — сайт, `tests/` — проверки, `tools/` — инструменты.
 `control/`, `wifi04/`, `espnow/`, `radio/` и `snapshots/` содержат предыдущие реализации.
 
-[Текущий комплект и назначения](docs/FLEET.md) ·
+[Снимки партитур](shows/README.md) · [Текущий комплект и назначения](docs/FLEET.md) ·
 [Веб-часть](score-ui/README.md) · [Текущий UI](docs/OPERATOR_UI_0811.md) ·
 [GPIO и история разводки](docs/PINOUT.md) · [История изменений](CHANGELOG.md)
