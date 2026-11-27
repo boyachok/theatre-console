@@ -10,6 +10,24 @@ export async function helmetDialogChecks(page, dialog) {
   ]) {
     await page.setViewportSize({ width, height });
     const body = dialog.locator('.helmet-content');
+    const topOrder = await body.evaluate((el) => {
+      const fields = el.querySelector('.helmet-preset-fields');
+      const actions = el.querySelector('.helmet-preset-actions');
+      const status = el.querySelector('.helmet-status');
+      const meter = el.querySelector('meter');
+      const eq = el.querySelector('.helmet-tone-panel');
+      const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
+      return (
+        fields.nextElementSibling === actions &&
+        before(actions, status) &&
+        before(status, meter) &&
+        before(meter, eq)
+      );
+    });
+    assert(
+      topOrder,
+      'Preset actions, connection and microphone meter belong directly below preset fields, before EQ',
+    );
     await body.evaluate((e) => {
       e.scrollTop = 0;
     });

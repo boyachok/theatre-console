@@ -119,6 +119,78 @@ export function HelmetDialog({
             />
           </label>
         </div>
+        <div className="segmented helmet-preset-actions">
+          <button
+            onClick={() =>
+              onChange({
+                ...device,
+                voice: {
+                  ...bank,
+                  working: undefined,
+                  presets: bank.presets.map((p) =>
+                    p.id === preset.id
+                      ? { ...p, name: p.name.trim() || 'Голос', settings: { ...sound } }
+                      : p,
+                  ),
+                },
+              })
+            }
+          >
+            Сохранить пресет
+          </button>
+          <button
+            disabled={bank.presets.length >= 8}
+            onClick={() => {
+              const id = uid();
+              onChange({
+                ...device,
+                voice: {
+                  selected: id,
+                  presets: [
+                    ...bank.presets,
+                    { id, name: `Голос ${bank.presets.length + 1}`, settings: { ...sound } },
+                  ],
+                },
+              });
+            }}
+          >
+            Сохранить как новый
+          </button>
+          <button
+            disabled={bank.presets.length <= 1}
+            onClick={async () => {
+              if (await ask({ message: 'Удалить голосовой пресет?', accept: 'Удалить' })) {
+                const list = bank.presets.filter((p) => p.id !== preset.id);
+                onChange({ ...device, voice: { selected: list[0].id, presets: list } });
+              }
+            }}
+          >
+            Удалить пресет
+          </button>
+        </div>
+        {bank.working && (
+          <span className="preset-dirty" role="status">
+            Изменено
+          </span>
+        )}
+        <p role="status" className="helmet-status">
+          {!node?.online
+            ? 'Нет связи со шлемом'
+            : !v || v.ageMs > 3000
+              ? 'Нет данных микрофона'
+              : !v.ready
+                ? 'Звук недоступен'
+                : ''}
+        </p>
+        <label className="field">
+          <span>Микрофон</span>
+          <meter
+            aria-label="Уровень микрофона шлема"
+            min={0}
+            max={1}
+            value={v && v.ageMs < 3000 ? v.inputLevel : 0}
+          />
+        </label>
         <details className="helmet-tone-panel">
           <summary>Параметрический эквалайзер и разборчивость</summary>
           <label className="check">
@@ -235,78 +307,6 @@ export function HelmetDialog({
             ))}
           </div>
         </details>
-        <div className="segmented helmet-preset-actions">
-          <button
-            onClick={() =>
-              onChange({
-                ...device,
-                voice: {
-                  ...bank,
-                  working: undefined,
-                  presets: bank.presets.map((p) =>
-                    p.id === preset.id
-                      ? { ...p, name: p.name.trim() || 'Голос', settings: { ...sound } }
-                      : p,
-                  ),
-                },
-              })
-            }
-          >
-            Сохранить пресет
-          </button>
-          <button
-            disabled={bank.presets.length >= 8}
-            onClick={() => {
-              const id = uid();
-              onChange({
-                ...device,
-                voice: {
-                  selected: id,
-                  presets: [
-                    ...bank.presets,
-                    { id, name: `Голос ${bank.presets.length + 1}`, settings: { ...sound } },
-                  ],
-                },
-              });
-            }}
-          >
-            Сохранить как новый
-          </button>
-          <button
-            disabled={bank.presets.length <= 1}
-            onClick={async () => {
-              if (await ask({ message: 'Удалить голосовой пресет?', accept: 'Удалить' })) {
-                const list = bank.presets.filter((p) => p.id !== preset.id);
-                onChange({ ...device, voice: { selected: list[0].id, presets: list } });
-              }
-            }}
-          >
-            Удалить пресет
-          </button>
-        </div>
-        {bank.working && (
-          <span className="preset-dirty" role="status">
-            Изменено
-          </span>
-        )}
-        <p role="status" className="helmet-status">
-          {!node?.online
-            ? 'Нет связи со шлемом'
-            : !v || v.ageMs > 3000
-              ? 'Нет данных микрофона'
-              : !v.ready
-                ? 'Звук недоступен'
-                : ''}
-        </p>
-        <label className="field">
-          <span>Микрофон</span>
-          <meter
-            aria-label="Уровень микрофона шлема"
-            min={0}
-            max={1}
-            value={v && v.ageMs < 3000 ? v.inputLevel : 0}
-          />
-        </label>
         <details>
           <summary>Параметры звука</summary>
           <div className="helmet-fields">
